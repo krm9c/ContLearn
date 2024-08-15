@@ -171,7 +171,7 @@ class data_return():
             # #print("In the experience arrauy", self.X_train.shape, self.X_test.shape)
             
         if task_id > 0:
-            #print(self.exp_x_test.shape, self.X_test.shape)
+            # print(self.exp_x_test.shape, self.X_test.shape)
             self.exp_x_test = torch.cat((self.exp_x_test, self.X_test), dim=0)
             self.exp_x_train = torch.cat((self.exp_x_train, self.X_train), dim=0)
             self.exp_y_test = np.concatenate([self.exp_y_test, self.y_test], axis=0)
@@ -185,10 +185,16 @@ class data_return():
 
             # Convert the list into torch tensor
             #print("after extending", len(self.exp_x_train), len(self.exp_x_test))
-            self.exp_x_train = torch.vstack(self.exp_x_train).unsqueeze(dim=1)
-            self.exp_y_train = np.array(self.exp_y_train)
-            self.exp_x_test = torch.vstack(self.exp_x_test).unsqueeze(dim=1)
-            self.exp_y_test = np.array(self.exp_y_test)
+            if self.dataset_id == 'sine':
+                self.exp_x_train = torch.vstack(self.exp_x_train)# .unsqueeze(dim=1)
+                self.exp_y_train = np.array(self.exp_y_train)
+                self.exp_x_test = torch.vstack(self.exp_x_test) # .unsqueeze(dim=1)
+                self.exp_y_test = np.array(self.exp_y_test)
+            else:
+                self.exp_x_train = torch.vstack(self.exp_x_train).unsqueeze(dim=1)
+                self.exp_y_train = np.array(self.exp_y_train)
+                self.exp_x_test = torch.vstack(self.exp_x_test).unsqueeze(dim=1)
+                self.exp_y_test = np.array(self.exp_y_test)
             ##print("the experiance test shapes", self.exp_x_train.shape, self.exp_x_test.shape)
             
         # Check for the length of the replay
