@@ -141,14 +141,13 @@ class Trainer(eqx.Module):
     # -------------------------------------------------------------------
     @eqx.filter_jit
     def return_metric(self, params, statics, data):
-        
         model = eqx.combine(params, statics)
         if self.problem=='vectors':
             x, y = data
             if self.metric == 'class':
                 y=y.astype(jnp.int64)
-                pred_y = jax.vmap(model)(x)
-                pred_y = jnp.argmax(pred_y, axis=1)
+                pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
+                pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)
                 return jnp.mean(y == pred_y)
             elif self.metric=='mse':
                 return jnp.mean(optax.l2_loss(y, jax.vmap(model)(x)))
@@ -180,20 +179,28 @@ class Trainer(eqx.Module):
         static, (x, y, adj, exp_x, exp_y, exp_adj, deltax) = data
         ##print("x", x.shape, "exp_x", exp_x.shape)
         x_tog = x+exp_x
-        y_tog = x+exp_y 
+        y_tog = y+exp_y 
         adj_tog = adj+exp_adj
         
-        #-------------------------------------------
+        #-------------------------------------------------------------------------------------------------------------
+        print("Term 1")
+        #-----------------------------------------------------------------------------------------------------------
         # Term 1 
         V_star_max = self.return_V_star(x_tog, params, (static, y_tog, adj_tog))
-        # print("calculated term 1")
-        #-------------------------------------------
+        
+        
+        #-------------------------------------------------------------------------------------------------------------
+        print("Term 2")
+        #-----------------------------------------------------------------------------------------------------------
         # Term 2
         dVstar_dx = jax.grad(self.return_V_star,argnums=(0))(exp_x, params, (static, exp_y, exp_adj))
         dVstar_dx_deltax = jnp.sum(jnp.array([ jnp.sum(jnp.trace( jnp.inner(dvstardx, dx ) ))\
             for dvstardx, dx  in zip(dVstar_dx, deltax)]))
-        # print("calculated term 2")
-        # print(dVstar_dx, dVstar_dx_deltax)
+        
+        
+        #-------------------------------------------------------------------------------------------------------------
+        print("Term 3")
+        #-------------------------------------------------------------------------------------------------------------
         # Term 3
         delta_theta   = jax.grad(self.return_V_star,argnums=(1) )(x_tog, params, (static, y_tog, adj_tog))
         dVstar_dtheta = jax.grad(self.return_V_star, argnums=(1))(exp_x, params,(static, exp_y, exp_adj))
@@ -217,12 +224,12 @@ class Trainer(eqx.Module):
         # #print(dVstar_dx_deltax.shape, dVstar_dtheta_delta_theta.shape, )
         return  (V_star_max+dVstar_dx_deltax+dVstar_dtheta_delta_theta),\
                 (V_star_max, dVstar_dx_deltax, dVstar_dtheta_delta_theta)
-    
-        #        dou_V_star_max_x = jnp.mean(optax.l2_loss(y_tog, jax.vmap(model)(x_tog_)) -
-        #     optax.l2_loss(y_tog, jax.vmap(model)(x_tog)) )
-        # dou_V_star_max_theta = jnp.mean(optax.l2_loss(y_tog, jax.vmap(model)(x_tog))
-        #                   - optax.l2_loss(y_tog, jax.vmap(modelN)(x_tog)))
-        # H = V_star_max + dou_V_star_max_x + dou_V_star_max_theta
+        
+            #        dou_V_star_max_x = jnp.mean(optax.l2_loss(y_tog, jax.vmap(model)(x_tog_)) -
+            #     optax.l2_loss(y_tog, jax.vmap(model)(x_tog)) )
+            # dou_V_star_max_theta = jnp.mean(optax.l2_loss(y_tog, jax.vmap(model)(x_tog))
+            #                   - optax.l2_loss(y_tog, jax.vmap(modelN)(x_tog)))
+            # H = V_star_max + dou_V_star_max_x + dou_V_star_max_theta
         
     # -------------------------------------------------------------------
     @eqx.filter_jit
@@ -341,7 +348,7 @@ class Trainer(eqx.Module):
             params =  optax.apply_updates(params, updates)
             
             
-            
+            # print("the details", task_id, step, step+task_id*n_iter )
             pbar.set_postfix({"Train/MSE:": V_star_max,
                               "Train/dVstar_dx:": dVstar_dx,
                               "Train/dVstar_dtheta:": dVstar_dtheta,
@@ -356,8 +363,9 @@ class Trainer(eqx.Module):
             self.writer.add_scalar('train/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
             self.writer.add_scalar('train/gradient/dH_dtheta',
                                    grad_norm.item(), step+task_id*n_iter)
-
             
+            
+                        
             dictum["train"+str(step+task_id*n_iter)] = ( V_star_max,dVstar_dx, dVstar_dtheta, \
                 V_star_max+dVstar_dx+dVstar_dtheta,\
                 grad_norm, grad_norm )
@@ -442,11 +450,11 @@ class Trainer(eqx.Module):
         dVstar_dx= np_.mean(dVstar_dx)
         dVstar_dtheta=np_.mean(dVstar_dtheta)
         H=np_.mean(H)
-        self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),task_id)
-        self.writer.add_scalar('test/Loss/MSE', V_star_max.item(), task_id)
+        self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter)
+        self.writer.add_scalar('test/Loss/MSE', V_star_max.item(), step+task_id*n_iter)
         self.writer.add_scalar('test/gradient/dVstar_dx',
-                            dVstar_dx.item(), task_id)
-        self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), task_id)
+                            dVstar_dx.item(), step+task_id*n_iter)
+        self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
         dictum["test"+str(task_id)] = (V_star_max,dVstar_dx, dVstar_dtheta, H)
         
         self.writer.flush()
@@ -565,14 +573,16 @@ class Trainer(eqx.Module):
                     dVstar_dx.append(dVstar_dx_b)
                     dVstar_dtheta.append(dVstar_dtheta_b)
                     H.append(h)
-                    metrics.append( self.return_metric(exp_x, params,  (static, exp_y)  ) )
+                    
+                    
+                    metrics.append( self.return_metric(params, static, (exp_x, exp_y)  ) )
                     
                 V_star_max=np_.mean(V_star_max)
                 dVstar_dx= np_.mean(dVstar_dx)
                 dVstar_dtheta=np_.mean(dVstar_dtheta)
                 H=np_.mean(H)
                 metrics= np_.mean(metrics)
-                self.writer.add_scalar('Valid/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(), step+task_id*n_iter)
+                self.writer.add_scalar('Valid/Loss/H', (H).item(), step+task_id*n_iter)
                 self.writer.add_scalar('Valid/Loss/cross entropy', V_star_max.item(), step+task_id*n_iter)
                 self.writer.add_scalar('Valid/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
                 self.writer.add_scalar('valid/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
@@ -605,7 +615,7 @@ class Trainer(eqx.Module):
             dVstar_dx.append(dVstar_dx_b)
             dVstar_dtheta.append(dVstar_dtheta_b)
             H.append(h)
-            metrics.append( self.return_metric(exp_x, params,  (static, exp_y)  ) )
+            metrics.append( self.return_metric(params, static, (exp_x, exp_y)  ) )
                 
                 
         V_star_max=np_.mean(V_star_max)
@@ -626,39 +636,36 @@ class Trainer(eqx.Module):
         return params, static, optim_outer, dictum
 
 
-    def train__CL__graph(self, train__, params, static, optim, n_iter=1000):
+    def train__CL__graph(self, train__, params, static,\
+                        optim, n_iter=1000, save_iter=5, dictum = {}, 
+                        task_id=0, config={}):
         # #print(x)
         # #print(y)
         # x = x.numpy().astype(np_.float64)
         # adj = adj.numpy().astype(np_.float64)
         # y = jax.nn.one_hot(jnp.array(y.astype(np_.int32)), 7)
         
-        V_star_max=[]
-        dVstar_dx=[]
-        dVstar_dtheta=[]
-        H=[]
-        metrics=[]
+        
         memory_train, memory_test, train, test = train__
         opt_state = optim.init(params)
         from tqdm import tqdm
         pbar = tqdm(range(n_iter))
-        sum_delta_x =0
+        # sum_delta_x =0
         for step in pbar:
-            
             x=[]
             adj=[]
             y=[]
-            
             exp_x=[]
             exp_adj=[]
             exp_y=[]
-            batch = np_.random.randint(0, len(train), 10)
+            
+            batch = np_.random.randint(0, len(train), config["batch_size"])
             for bb in batch:
                 x.append(memory_train[bb].x.numpy().astype(np_.float32))
                 adj.append(memory_train[bb].adj.numpy().astype(np_.float32))
                 y.append(memory_train[bb].y.numpy() )
                 
-            batch = np_.random.randint(0, len(memory_train), 10)  
+            batch = np_.random.randint(0, len(memory_train), config["batch_size"])  
             for bb in batch:
                 exp_x.append(memory_train[bb].x.numpy().astype(np_.float32))
                 exp_adj.append(memory_train[bb].adj.numpy().astype(np_.float32))
@@ -668,42 +675,116 @@ class Trainer(eqx.Module):
             delta_x = [np_.random.normal(0,
                 1e-05+jnp.linalg.norm(jnp.mean(a, axis=0)-jnp.mean(b, axis=0)),\
                 a.shape) for a,b in zip(exp_x, x) ]
-            sum_delta_x= [ jnp.sqrt((jnp.linalg.norm(jnp.stack(a) )**2)) for a in delta_x]
-            delta_x = [  a/b for a, b in zip(delta_x, sum_delta_x)]
+            # sum_delta_x= [ jnp.sqrt((jnp.linalg.norm(jnp.stack(a) )**2)) for a in delta_x]
+            # delta_x = [  a/b for a, b in zip(delta_x, sum_delta_x)]
             data = static, ( x, y, adj, exp_x, exp_y, exp_adj, delta_x) 
             grad, losses = jax.grad(self.return_Hamiltonian_graph,\
                         argnums=(0), has_aux=True)(params,data)    
             
-            
             #--------------------------------------------------------------
-            print("I have calculated the loss and gradients")     
+            # print("I have calculated the loss and gradients")     
             (v_star_max, dvstar_dx, dvstar_dtheta)  = losses         
             grad_leav = jax.tree_util.tree_leaves(grad)
-            grad_norm = jnp.sqrt(sum([jnp.linalg.norm(g)**2 for g in grad_leav])/len(grad_leav) )
+            grad_norm = jnp.sqrt(sum([jnp.linalg.norm(g)**2 for\
+                g in grad_leav])/len(grad_leav) )
             updates, opt_state = optim.update(grad, opt_state, params)
             params =  optax.apply_updates(params, updates)
-            
-    
-            V_star_max.append(v_star_max)
-            dVstar_dx.append(dvstar_dx)
-            dVstar_dtheta.append(dvstar_dtheta)
-            h = v_star_max+dvstar_dx+dvstar_dtheta
-            H.append(h)
-            V_star_max=np_.mean(V_star_max)
-            dVstar_dx= np_.mean(dVstar_dx)
-            dVstar_dtheta=np_.mean(dVstar_dtheta)
-            H=np_.mean(H)
             acc = self.return_metric(params, static, (x, y, adj))
-            metrics.append(acc)
-            pbar.set_postfix({"Train/Cross Entropy:": V_star_max,
-                              "Train/dVstar_dx:": dVstar_dx,
-                              "Train/dVstar_dtheta:": dVstar_dtheta,
-                              "Train/H:":  H,
-                              "Train/||dH_dtheta||:": grad_norm,
-                              "Train/Metric:": acc
+            h = v_star_max+dvstar_dx+dvstar_dtheta    
+            
+            pbar.set_postfix({"Train/Cross Entropy:": v_star_max,
+                            "Train/dVstar_dx:": dvstar_dx,
+                            "Train/dVstar_dtheta:": dvstar_dtheta,
+                            "Train/H:":  h,
+                            "Train/||dH_dtheta||:": grad_norm,
+                            "Train/Metric:": acc
                             })
             
+            if step % save_iter==0:
+                V_star_max=[]
+                dVstar_dx=[]
+                dVstar_dtheta=[]
+                H=[]
+                metrics=[]
+        
+                V_star_max.append(v_star_max)
+                dVstar_dx.append(dvstar_dx)
+                dVstar_dtheta.append(dvstar_dtheta)
+                h = v_star_max+dvstar_dx+dvstar_dtheta
+                H.append(h)
+                
+                
+                
+                
+                V_star_max=[]
+                dVstar_dx=[]
+                dVstar_dtheta=[]
+                H=[]
+                metrics=[]
+                
             
+                for i in range(1):
+                    
+                    x=[]
+                    adj=[]
+                    y=[]
+                    exp_x=[]
+                    exp_adj=[]
+                    exp_y=[]
+                    
+                    
+                    batch = np_.random.randint(0, len(test), config["batch_size"])
+                    for bb in batch:
+                        x.append(memory_test[bb].x.numpy().astype(np_.float32))
+                        adj.append(memory_test[bb].adj.numpy().astype(np_.float32))
+                        y.append(memory_test[bb].y.numpy() )
+                        
+                        
+                    batch = np_.random.randint(0, len(memory_test), config["batch_size"])  
+                    for bb in batch:
+                        exp_x.append(memory_test[bb].x.numpy().astype(np_.float32))
+                        exp_adj.append(memory_test[bb].adj.numpy().astype(np_.float32))
+                        exp_y.append(memory_test[bb].y.numpy() )
+                        
+                    # First problem, a distance metric, that does not care about the size of the nodes.
+                    delta_x = [np_.random.normal(0,
+                        1e-05+jnp.linalg.norm(jnp.mean(a, axis=0)-jnp.mean(b, axis=0)),\
+                        a.shape) for a,b in zip(exp_x, x) ]
+                    # sum_delta_x= [ jnp.sqrt((jnp.linalg.norm(jnp.stack(a) )**2)) for a in delta_x]
+                    # delta_x = [  a/b for a, b in zip(delta_x, sum_delta_x)]
+                    
+                    # ------------------------------------------------------
+                    data = static, ( x, y, adj, exp_x, exp_y, exp_adj, delta_x) 
+                    h, losses = self.return_Hamiltonian_graph(params,data)   
+                    (v_star_max, dvstar_dx, dvstar_dtheta)  = losses 
+                    
+                    
+                    V_star_max.append(v_star_max)
+                    dVstar_dx.append(dvstar_dx)
+                    dVstar_dtheta.append(dvstar_dtheta)
+                    H.append(h)
+                    
+                    
+                # ------------------------------------------------------
+                V_star_max=np_.mean(V_star_max)
+                dVstar_dx= np_.mean(dVstar_dx)
+                dVstar_dtheta=np_.mean(dVstar_dtheta)
+                H=np_.mean(H)
+                metrics=np_.mean(metrics)
+                
+                # ------------------------------------------------------
+                self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter )
+                self.writer.add_scalar('test/Loss/cross entropy', V_star_max.item(), step+task_id*n_iter )
+                self.writer.add_scalar('test/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
+                self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+                self.writer.add_scalar('test/metric', metrics, task_id)
+                dictum["test"+str(step+task_id*n_iter)] =\
+                ( V_star_max,dVstar_dx, dVstar_dtheta,\
+                V_star_max+dVstar_dx+dVstar_dtheta, metrics)
+            
+            
+        self.writer.flush()
+        return params, static, optim, dictum 
             
             
     def evaluate__(self, epoch, batch, params, static):

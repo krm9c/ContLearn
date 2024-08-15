@@ -4,7 +4,7 @@
     "file": "logdir/dicts/log_uninduced_04",
     "model_path": "model/MLP__04_",
     "flag":[0, 0], 
-    "n_task": 20,
+    "n_task": 3,
     "epochs_per_task":500,
     "save_iter": 1,
 

@@ -4,9 +4,9 @@
     "file": "logdir/dicts/log_uninduced_GNN",
     "model_path": "model/GNN__",
     "flag":[0, 0], 
-    "n_task": 3,
-    "epochs_per_task":1000,
-    "save_iter": 1,
+    "n_task": 2,
+    "epochs_per_task":3,
+    "save_iter": 10,
     "data": "ENZYMES",
     "loss": "class",
     "metric": "class",
@@ -17,5 +17,6 @@
     "n_layers":2,
     "network": "gnn",
     "hln": 129,
-    "prob": "graphclassification" 
+    "prob": "graphclassification",
+    "batch":4
 }

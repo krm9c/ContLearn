@@ -1,4 +1,6 @@
-
+import jax
+import jax.numpy as jnp
+import numpy as np
 import argparse
 import json
 import os
@@ -30,6 +32,8 @@ from utils.utils import *
 from utils.model import *
 from utils.trainer import *
 from utils.data import *
+
+
 
 
 
@@ -69,39 +73,24 @@ class Params():
 import random
 from torch.utils.data import Dataset, DataLoader
 import torch_geometric.transforms as T
-def continuum_Graph_classification(dataset, memory_train, memory_test, batch_size, task_id):
-        
-        # print("new task", task_id)
-        stack = [(dataset[j].y==task_id).item() for j in range(len(dataset))]
-        datas = [ dataset[k] for k,val in enumerate(stack) if val== True] 
+def continuum_Graph_classification(dataset, memory_train, memory_test, n_class):
+        transforms = T.ToDense()
+        tasks =  np.random.randint(0,n_class,2)
+        stack= [(dataset[j].y.numpy() in tasks) for j in range(len(dataset))]
+        datas = [ transforms(dataset[k]) for k,val in enumerate(stack) if val== True]
         lengtha=len(datas)
-        
-        # random.shuffle(datas)
+        print(datas[0].x.shape, datas[0].y.shape, datas[0].adj.shape)
+        random.shuffle(datas)
         train_dataset = datas[:int(0.80*lengtha)]
         test_dataset = datas[int(0.80*lengtha):]
         memory_train+=train_dataset
         memory_test+=test_dataset
         
-        # print(dataset.to_dense)
-        
-        # data = datas[0]
-        # print(data.adj.shape, data.x.shape)
-        
-        # print(transform(data))
-        # print(transform(data).adj.shape, transform(data).x.shape)
-        # print(transform(data).adj.to_dense().shape)
-        
         print(f'Number of training graphs: {len(train_dataset)}')
         print(f'Number of test graphs: {len(test_dataset)}')    
         print(f'Memory:  Number of training graphs: {len(memory_train)}')
         print(f'Memory:  Number of test graphs: {len(memory_test)}')
-
-        from torch_geometric.loader import DataLoader
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-        mem_train_loader = DataLoader(memory_train, batch_size=batch_size, shuffle=True)
-        mem_test_loader = DataLoader(memory_test, batch_size=batch_size, shuffle=True)
-        return train_loader, test_loader, mem_train_loader, mem_test_loader, memory_train, memory_test 
+        return train_dataset, test_dataset, memory_train, memory_test 
 
 
 def load_graph_data(data_label):   
@@ -207,80 +196,59 @@ def load_return_dataset(config):
     if config['data_id']=='sine':
         generate_sine(config['delta'])
         return data_return(config) 
-    elif config['data_id']=='ENZYMES':
-        from torch_geometric.datasets import TUDataset
-        dataset = TUDataset(root='data/TUDataset', name=config['data_id'])
-        # --------------------------------
-        print(f'Dataset: {dataset}:')
-        print('====================')
-        print(f'Number of graphs: {len(dataset)}')
-        print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')    
-        # --------------------------------
-        return dataset
+    elif config['problem']=='graphclassification':
+        return load_graph_data(config['data_id'])
     else:
         return data_return(config) 
 
 def load_checkpoint(config):
     trainer = Trainer(Loss=config['loss'], metric=config['metric'],
             problem=config['problem'], logdir=str(config['tensorfile']) )
-    data = load_return_dataset({
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['prob'],
-                  'data_id': config['data'],
-                  'len_exp_replay': 20000,
-                  'network': config['network'],
-                  'delta': config['delta']
-                  })
-    
-    
+    dataset = load_return_dataset({
+                    'batch_size': 20,
+                    'opt': 'Nash',
+                    'problem': config['prob'],
+                    'data_id': config['data'],
+                    'len_exp_replay': 20000,
+                    'network': config['network'],
+                    'delta': config['delta']
+                    })
+    SEED = 5678
     if config['prob']=='graphclassification':
-      memory_train=[]
-      memory_test=[]
-      dataloader_curr, test_loader_curr, dataloader_exp, test_loader_exp, memory_train, memory_test =\
-        continuum_Graph_classification(dataset, memory_train, memory_test, batch_size=config['batch_size'], task_id=i)
-      
-      batch = next(iter(dataloader_curr))
-      batch = batch.ToDense()
-      x = batch.x
-      adj = batch.adj
-      y = batch.y
-      print(x.shape, adj.shape, y.shape)
-      
-    
-      
+        memory_train=[]
+        memory_test=[]
+        train_dataset, test_dataset, memory_train, memory_test =\
+        continuum_Graph_classification(dataset, memory_train,\
+        memory_test, n_class=config['n_class'])
+        x= train_dataset[0].x
     else:
-      dataloader_curr, dataloader_exp = data.generate_dataset(task_id=0,
-                          batch_size=config['batch_size'], phase='training')
-      test_loader_curr, test_loader_exp = data.generate_dataset(task_id=0,
-                      batch_size=config['batch_size'], phase='testing')
-      x, y = next(iter(dataloader_curr))
-      y = y.numpy().astype(np_.float64)
-    
-    
+        dataloader_curr, dataloader_exp = dataset.generate_dataset(task_id=0,\
+                            batch_size=config['batch_size'], phase='training')
+        test_loader_curr, test_loader_exp = dataset.generate_dataset(task_id=0,\
+                        batch_size=config['batch_size'], phase='testing')
+        x, y = next(iter(dataloader_curr))
+        y = y.numpy().astype(np_.float64)
     if config['prob'] == 'regression':
-        model = MLP(key=0, input_dim=x.shape[1],
-                out_dim=y.shape[1], n_layers=config['n_layers'], hln=config['hln'])
+        model = MLP(key=0, input_dim=x.shape[1],\
+                out_dim=y.shape[1], n_layers=config['n_layers'],\
+                hln=config['hln'])
     elif config['prob'] == 'classification':
-        SEED = 5678
         key = jax.random.PRNGKey(SEED)
         key, subkey = jax.random.split(key, 2)
         model = CNN(subkey)
-    elif config['prob'] == 'graphclassification':
-        key = jax.random.PRNGKey(SEED) 
-        model = myNN(in_size=x.shape[1], hid_size=1000, node_num=dat.shape[0], out_size=y.shape[1], graph=False)
-      
-      
-            
+    elif config['problem'] == 'graph':
+        model = myNN(in_size=x.shape[1], hid_size=1000,\
+            node_num=x.shape[0], out_size=config['n_class']) 
     # model = eqx.tree_deserialise_leaves(
     # "../CL__jax/model/__MLP__task__9.eqx", model)
-    params, static = eqx.partition(model, eqx.is_array)
-    # initialize the loss function
-    func = trainer.return_loss_grad
+    # params, static = eqx.partition(model, eqx.is_array)
+    # # initialize the loss function
+    # func = trainer.return_loss_grad
     # initialize the optimizer
+    
     optim = optax.adamw(config['lr'])
-    return trainer, optim, data, model 
+    
+    return trainer, optim, dataset, model 
         
 
  
@@ -288,58 +256,29 @@ def train_model_graph(config):
     trainer, optim, data, model  = load_checkpoint(config)
     params, static = eqx.partition(model, eqx.is_array)
     record_dict = {}
+    memory_test=[]
+    memory_train=[]
     for i in range(config['n_task']):
         print("task--", i)       
-        if i==0:
-            dataloader_curr, _=\
-            data.generate_dataset(task_id=i,
-            batch_size=config['batch_size'], phase='training')
-            test_loader_curr, _=\
-                data.generate_dataset(task_id=i,
-                batch_size=config['batch_size'],\
-                phase='testing')
-            params, static, optim, record_dict[str(i)] =  trainer.train__CL__reg(dataloader_curr,\
-            dataloader_curr, (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
-            params, static, optim,  n_iter=config['epochs_per_task'],\
-            save_iter=config['save_iter'], task_id=i, config={
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['problem'],
-                  'data_id': config['data'],
-                  "flag": config['flag'],
-                  'len_exp_replay': 20000,
-                  'network': config['network'],
-                  }, dictum=record_dict)
-        else:
-            dataloader_curr, dataloader_exp=\
-            data.generate_dataset(task_id=i,
-            batch_size=config['batch_size'], phase='training')
-            test_loader_curr, test_loader_exp=\
-                data.generate_dataset(task_id=i,
-                batch_size=config['batch_size'],\
-                phase='testing')
-            params, static, optim, record_dict[str(i)] =\
-            trainer.train__CL__reg(dataloader_curr,dataloader_curr,\
-            (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
-            params, static, optim,  n_iter=config['epochs_per_task'],\
-            save_iter=config['save_iter'], task_id=i, config={
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['prob'],
-                  'data_id': config['data'],
-                  "flag": config['flag'],
-                  'len_exp_replay': 20000,
-                  'network': config['network'],
-                  }, dictum=record_dict)
-            
-        data.append_to_experience(i)
+        train_dataset, test_dataset, memory_train, memory_test =\
+        continuum_Graph_classification(data, memory_train,\
+        memory_test, n_class=2)
+        params, static, optim, record_dict[str(i)] = trainer.train__CL__graph((memory_train, memory_test,\
+        train_dataset, test_dataset), params,static,\
+        optim, n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i, config={
+                    'batch_size': config['batch'],
+                    },\
+        dictum=record_dict )
+    
     model = eqx.combine(params, static)
     eqx.tree_serialise_leaves(config['model_path']+'.eqx', model)
+    
     del model
     del params
     del static
+    
     return record_dict
-  
+
   
 def train_model_reg(config):
     trainer, optim, data, model  = load_checkpoint(config)
@@ -359,14 +298,14 @@ def train_model_reg(config):
             dataloader_curr, (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
             params, static, optim,  n_iter=config['epochs_per_task'],\
             save_iter=config['save_iter'], task_id=i, config={
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['problem'],
-                  'data_id': config['data'],
-                  "flag": config['flag'],
-                  'len_exp_replay': 20000,
-                  'network': config['network'],
-                  }, dictum=record_dict)
+                    'batch_size': 20,
+                    'opt': 'Nash',
+                    'problem': config['problem'],
+                    'data_id': config['data'],
+                    "flag": config['flag'],
+                    'len_exp_replay': 20000,
+                    'network': config['network'],
+                    }, dictum=record_dict)
         else:
             dataloader_curr, dataloader_exp=\
             data.generate_dataset(task_id=i,
@@ -380,14 +319,14 @@ def train_model_reg(config):
             (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
             params, static, optim,  n_iter=config['epochs_per_task'],\
             save_iter=config['save_iter'], task_id=i, config={
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['prob'],
-                  'data_id': config['data'],
-                  "flag": config['flag'],
-                  'len_exp_replay': 20000,
-                  'network': config['network'],
-                  }, dictum=record_dict)
+                    'batch_size': 20,
+                    'opt': 'Nash',
+                    'problem': config['prob'],
+                    'data_id': config['data'],
+                    "flag": config['flag'],
+                    'len_exp_replay': 20000,
+                    'network': config['network'],
+                    }, dictum=record_dict)
             
         data.append_to_experience(i)
     model = eqx.combine(params, static)
@@ -400,7 +339,6 @@ def train_model_reg(config):
 def train_model_class(config):
     trainer, optim, data, model  = load_checkpoint(config)
     params, static = eqx.partition(model, eqx.is_array)
-    
     dict = {}
     for i in range(config['n_task']):
         print("task--", i)       
@@ -416,14 +354,14 @@ def train_model_class(config):
             trainer.train__CL__class(dataloader_curr, dataloader_curr, (test_loader_curr, test_loader_curr),\
             (test_loader_curr, test_loader_curr), params, static, optim, \
             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i,config={
-                  'batch_size': config['batch_size'],
-                  'opt': 'Nash',
-                  'problem': config['prob'],
-                  'data_id': config['data'],
-                  'len_exp_replay': 20000,
-                  "flag": config['flag'],
-                  'network': config['network'],
-                  })
+                    'batch_size': config['batch_size'],
+                    'opt': 'Nash',
+                    'problem': config['prob'],
+                    'data_id': config['data'],
+                    'len_exp_replay': 20000,
+                    "flag": config['flag'],
+                    'network': config['network'],
+                    })
         else:
             dataloader_curr, dataloader_exp=\
             data.generate_dataset(task_id=i,
@@ -436,14 +374,14 @@ def train_model_class(config):
             trainer.train__CL__class(dataloader_curr, dataloader_exp,\
             (test_loader_curr, test_loader_exp), (test_loader_curr, test_loader_exp),params, static, optim, \
             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i,config={
-                  'batch_size': 20,
-                  'opt': 'Nash',
-                  'problem': config['prob'],
-                  'data_id': config['data'],
-                  'len_exp_replay': 20000,
-                  "flag": config['flag'],
-                  'network': config['network'],
-                  })
+                    'batch_size': 20,
+                    'opt': 'Nash',
+                    'problem': config['prob'],
+                    'data_id': config['data'],
+                    'len_exp_replay': 20000,
+                    "flag": config['flag'],
+                    'network': config['network'],
+                    })
         data.append_to_experience(i)
     model = eqx.combine(params, static)
     eqx.tree_serialise_leaves(config['model_path'], model)
@@ -451,7 +389,6 @@ def train_model_class(config):
     del params
     del static
     return dict
-  
 # def test_model(stuff):
 #   params, static, args.epoch, save_path, models_path, testloader, trainer, df_test, adj= stuff
 #   pred = []
@@ -503,19 +440,16 @@ if __name__ == "__main__":
     print("The configuration is", params)
     if args.command == 'train':
       record_dict ={}
-      
-      
       for j in range(params['runs']):
-        print("runs", j)
-        
-        if params['problem']=='regression':
-          record_dict[str(j)] =train_model_reg(params)
-        elif params['problem']=='classification':
-          record_dict[str(j)] =train_model_class(params)
-        else:
-          record_dict[str(j)] =train_model_graph(params)
-      
-      
+        print("runs", j, params['problem'])
+        if params['prob']=='regression':
+            record_dict[str(j)] =train_model_reg(params)
+        elif params['prob']=='classification':
+            record_dict[str(j)] =train_model_class(params)
+        elif params['problem']=='graph':
+            record_dict[str(j)] =train_model_graph(params)
+
+
       import pickle 
       with open(str(params['file'])+'.pkl', 'wb') as f:
           pickle.dump(record_dict, f)
