@@ -1,0 +1,21 @@
+{
+    "delta": 1e-04,
+    "tensorfile": "logdir/tensorboard/log_uninduced_GNN",
+    "file": "logdir/dicts/log_uninduced_GNN",
+    "model_path": "model/GNN__",
+    "flag":[0, 0], 
+    "n_task": 3,
+    "epochs_per_task":1000,
+    "save_iter": 1,
+    "data": "ENZYMES",
+    "loss": "class",
+    "metric": "class",
+    "problem": "graph",
+    "lr": 1e-4,
+    "n_class":6,
+    "batch_size":5,
+    "n_layers":2,
+    "network": "gnn",
+    "hln": 129,
+    "prob": "graphclassification" 
+}
