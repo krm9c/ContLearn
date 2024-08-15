@@ -1,0 +1,21 @@
+{
+    "delta": 1e-04,
+    "tensorfile": "logdir/tensorboard/log_induced_gNN",
+    "file": "logdir/dicts/log_induced_gNN",
+    "model_path": "model/gNN__",
+    "flag":[1, 0], 
+    "n_task": 10,
+    "epochs_per_task":1000,
+    "save_iter": 1,
+
+    "data": "omni",
+    "loss": "class",
+    "metric": "class",
+    "problem": "vectors",
+    "lr": 1e-4,
+    "batch_size":128,
+    "n_layers":4,
+    "network": "cnn",
+    "hln": 129,
+    "prob": "classification" 
+}

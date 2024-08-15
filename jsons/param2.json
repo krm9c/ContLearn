@@ -1,0 +1,23 @@
+{
+    "delta": 1e-04,
+    "tensorfile": "logdir/tensorboard/log_uninduced_04",
+    "file": "logdir/dicts/log_uninduced_04",
+    "model_path": "model/MLP__04_",
+    "flag":[0, 0], 
+    "n_task": 20,
+    "epochs_per_task":500,
+    "save_iter": 1,
+
+    "data": "sine",
+    "loss": "mse",
+    "metric": "mse",
+    "problem": "vectors",
+    "lr": 1e-4,
+    "batch_size":64,
+    "n_points": 500000,
+    "sched_factor": 10,
+    "n_layers":4,
+    "hln": 129,
+    "network":"fcnn",
+    "prob": "regression" 
+}
