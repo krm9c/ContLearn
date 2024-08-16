@@ -57,9 +57,9 @@ class Trainer(eqx.Module):
     def loss_fn_class_graph(self, params, statics, x, y, adj=None):
         model = eqx.combine(params, statics)
         logits = jnp.stack([ model(x[i], adj[i]).T for i in range(len(x))]) 
-        y = jnp.stack(logits)
-        y= jax.nn.one_hot(y, num_classes=6)
-        return -jnp.mean(y * jax.nn.log_softmax(logits, axis = 2))
+        yhat = jnp.stack(logits)
+        y = jax.nn.one_hot(y, num_classes=6)
+        return -jnp.mean(y * jax.nn.log_softmax(yhat, axis=2))
 
     @eqx.filter_jit
     def loss_fn_mse_graph(self, params, statics, x, y, adj=None):
@@ -175,31 +175,27 @@ class Trainer(eqx.Module):
         # 
         
     # -------------------------------------------------------------------
+    # @eqx.filter_jit
     def return_Hamiltonian_graph(self, params, data):
         static, (x, y, adj, exp_x, exp_y, exp_adj, deltax) = data
         ##print("x", x.shape, "exp_x", exp_x.shape)
         x_tog = x+exp_x
         y_tog = y+exp_y 
         adj_tog = adj+exp_adj
-        
         #-------------------------------------------------------------------------------------------------------------
-        print("Term 1")
+        #print("Term 1")
         #-----------------------------------------------------------------------------------------------------------
         # Term 1 
         V_star_max = self.return_V_star(x_tog, params, (static, y_tog, adj_tog))
-        
-        
         #-------------------------------------------------------------------------------------------------------------
-        print("Term 2")
+        #print("Term 2")
         #-----------------------------------------------------------------------------------------------------------
         # Term 2
         dVstar_dx = jax.grad(self.return_V_star,argnums=(0))(exp_x, params, (static, exp_y, exp_adj))
         dVstar_dx_deltax = jnp.sum(jnp.array([ jnp.sum(jnp.trace( jnp.inner(dvstardx, dx ) ))\
             for dvstardx, dx  in zip(dVstar_dx, deltax)]))
-        
-        
         #-------------------------------------------------------------------------------------------------------------
-        print("Term 3")
+        # print("Term 3")
         #-------------------------------------------------------------------------------------------------------------
         # Term 3
         delta_theta   = jax.grad(self.return_V_star,argnums=(1) )(x_tog, params, (static, y_tog, adj_tog))
@@ -220,7 +216,6 @@ class Trainer(eqx.Module):
                 dVstar_dtheta_delta_theta+=jnp.sum(inner )
         # + +0*+ dVstar_dtheta_delta_theta 
         #+dVstar_dtheta_delta_theta+dVstar_dx_deltax
-        
         # #print(dVstar_dx_deltax.shape, dVstar_dtheta_delta_theta.shape, )
         return  (V_star_max+dVstar_dx_deltax+dVstar_dtheta_delta_theta),\
                 (V_star_max, dVstar_dx_deltax, dVstar_dtheta_delta_theta)
@@ -652,31 +647,26 @@ class Trainer(eqx.Module):
         pbar = tqdm(range(n_iter))
         # sum_delta_x =0
         for step in pbar:
-            x=[]
-            adj=[]
-            y=[]
-            exp_x=[]
-            exp_adj=[]
-            exp_y=[]
-            
-            batch = np_.random.randint(0, len(train), config["batch_size"])
-            for bb in batch:
-                x.append(memory_train[bb].x.numpy().astype(np_.float32))
-                adj.append(memory_train[bb].adj.numpy().astype(np_.float32))
-                y.append(memory_train[bb].y.numpy() )
-                
-            batch = np_.random.randint(0, len(memory_train), config["batch_size"])  
-            for bb in batch:
-                exp_x.append(memory_train[bb].x.numpy().astype(np_.float32))
-                exp_adj.append(memory_train[bb].adj.numpy().astype(np_.float32))
-                exp_y.append(memory_train[bb].y.numpy() )
-                
+            batch1 = np_.random.randint(0, len(train), 10).tolist()
+            batch2 = np_.random.randint(0, len(memory_train), 10).tolist()
+            x=[];y=[];adj=[];
+            exp_x=[];exp_y=[];exp_adj=[];
+            for b1, b2 in zip(batch1, batch2):
+                x.append(memory_train[b1].x.numpy().astype(np_.float32))
+                adj.append(memory_train[b1].adj.numpy().astype(np_.float32))
+                y.append(memory_train[b1].y.numpy() )
+                exp_x.append(memory_train[b2].x.numpy().astype(np_.float32))
+                exp_adj.append(memory_train[b2].adj.numpy().astype(np_.float32))
+                exp_y.append(memory_train[b2].y.numpy() )
+  
+                               
             # First problem, a distance metric, that does not care about the size of the nodes.
             delta_x = [np_.random.normal(0,
                 1e-05+jnp.linalg.norm(jnp.mean(a, axis=0)-jnp.mean(b, axis=0)),\
-                a.shape) for a,b in zip(exp_x, x) ]
+                a.shape) for a,b in zip(exp_x, x) ] 
             # sum_delta_x= [ jnp.sqrt((jnp.linalg.norm(jnp.stack(a) )**2)) for a in delta_x]
             # delta_x = [  a/b for a, b in zip(delta_x, sum_delta_x)]
+            
             data = static, ( x, y, adj, exp_x, exp_y, exp_adj, delta_x) 
             grad, losses = jax.grad(self.return_Hamiltonian_graph,\
                         argnums=(0), has_aux=True)(params,data)    
