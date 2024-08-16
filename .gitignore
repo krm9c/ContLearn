@@ -4,7 +4,8 @@ __pycache__/
 *$py.class
 data/
 notebooks/
-lgodir/
+logdir/
+*.pkl
 model/
 *.zip
 # C extensions
