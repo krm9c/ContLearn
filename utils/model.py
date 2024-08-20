@@ -61,31 +61,31 @@ class MLP(eqx.Module):
     
 
 
-class CNN(eqx.Module):
-    layers: list
+# # class CNN(eqx.Module):
+# #     layers: list
 
-    def __init__(self, key):
-        key1, key2, key3, key4 = jax.random.split(key, 4)
-        # Standard CNN setup: convolutional layer, followed by flattening,
-        # with a small MLP on top.
-        self.layers = [
-            eqx.nn.Conv2d(1, 3, kernel_size=4, key=key1),
-            eqx.nn.MaxPool2d(kernel_size=2),
-            jax.nn.relu,
-            jnp.ravel,
-            eqx.nn.Linear(1728, 512, key=key2),
-            jax.nn.sigmoid,
-            eqx.nn.Linear(512, 64, key=key3),
-            jax.nn.relu,
-            eqx.nn.Linear(64, 10, key=key4),
-            jax.nn.log_softmax,
-        ]
+# #     def __init__(self, key):
+# #         key1, key2, key3, key4 = jax.random.split(key, 4)
+# #         # Standard CNN setup: convolutional layer, followed by flattening,
+# #         # with a small MLP on top.
+# #         self.layers = [
+# #             eqx.nn.Conv2d(1, 3, kernel_size=4, key=key1),
+# #             eqx.nn.MaxPool2d(kernel_size=2),
+# #             jax.nn.relu,
+# #             jnp.ravel,
+# #             eqx.nn.Linear(1728, 512, key=key2),
+# #             jax.nn.sigmoid,
+# #             eqx.nn.Linear(512, 64, key=key3),
+# #             jax.nn.relu,
+# #             eqx.nn.Linear(64, 10, key=key4),
+# #             jax.nn.log_softmax,
+# #         ]
 
-    def __call__(self, x: Float[Array, "1 28 28"]) -> Float[Array, "10"]:
-        print(x.shape)
-        for layer in self.layers:
-            x = layer(x)
-        return x
+# #     def __call__(self, x: Float[Array, "1 28 28"]) -> Float[Array, "10"]:
+# #         print(x.shape)
+# #         for layer in self.layers:
+# #             x = layer(x)
+#         return x
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -205,31 +205,51 @@ class CNN(eqx.Module):
         x = jax.nn.relu(self.feed_layers[1](x))
         x = self.feed_layers[2](x)
         return x
-    
+class Pool:
+    def sum(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
+        out_shape = num_nodes.shape[0]
+        return jax.ops.segment_sum(x, batch, out_shape)
 
+    def mean(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
+        added = Pool.sum(x, batch, num_nodes)
+        return added / jnp.array(num_nodes).reshape([-1,1])
 
+    def max(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
+        return jax.ops.segment_max(x, batch, num_nodes.shape[0])
 
-        
-        
+    def identity(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
+        return x
 
 #---------------------------------------------------------------------------------------------------------
+# graph pooling wrapper
+from typing import Any, Callable
+class GraphPooling:
+    def __init__(self, pool: Callable) -> None:
+        self.pool = pool
+
+    def __call__(self, x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
+        return self.pool(x, batch, num_nodes)
+    
+
+# ---------------------------------------------------------------------------------------------------------
 ## GCN Layers
 class GCN(eqx.Module):
     weight: jax.Array
     bias: jax.Array
     sparse:bool
     bias_flag:bool
+    initializer: None
     def __init__(self, in_size, out_size, key, bias=True, sparse=False):
         self.bias_flag=bias
         self.sparse=sparse
+        self.initializer = jax.nn.initializers.glorot_uniform()
         wkey, bkey = jax.random.split(key)
         ## This needs to be taken care of    output_shape = in_size + (out_size,)
-        self.weight = jax.random.normal(wkey, (in_size, out_size))
+        self.weight = self.initializer(wkey, (in_size, out_size))
         if self.bias_flag:
-            self.bias = jax.random.normal(bkey, (1, out_size))
+            self.bias =self.initializer(bkey, (1, out_size))
         else:
             self.bias = None
-
 
     def matmul(self, A, B, shape):
         # print("adjacency", A.shape, "node", B.shape)
@@ -237,74 +257,84 @@ class GCN(eqx.Module):
             return sp_matmul(A, B, shape)
         else:
             return jnp.matmul(A, B)
-        
-
-
     def __call__(self, x, adj):
-        print("adj", adj.shape, "x shape", x.shape, "weight", self.weight.shape)
+        # print("adj", adj.shape, "x shape", x.shape, "weight", self.weight.shape)
         support = x @ self.weight
-        x = self.matmul(adj, support, support.shape[0])
+        # print("support", support.shape)
+        x = self.matmul(adj, support, support.shape)
         if self.bias_flag:
             x += self.bias
         return x
 
-
-class myNN(eqx.Module):
-  gcn_layers: list 
-  linear_layer:list
-  SEED:None
-  graph:bool
-  node_num:None
-  def __init__(self, in_size, hid_size, node_num, SEED=1234, out_size=2, graph = True):
-
-    # self.gcn_layers = [ GCN(in_size=in_size, out_size=hid_size, key = jax.random.PRNGKey(SEED)),
-    #                     GCN(in_size=hid_size, out_size=hid_size, key = jax.random.PRNGKey(SEED)),
-    #                     GCN(in_size=hid_size, out_size=out_size, key = jax.random.PRNGKey(SEED)),
-    # ]
-    self.SEED=SEED
-    self.graph=graph
-    self.node_num=node_num
-    self.gcn_layers = [
-                        MultiHeadGAT(n_heads = 5, in_size=in_size, out_size=hid_size, key = jax.random.PRNGKey(self.SEED)), 
-                        MultiHeadGAT(n_heads = 5, in_size=hid_size, out_size=hid_size, key = jax.random.PRNGKey(self.SEED))
-                      ]
-    
-    self.graph = graph
-    if self.graph:
-      self.linear_layer = [Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED)),
-                           Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED)),
-                           Linear(hid_size, out_size, key=jax.random.PRNGKey(self.SEED))
-      ]
-    else:
-      self.linear_layer = []
-      
-  def __call__(self, x, adj):
-    for layer in self.gcn_layers:
-        x = jax.nn.relu(layer(x, adj, jax.random.PRNGKey(self.SEED)) )
-    # print(x.shape)    
-    x = jnp.mean(x, axis = 0).reshape([-1, 1])
-    # print("mean pool shape", x.shape)
-    # ### pooling here
-    for layer in self.linear_layer:
-        x = jax.nn.relu(layer(x))
-    # print("The output size", x.shape)
-    return x
-
-
+# ---------------------------------------------------------------------------------------------------------
 ## Simple feedforward NN
 class Linear(eqx.Module):
     weight: jax.Array
     bias: jax.Array
+    initializer: None 
     def __init__(self, in_size, out_size, key):
+        self.initializer = jax.nn.initializers.glorot_uniform()
         wkey, bkey = jax.random.split(key)
-        self.weight = jax.random.normal(wkey, (out_size, in_size))
-        self.bias = jax.random.normal(bkey, (out_size,1))
+        self.weight = self.initializer(wkey, (out_size, in_size))
+        self.bias = self.initializer(bkey, (1, out_size))
     def __call__(self, x):
         # print(self.weight.shape, x.shape)
-        x = jnp.dot(self.weight, x) 
+        x = x @ self.weight.T
         # print(x.shape)
         x = x+ self.bias
+        # print(x.shape)
         return x
     
+
+
+# ---------------------------------------------------------------------------------------------------------
+class myNN(eqx.Module):
+  gcn_layers: list 
+  linear_layer:list
+  output_layer:None
+  pool_layer:None
+  SEED:None
+  graph:bool
+  node_num:None
+  def __init__(self, in_size, hid_size, node_num, SEED=1234, out_size=2, graph = True):
+    self.SEED=SEED
+    self.graph=graph
+    self.node_num=node_num
+    self.gcn_layers = [ 
+                        GCN(in_size=in_size, out_size=hid_size, key=jax.random.PRNGKey(self.SEED)),
+                        # GCN(in_size=hid_size, out_size=hid_size, key=jax.random.PRNGKey(self.SEED))
+                        # MultiHeadGAT(n_heads = 5, in_size=in_size, out_size=hid_size, key = jax.random.PRNGKey(self.SEED))
+                        #MultiHeadGAT(n_heads = 5, in_size=hid_size, out_size=hid_size, key = jax.random.PRNGKey(self.SEED))
+                      ]
+    self.graph = graph
+    if self.graph:
+      self.linear_layer = [# Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED)),
+                           Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED)),
+                           Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED))
+      ]
+      self.output_layer = Linear(hid_size, out_size, key=jax.random.PRNGKey(self.SEED))
+    else:
+      self.linear_layer = []
+    
+    self.pool_layer = GraphPooling(Pool.max)
+    
+    
+    
+  def __call__(self, x, adj, batch, n_nodes):
+    for layer in self.gcn_layers:
+        x = jax.nn.leaky_relu(layer(x, adj) )
+    # ------------------------------------
+    #  pooling here
+    x = self.pool_layer(x, batch, n_nodes)
+    # x = jnp.mean(x, axis = 0).reshape([-1, 1
+    # print(x.shape)
+    # print("linear")
+    for layer in self.linear_layer:
+        x = jax.nn.leaky_relu(layer(x))
+    # print("outputs")
+    x = self.output_layer(x)
+    # print("out", x.shape)
+    return x
+
 
 

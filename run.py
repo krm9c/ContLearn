@@ -67,43 +67,40 @@ class Params():
         """Gives dict-like access to Params instance by
           `params.dict['learning_rate']"""
         return self.__dict__
-
-
-
+    
 import random
-from torch.utils.data import Dataset, DataLoader
-import torch_geometric.transforms as T
-def continuum_Graph_classification(dataset, memory_train, memory_test, n_class):
-        transforms = T.ToDense()
-        tasks =  np.random.randint(0,n_class,2)
-        stack= [(dataset[j].y.numpy() in tasks) for j in range(len(dataset))]
-        datas = [ transforms(dataset[k]) for k,val in enumerate(stack) if val== True]
-        lengtha=len(datas)
-        print(datas[0].x.shape, datas[0].y.shape, datas[0].adj.shape)
-        random.shuffle(datas)
-        train_dataset = datas[:int(0.80*lengtha)]
-        test_dataset = datas[int(0.80*lengtha):]
-        memory_train+=train_dataset
-        memory_test+=test_dataset
-        
-        print(f'Number of training graphs: {len(train_dataset)}')
-        print(f'Number of test graphs: {len(test_dataset)}')    
-        print(f'Memory:  Number of training graphs: {len(memory_train)}')
-        print(f'Memory:  Number of test graphs: {len(memory_test)}')
-        return train_dataset, test_dataset, memory_train, memory_test 
+def continuum_Graph_classification(dataset, memory_train, n_class=6, select=2, batch_size=32):
+    tasks =  np.random.randint(0,n_class,select)
+    stack= [(dataset[j].y.numpy() in tasks) for j in range(len(dataset))]
+    datas = [dataset[k] for k,val in enumerate(stack) if val== True]
+    for k in range(len(datas)):
+        datas[k].n_nodes = datas[k].num_nodes
+    memory_train+=datas
+    from torch_geometric.loader import DataLoader
+    train_loader = DataLoader(datas, batch_size=batch_size, shuffle=True)
+    mem_train_loader = DataLoader(memory_train, batch_size=batch_size, shuffle=True)
+    return train_loader, mem_train_loader, memory_train
 
 
 def load_graph_data(data_label):   
     import torch    
+    def transform(data):
+            data.n_nodes = data.num_nodes
+            return data
+        
     if data_label == 'MUTAG' or data_label == 'ENZYMES' or data_label=='PROTEINS':
         from torch_geometric.datasets import TUDataset
-        dataset = TUDataset(root='data/TUDataset', name=data_label).shuffle()
+        dataset = TUDataset(root='data/TUDataset', name=data_label, transform=transform).shuffle()
+        length = len(dataset)
+        train__ = dataset[:int(0.80*length)]
+        test__ = dataset[int(0.80*length):]
+        # print("from the load dataset", data.x)
         print(f'Dataset: {dataset}:')
-        print('====================')
-        print(f'Number of graphs: {len(dataset)}')
+        print('======================')
+        print(f'Number of graphs: {len(train__)}')
         print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')
-        return dataset
+        print(f'Number of classes: {dataset.num_classes}')     
+        return train__, test__  
     elif data_label=='MNIST':
         from torch_geometric.datasets import GNNBenchmarkDataset
         dataset = GNNBenchmarkDataset(root='data/GNNBench', name='MNIST').shuffle()
@@ -147,8 +144,6 @@ def load_graph_data(data_label):
         print(data_label)
         from torch_geometric.datasets import MoleculeNet
         dataset = MoleculeNet(root='data/tox21', name="tox21")
-        data= dataset[0]
-        print(data)
         print("from the load dataset", data.x)
         print(f'Dataset: {dataset}:')
         print('======================')
@@ -156,6 +151,22 @@ def load_graph_data(data_label):
         print(f'Number of features: {dataset.num_features}')
         print(f'Number of classes: {dataset.num_classes}')
         return dataset
+    elif data_label=='synthetic':
+        from torch_geometric.datasets import FakeDataset
+        
+        dataset = FakeDataset(num_graphs= 1000, num_channels=5,\
+            avg_num_nodes=2, num_classes = 10, transform=transform).shuffle()
+        length = len(dataset)
+        train__ = dataset[:int(0.80*length)]
+        test__ = dataset[int(0.80*length):]
+        # print("from the load dataset", data.x)
+        print(f'Dataset: {dataset}:')
+        print('======================')
+        print(f'Number of graphs: {len(train__)}')
+        print(f'Number of features: {dataset.num_features}')
+        print(f'Number of classes: {dataset.num_classes}')     
+        return train__, test__  
+        
 
 
 def generate_sine(delta):
@@ -172,7 +183,6 @@ def generate_sine(delta):
     frequency= (np.random.random([total_samples,1])*60)*np.ones([total_samples, 1])
     amplitude= (np.random.random()*1)*np.ones([total_samples, 1])
     phase = (np.random.random()*90)*np.ones([total_samples, 1])
-    # print(frequency, amplitude, phase)
     for i in range(40):
         # y = np.zeros([total_samples, length_trajectory])
         # for j in range(total_samples):
@@ -204,7 +214,7 @@ def load_return_dataset(config):
 def load_checkpoint(config):
     trainer = Trainer(Loss=config['loss'], metric=config['metric'],
             problem=config['problem'], logdir=str(config['tensorfile']) )
-    dataset = load_return_dataset({
+    dataset, test = load_return_dataset({
                     'batch_size': 20,
                     'opt': 'Nash',
                     'problem': config['prob'],
@@ -216,11 +226,18 @@ def load_checkpoint(config):
     SEED = 5678
     if config['prob']=='graphclassification':
         memory_train=[]
-        memory_test=[]
-        train_dataset, test_dataset, memory_train, memory_test =\
+        _,_, memory_train =\
         continuum_Graph_classification(dataset, memory_train,\
-        memory_test, n_class=config['n_class'])
-        x= train_dataset[0].x
+        n_class=config['n_class'],\
+        select=config['class_per_task'])
+        x= memory_train[0].x
+        print(f'Number of training graphs: {len(dataset)}')
+        print(f'Number of test graphs: {len(dataset)}')    
+        print(f'Memory:  Number of training graphs: {len(memory_train)}')
+        print(f'Memory:  Number of test graphs: {len(test)}')
+        from torch_geometric.loader import DataLoader
+        test = DataLoader(test, batch_size=config['batch'], shuffle=True)
+    
     else:
         dataloader_curr, dataloader_exp = dataset.generate_dataset(task_id=0,\
                             batch_size=config['batch_size'], phase='training')
@@ -228,6 +245,9 @@ def load_checkpoint(config):
                         batch_size=config['batch_size'], phase='testing')
         x, y = next(iter(dataloader_curr))
         y = y.numpy().astype(np_.float64)
+        
+        
+    # Model definition
     if config['prob'] == 'regression':
         model = MLP(key=0, input_dim=x.shape[1],\
                 out_dim=y.shape[1], n_layers=config['n_layers'],\
@@ -237,7 +257,7 @@ def load_checkpoint(config):
         key, subkey = jax.random.split(key, 2)
         model = CNN(subkey)
     elif config['problem'] == 'graph':
-        model = myNN(in_size=x.shape[1], hid_size=1000,\
+        model = myNN(in_size=x.shape[1], hid_size=config["hln"],\
             node_num=x.shape[0], out_size=config['n_class']) 
     # model = eqx.tree_deserialise_leaves(
     # "../CL__jax/model/__MLP__task__9.eqx", model)
@@ -245,29 +265,27 @@ def load_checkpoint(config):
     # # initialize the loss function
     # func = trainer.return_loss_grad
     # initialize the optimizer
-    
     optim = optax.adamw(config['lr'])
-    
-    return trainer, optim, dataset, model 
+    return trainer, optim, dataset, test, model 
         
 
  
 def train_model_graph(config):
-    trainer, optim, data, model  = load_checkpoint(config)
+    trainer, optim, data, test, model  = load_checkpoint(config)
     params, static = eqx.partition(model, eqx.is_array)
     record_dict = {}
-    memory_test=[]
     memory_train=[]
+    
+    print(len(data), test)
     for i in range(config['n_task']):
         print("task--", i)       
-        train_dataset, test_dataset, memory_train, memory_test =\
+        train_loader, mem_train_loader, memory_train  =\
         continuum_Graph_classification(data, memory_train,\
-        memory_test, n_class=2)
-        params, static, optim, record_dict[str(i)] = trainer.train__CL__graph((memory_train, memory_test,\
-        train_dataset, test_dataset), params,static,\
-        optim, n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i, config={
-                    'batch_size': config['batch'],
-                    },\
+        n_class=config['n_class'],select=config['class_per_task'])
+        params, static, optim, record_dict[str(i)] = trainer.train__CL__graph((mem_train_loader,\
+            test, train_loader), params,static,\
+        optim, n_iter=config['epochs_per_task'], save_iter=config['save_iter'],\
+                task_id=i, config={'batch_size': config['batch'], 'flag':config['flag']},\
         dictum=record_dict )
     
     model = eqx.combine(params, static)
