@@ -83,12 +83,12 @@ class data_return():
 
         if self.dataset_id == 'sine':
             import pickle
-            with open('../CL__jax/Incremental_Sine1e^3.p', 'rb') as fp:
+            with open('data/Incremental_Sine1e^3.p', 'rb') as fp:
                 self.dataset = pickle.load(fp)
                 # #print("self dataset", self.dataset.keys())
         if self.dataset_id == 'synthetic':
             import pickle
-            with open('../CL__jax/synthetic.p', 'rb') as fp:
+            with open('../synthetic.p', 'rb') as fp:
                 self.dataset = pickle.load(fp)
 
 

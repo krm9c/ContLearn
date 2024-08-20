@@ -3,7 +3,7 @@
     "tensorfile": "logdir/tensorboard/loginducedCNN",
     "file": "logdir/dicts/loginducedCNN",
     "model_path": "model/CNN__",
-    "flag":[1, 0], 
+    "flag":[0, 0], 
     "n_task": 3,
     "epochs_per_task":2,
     "save_iter": 1,

@@ -1,8 +1,10 @@
 import jax
+import jax.numpy as jnp
 from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np 
-
+import scipy.sparse as sp
+import networkx as nx
 
 ############################################################################################################################
 @partial(jax.jit, static_argnums=(2))
@@ -22,6 +24,50 @@ def sp_matmul(A, B, shape):
     prod = in_*values[:, None]
     res = jax.ops.segment_sum(prod, rows, shape)
     return res
+
+
+
+def normalize(mx):
+    """Row-normalize sparse matrix"""
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+    mx = r_mat_inv.dot(mx)
+    return mx
+
+
+def preprocess_features(features):
+    """Row-normalize feature matrix."""
+    rowsum = np.array(features.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+    features = r_mat_inv.dot(features)
+    return features
+
+def to_sparse(adj):
+    return (adj.nonzero(), adj.data)
+
+import torch_geometric as pyg
+def normalize_adj(adj):
+    """Symmetrically normalize adjacency matrix."""
+    adj = pyg.utils.convert.to_scipy_sparse_matrix(adj)
+    rowsum = np.array(adj.sum(1))
+    d_inv_sqrt = np.power(rowsum, -0.5).flatten()
+    d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
+    d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
+    adj =  adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).tocoo()
+    return to_sparse(adj)
+
+
+def preprocess_adj(adj):
+    """Preprocessing of adjacency matrix for simple GCN model."""
+    adj_normalized = normalize_adj(adj + sp.eye(adj.shape[0]))
+    return adj_normalized
+
+
+
 
 
 ############################################################################################################################
