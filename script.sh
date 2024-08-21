@@ -43,8 +43,12 @@ conda activate jax__
 # Omni
 # python run.py train 1 "paramomni9.json" 
 # #--------------------------------------
-# # Graph
-python run.py train 5 "paramgraph0.json" 
+# # Graph Synthetic
+python run.py train 1 "paramgraph0.json" 
+# # Graph ENZYMES
+# python run.py train 1 "paramgraph1.json" 
+# # Graph MUTAG
+# python run.py train 5 "paramgraph2.json" 
 # #--------------------------------------
 
 

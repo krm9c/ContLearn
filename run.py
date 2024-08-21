@@ -71,14 +71,16 @@ class Params():
 import random
 def continuum_Graph_classification(dataset, memory_train, n_class=6, select=2, batch_size=32):
     tasks =  np.random.randint(0,n_class,select)
+    # tasks=[7, 9, 7]
     stack= [(dataset[j].y.numpy() in tasks) for j in range(len(dataset))]
     datas = [dataset[k] for k,val in enumerate(stack) if val== True]
     for k in range(len(datas)):
         datas[k].n_nodes = datas[k].num_nodes
     memory_train+=datas
     from torch_geometric.loader import DataLoader
-    train_loader = DataLoader(datas, batch_size=batch_size, shuffle=True)
-    mem_train_loader = DataLoader(memory_train, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(datas, batch_size=batch_size, shuffle=False)
+    mem_train_loader = DataLoader(memory_train, batch_size=batch_size, shuffle=False)
+    print("I am picking the classes", tasks, len(memory_train), len(datas), len(train_loader), len(mem_train_loader))
     return train_loader, mem_train_loader, memory_train
 
 
@@ -212,8 +214,7 @@ def load_return_dataset(config):
         return data_return(config) 
 
 def load_checkpoint(config):
-    trainer = Trainer(Loss=config['loss'], metric=config['metric'],
-            problem=config['problem'], logdir=str(config['tensorfile']) )
+    
     dataset, test = load_return_dataset({
                     'batch_size': 20,
                     'opt': 'Nash',
@@ -266,6 +267,10 @@ def load_checkpoint(config):
     # func = trainer.return_loss_grad
     # initialize the optimizer
     optim = optax.adamw(config['lr'])
+    trainer = Trainer(Loss=config['loss'], metric=config['metric'],
+            problem=config['problem'], logdir=str(config['tensorfile']) )
+
+    
     return trainer, optim, dataset, test, model 
         
 
@@ -285,7 +290,7 @@ def train_model_graph(config):
         params, static, optim, record_dict[str(i)] = trainer.train__CL__graph((mem_train_loader,\
             test, train_loader), params,static,\
         optim, n_iter=config['epochs_per_task'], save_iter=config['save_iter'],\
-                task_id=i, config={'batch_size': config['batch'], 'flag':config['flag']},\
+                task_id=i, config={'batch_size': config['batch']},\
         dictum=record_dict )
     
     model = eqx.combine(params, static)

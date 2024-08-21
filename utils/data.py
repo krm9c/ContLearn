@@ -44,10 +44,8 @@ class Continual_Dataset(Dataset):
             y_ = self.y[idx]
         sample = (x_, y_)
         return sample
-
+    
 ################################################
-
-
 class data_return():
     def __init__(self, Config= { 'data_id': 'sine',
                                  'len_exp_replay':200 
