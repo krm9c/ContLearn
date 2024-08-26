@@ -44,7 +44,7 @@ conda activate jax__
 # python run.py train 1 "paramomni9.json" 
 # #--------------------------------------
 # # Graph Synthetic
-python run.py train 1 "paramgraph0.json" 
+python run.py train 2 "paramgraph0.json" 
 # # Graph ENZYMES
 # python run.py train 1 "paramgraph1.json" 
 # # Graph MUTAG
