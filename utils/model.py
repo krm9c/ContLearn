@@ -337,6 +337,3 @@ class myNN(eqx.Module):
     x = self.output_layer(x)
     # print("out", x.shape)
     return x
-
-
-
