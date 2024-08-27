@@ -5,7 +5,7 @@
     "model_path": "model/CNN__",
     "flag":[1, 1], 
     "n_task": 3,
-    "epochs_per_task":2000,
+    "epochs_per_task":200,
     "save_iter": 10,
     "data": "omni",
     "loss": "class",

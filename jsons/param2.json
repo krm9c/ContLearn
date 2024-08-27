@@ -5,7 +5,7 @@
     "model_path": "model/MLP__04_",
     "flag":[1, 1], 
     "n_task": 10,
-    "epochs_per_task":1000,
+    "epochs_per_task":100,
     "save_iter": 1,
     "data": "sine",
     "loss": "mse",

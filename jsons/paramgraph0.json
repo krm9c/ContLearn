@@ -4,7 +4,7 @@
     "file": "logdir/dicts/GNN_long",
     "model_path": "model/GNN__long",
     "n_task": 10,
-    "epochs_per_task":1500,
+    "epochs_per_task":150,
     "save_iter": 5,
     "data": "synthetic",
     "loss": "class",
