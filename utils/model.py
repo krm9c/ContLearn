@@ -50,7 +50,7 @@ class MLP(eqx.Module):
             hln, hln, key=jax.random.PRNGKey(i)) for i in range(1, n_layers-2)]
         self.output_layers =  eqx.nn.Linear( hln, out_dim, key=jax.random.PRNGKey(n_layers-1))
 
-    def __call__(self, x, actfunc__=jax.nn.relu, outfunc=None):
+    def __call__(self, x, actfunc__=jax.nn.tanh, outfunc=None):
         x = actfunc__(self.input_layer(x))
         for element in self.feed_layers:
             x = actfunc__(element(x))
@@ -205,6 +205,8 @@ class CNN(eqx.Module):
         x = jax.nn.relu(self.feed_layers[1](x))
         x = self.feed_layers[2](x)
         return x
+    
+    
 class Pool:
     def sum(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
         out_shape = num_nodes.shape[0]
