@@ -81,7 +81,7 @@ class data_return():
 
         if self.dataset_id == 'sine':
             import pickle
-            with open('data/Incremental_Sine1e^3.p', 'rb') as fp:
+            with open('data/Incremental_Sine1e^4.p', 'rb') as fp:
                 self.dataset = pickle.load(fp)
                 # #print("self dataset", self.dataset.keys())
         if self.dataset_id == 'synthetic':
@@ -102,8 +102,10 @@ class data_return():
 ###############################################
     # This is the omniglot dataset function.
     def omni(self, task_id):
-        task_id = int(task_id)
-        idx = self.labels == task_id
+        tasks =  np.random.randint(0,10,3)
+        idx= [(self.labels[j] in tasks) for j in range(len(self.labels))]
+        # task_id = int(task_id)
+        # idx = self.labels == task_id
         X = self.images[idx]
         y = self.labels[idx]
         # Split the data

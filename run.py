@@ -197,7 +197,7 @@ def generate_sine(delta):
         data['task'+str(i)] = (y, time, phase, amplitude, frequency)
 
     print("Pickling  samples...")
-    with open('Incremental_Sine1e^3.p', 'wb') as fp:
+    with open('Incremental_Sine1e^4.p', 'wb') as fp:
         pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
     print("Finished Pickling")
         
@@ -215,7 +215,9 @@ def load_return_dataset(config):
 
 def load_checkpoint(config):
     
-    dataset, test = load_return_dataset({
+    SEED = 5678
+    if config['prob']=='graphclassification':
+        dataset, test = load_return_dataset({
                     'batch_size': 20,
                     'opt': 'Nash',
                     'problem': config['prob'],
@@ -224,8 +226,7 @@ def load_checkpoint(config):
                     'network': config['network'],
                     'delta': config['delta']
                     })
-    SEED = 5678
-    if config['prob']=='graphclassification':
+        
         memory_train=[]
         _,_, memory_train =\
         continuum_Graph_classification(dataset, memory_train,\
@@ -238,40 +239,71 @@ def load_checkpoint(config):
         print(f'Memory:  Number of test graphs: {len(test)}')
         from torch_geometric.loader import DataLoader
         test = DataLoader(test, batch_size=config['batch'], shuffle=True)
-    
+        
+            # Model definition
+        if config['prob'] == 'regression':
+            model = MLP(key=0, input_dim=x.shape[1],\
+                    out_dim=y.shape[1], n_layers=config['n_layers'],\
+                    hln=config['hln'])
+        elif config['prob'] == 'classification':
+            key = jax.random.PRNGKey(SEED)
+            key, subkey = jax.random.split(key, 2)
+            model = CNN(subkey)
+        elif config['problem'] == 'graph':
+            model = myNN(in_size=x.shape[1], hid_size=config["hln"],\
+                node_num=x.shape[0], out_size=config['n_class']) 
+        # model = eqx.tree_deserialise_leaves(
+        # "../CL__jax/model/__MLP__task__9.eqx", model)
+        # params, static = eqx.partition(model, eqx.is_array)
+        # # initialize the loss function
+        # func = trainer.return_loss_grad
+        # initialize the optimizer
+        optim = optax.adamw(config['lr'])
+        trainer = Trainer(Loss=config['loss'], metric=config['metric'],
+                problem=config['problem'], logdir=str(config['tensorfile']) )
+        
+        return trainer, optim, dataset, test, model 
+
     else:
+        dataset = load_return_dataset({
+                    'batch_size': 20,
+                    'opt': 'Nash',
+                    'problem': config['prob'],
+                    'data_id': config['data'],
+                    'len_exp_replay': 20000,
+                    'network': config['network'],
+                    'delta': config['delta']
+                    })
         dataloader_curr, dataloader_exp = dataset.generate_dataset(task_id=0,\
                             batch_size=config['batch_size'], phase='training')
         test_loader_curr, test_loader_exp = dataset.generate_dataset(task_id=0,\
                         batch_size=config['batch_size'], phase='testing')
         x, y = next(iter(dataloader_curr))
         y = y.numpy().astype(np_.float64)
+             # Model definition
+        if config['prob'] == 'regression':
+            model = MLP(key=0, input_dim=x.shape[1],\
+                    out_dim=y.shape[1], n_layers=config['n_layers'],\
+                    hln=config['hln'])
+        elif config['prob'] == 'classification':
+            key = jax.random.PRNGKey(SEED)
+            key, subkey = jax.random.split(key, 2)
+            model = CNN(subkey)
+        elif config['problem'] == 'graph':
+            model = myNN(in_size=x.shape[1], hid_size=config["hln"],\
+                node_num=x.shape[0], out_size=config['n_class']) 
+        # model = eqx.tree_deserialise_leaves(
+        # "../CL__jax/model/__MLP__task__9.eqx", model)
+        # params, static = eqx.partition(model, eqx.is_array)
+        # # initialize the loss function
+        # func = trainer.return_loss_grad
+        # initialize the optimizer
+        optim = optax.adam(config['lr'])
+        trainer = Trainer(Loss=config['loss'], metric=config['metric'],
+                problem=config['problem'], logdir=str(config['tensorfile']) )
         
-        
-    # Model definition
-    if config['prob'] == 'regression':
-        model = MLP(key=0, input_dim=x.shape[1],\
-                out_dim=y.shape[1], n_layers=config['n_layers'],\
-                hln=config['hln'])
-    elif config['prob'] == 'classification':
-        key = jax.random.PRNGKey(SEED)
-        key, subkey = jax.random.split(key, 2)
-        model = CNN(subkey)
-    elif config['problem'] == 'graph':
-        model = myNN(in_size=x.shape[1], hid_size=config["hln"],\
-            node_num=x.shape[0], out_size=config['n_class']) 
-    # model = eqx.tree_deserialise_leaves(
-    # "../CL__jax/model/__MLP__task__9.eqx", model)
-    # params, static = eqx.partition(model, eqx.is_array)
-    # # initialize the loss function
-    # func = trainer.return_loss_grad
-    # initialize the optimizer
-    optim = optax.adamw(config['lr'])
-    trainer = Trainer(Loss=config['loss'], metric=config['metric'],
-            problem=config['problem'], logdir=str(config['tensorfile']) )
 
-    
-    return trainer, optim, dataset, test, model 
+        return trainer, optim, dataset, model 
         
 
  
@@ -295,13 +327,10 @@ def train_model_graph(config):
     
     model = eqx.combine(params, static)
     eqx.tree_serialise_leaves(config['model_path']+'.eqx', model)
-    
     del model
     del params
-    del static
-    
+    del static    
     return record_dict
-
   
 def train_model_reg(config):
     trainer, optim, data, model  = load_checkpoint(config)
@@ -310,18 +339,18 @@ def train_model_reg(config):
     for i in range(config['n_task']):
         print("task--", i)       
         if i==0:
-            dataloader_curr, _=\
+            dataloader_curr, dataloader_exp=\
             data.generate_dataset(task_id=i,
             batch_size=config['batch_size'], phase='training')
-            test_loader_curr, _=\
+            test_loader_curr, test_loader_exp=\
                 data.generate_dataset(task_id=i,
                 batch_size=config['batch_size'],\
                 phase='testing')
-            params, static, optim, record_dict[str(i)] =  trainer.train__CL__reg(dataloader_curr,\
-            dataloader_curr, (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
+            params, static, optim, record_dict[str(i)] =  trainer.train__CL__reg((dataloader_curr,\
+            dataloader_exp, (test_loader_curr, test_loader_exp), (test_loader_curr, test_loader_exp)),\
             params, static, optim,  n_iter=config['epochs_per_task'],\
             save_iter=config['save_iter'], task_id=i, config={
-                    'batch_size': 20,
+                    'batch_size': 64,
                     'opt': 'Nash',
                     'problem': config['problem'],
                     'data_id': config['data'],
@@ -338,8 +367,8 @@ def train_model_reg(config):
                 batch_size=config['batch_size'],\
                 phase='testing')
             params, static, optim, record_dict[str(i)] =\
-            trainer.train__CL__reg(dataloader_curr,dataloader_curr,\
-            (test_loader_curr, test_loader_curr), (test_loader_curr, test_loader_curr),\
+            trainer.train__CL__reg( (dataloader_curr,dataloader_exp,\
+            (test_loader_curr, test_loader_exp), (test_loader_curr, test_loader_exp)),\
             params, static, optim,  n_iter=config['epochs_per_task'],\
             save_iter=config['save_iter'], task_id=i, config={
                     'batch_size': 20,
@@ -374,8 +403,8 @@ def train_model_class(config):
                 batch_size=config['batch_size'],\
                 phase='testing')
             params, static, optim, dict[str(i)] =\
-            trainer.train__CL__class(dataloader_curr, dataloader_curr, (test_loader_curr, test_loader_curr),\
-            (test_loader_curr, test_loader_curr), params, static, optim, \
+            trainer.train__CL__class( (dataloader_curr, dataloader_curr, (test_loader_curr, test_loader_curr),\
+            (test_loader_curr, test_loader_curr)), params, static, optim, \
             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i,config={
                     'batch_size': config['batch_size'],
                     'opt': 'Nash',
@@ -393,9 +422,9 @@ def train_model_class(config):
                 data.generate_dataset(task_id=i,
                 batch_size=config['batch_size'],\
                 phase='testing')
-            params, static, optim_outer, dict[str(i)]=\
-            trainer.train__CL__class(dataloader_curr, dataloader_exp,\
-            (test_loader_curr, test_loader_exp), (test_loader_curr, test_loader_exp),params, static, optim, \
+            params, static, optim, dict[str(i)]=\
+            trainer.train__CL__class((dataloader_curr, dataloader_exp,\
+            (test_loader_curr, test_loader_exp), (test_loader_curr, test_loader_exp)),params, static, optim, \
             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], task_id=i,config={
                     'batch_size': 20,
                     'opt': 'Nash',
@@ -443,9 +472,7 @@ if __name__ == "__main__":
     )
     subparsers = parser.add_subparsers(help='', dest='command')
     
-    
-    
-    
+
     train_parser = subparsers.add_parser("train")
     train_parser.add_argument("runs", default=1, help="the number of total runs")
     train_parser.add_argument("json", default=None, help="directory with configurations")

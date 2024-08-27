@@ -3,11 +3,10 @@
     "tensorfile": "logdir/tensorboard/loginducedCNN",
     "file": "logdir/dicts/loginducedCNN",
     "model_path": "model/CNN__",
-    "flag":[0, 0], 
+    "flag":[1, 1], 
     "n_task": 3,
-    "epochs_per_task":2,
-    "save_iter": 1,
-
+    "epochs_per_task":2000,
+    "save_iter": 10,
     "data": "omni",
     "loss": "class",
     "metric": "class",
@@ -16,6 +15,6 @@
     "batch_size":128,
     "n_layers":4,
     "network": "cnn",
-    "hln": 129,
+    "hln": 128,
     "prob": "classification" 
 }
