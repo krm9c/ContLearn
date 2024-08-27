@@ -462,7 +462,6 @@ def train_model_class(config):
 #   time_arr = df_test['time'].values
 #   plot_error_graphics(time_arr[0], df_test,filename=save_path+"error_graphics.png")
     
-
 ########################################################################
 ## The main run loop
 if __name__ == "__main__":
