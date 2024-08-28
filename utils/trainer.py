@@ -279,10 +279,13 @@ class Trainer(eqx.Module):
     def return_Hamiltonian_mse(self, params, data):
         statics, (x, y, exp_x, exp_y, deltax, flag)  = data
         extra=y
+        
+        # This next function calculates the loss value
         def return_V_star_vector_mse(params, x):
             y = extra
             model = eqx.combine(params, statics)
             return jnp.mean(optax.l2_loss(y, jax.vmap(model)(x)))
+        
         def norm_param(x):
             return (x*-1) # (-1*1e-0/jnp.sqrt(jnp.linalg.norm(x**2))))
         
@@ -291,7 +294,6 @@ class Trainer(eqx.Module):
         delta_theta= jax.grad(return_V_star_vector_mse,argnums=(0))(params, x) 
         wdot= jax.tree_util.tree_map(norm_param, delta_theta)
         zero_dtheta = jax.tree_util.tree_map(np.zeros_like, delta_theta)
-        
         extra = exp_y
         grad_V =  jax.grad(return_V_star_vector_mse,argnums=(0))(params, exp_x) 
         V, f_jvp = jax.linearize(return_V_star_vector_mse, params, exp_x)
