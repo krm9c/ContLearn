@@ -72,7 +72,6 @@ class Trainer(eqx.Module):
         logits = jnp.concatenate(array_log)
         return jax.nn.log_softmax(logits, axis = 1)
     
-    
     # -------------------------------------------------------------------
     @eqx.filter_jit
     def mse_graphs(self, params, statics, x, y, adj):
@@ -81,8 +80,6 @@ class Trainer(eqx.Module):
     
 
     # ------------------------------------------------------------ Graphs
-    
-
     @eqx.filter_jit
     def get_pred(self, params, statics, x):
         model = eqx.combine(params, statics)
