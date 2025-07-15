@@ -219,10 +219,8 @@ class Trainer(eqx.Module):
     #     primal_val, tang_val = eqx.filter_jvp(fun, primal,\
     #                                           tangents, data = aux) 
     #     return primal_val+tang_val, (primal_val.item(), tang_val.item())
-    
-    
-    
-        
+
+ 
     # ---------------------------------------------------------------------------------------------
     def return_Hamiltonian_graph(self, params, data):
         
@@ -898,9 +896,6 @@ class Trainer(eqx.Module):
         return params, static, optim, dictum
     
     
-
-
-
 # # ---------------------------------------------------------------------    
 #     def train__CL__class(self, train__, params,\
 #                     static, optim, n_iter=1000,\
