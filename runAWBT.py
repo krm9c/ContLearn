@@ -473,13 +473,333 @@ def train_model_reg_AWB(config):
     del model #delete model to free memory
     del params #delete params to free memory
     del static #delete static to free memory  
-    return record_dict_preAB, record_dict_AB,record_dict #dictionary containing info from CL trainining. In particular, '(V, dV, dVstar_dx, dVstar_dtheta, H, grad_norm, grad_norm)' for each task and 'train', 'test', etc.
+    return record_dict #dictionary containing info from CL trainining. In particular, '(V, dV, dVstar_dx, dVstar_dtheta, H, grad_norm, grad_norm)' for each task and 'train', 'test', etc.
 
 
 #=================Architecture Search for Classification Problem===================#
 #note: I am still debugging this. Will be added by end of week. Once in place it impacts
 #a single line in the 'train_model_classification_AWB' function. This will be very easy to add
 #in future.
+def arch_searchCNN(prev_filter_size,prev_feed_sizes,i,trainWLoss,og_epochs,config,dataloader_curr, dataloader_exp,test_loader_curr,test_loader_exp):
+    print("ARCH SEARCH CNN")
+
+#=================Prep A and B for Classification Problem===================#
+#note: chose to outsource this bit because it is repeated multiple times in next function
+def prepABs(model,prev_feed_sizes,prev_filter_size):
+    opt_MLParch = model.feed_sizes
+    opt_filter = model.filter_size
+    initializer = jax.nn.initializers.glorot_uniform()
+    if (prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter !=prev_filter_size):
+        print("New feed AND conv!!!------------------")
+        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[1:],opt_MLParch[1:])]
+        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[:-1],opt_MLParch[:-1])]
+        B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+    elif(prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter ==prev_filter_size):
+        print("New FEED ONLY!!!------------------")
+        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[1:],opt_MLParch[1:])]
+        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[:-1],opt_MLParch[:-1])]
+        #set conv A's B's to identity to keep them
+        B_conv = [jnp.eye(opt_filter,opt_filter) for j in range(0,model.channel_out)]
+        A_conv = [jnp.eye(opt_filter,opt_filter) for j in range(0,model.channel_out)]
+    else:
+        print("New CONV ONLY!!!------------------")
+        B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        #set feed A's B's to identity to keep them
+        A_feed = [jnp.eye(x,x) for x in prev_feed_sizes[1:]]
+        B_feed = [jnp.eye(x,x) for x in prev_feed_sizes[:-1]]
+    return A_feed, B_feed, A_conv, B_conv
 
 
-#
+#=================Train Classification Problem===================#
+def train_model_class(config):
+    """
+    GOAL: construct and CL train a model which is for a classification problem
+
+    ARGUMENTS:
+        config: Python dictionary (i.e. parameters for NN and other information. This was retrieved via JSON file in main)
+
+    RETURNS:
+        dict: dictionary 
+    """
+    trainer, optim, data, model  = load_checkpoint_AWB(config)
+    params, static = eqx.partition(model, eqx.is_array)
+    record_dict = {}
+    record_dict_preAB = {}
+    record_dict_AB = {}
+    #reintialize A's and B's to static (they are put into params when we use eqx.partition(eqx.is_array))
+    static = eqx.tree_at(lambda x: x.A_conv, static, replace= model.A_conv)
+    static = eqx.tree_at(lambda x: x.B_conv, static, replace= model.B_conv)
+    static = eqx.tree_at(lambda x: x.A_feed, static, replace= model.A_feed)
+    static = eqx.tree_at(lambda x: x.B_feed, static, replace= model.B_feed)
+    params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), params, replace= (None,None,None,None))
+
+    for i in range(config['n_task']):
+        print("task--", i)
+        # complete standard training for task i=0, no arch search or transfering to new arch       
+        if i==0:
+            dataloader_curr, _= data.generate_dataset(task_id=i, batch_size=config['batch_size'], phase='training')
+            #RECALL: 'data' is a 'data_return()' object from utils.data.py, and 'generate_dataset' is a method in that class. It returns
+            #'dataloader_curr' and '_' are DataLoader() objects containing data for task 'i'. This means they are iterables where each iterate
+            #is a batch of the data in the corresponding datasets.
+            
+            test_loader_curr, _= data.generate_dataset(task_id=i, batch_size=config['batch_size'], phase='testing')
+            #RECALL: 'data' is a 'data_return()' object from utils.data.py, and 'generate_dataset' is a method in that class. It returns
+            #'test_loader_curr' and '_' are DataLoader() objects containing data for task 'i'. This means they are iterables where each iterate 
+            #is a batch of the data in the corresponding datasets.
+            """
+            NOTES on 'train__CL__class': Only difference between 'train__CL__class' and 'train__CL__reg' is the function in 'return_Hamiltonian_class'
+            The function does a softmax_cross_entropy on predicted values rather than l2. Rest is the same. See other file for more extensive notes.
+            """
+            #og_epochs = 50
+            og_epochs = config['epochs_per_task']
+            params, static, optim, record_dict[str(i)] = trainer.train__CL__class_AWB( (dataloader_curr, dataloader_curr, (test_loader_curr, test_loader_curr),\
+                                                    (test_loader_curr, test_loader_curr)), params, static, optim, n_iter=og_epochs, \
+                                                     save_iter=config['save_iter'], task_id=i,config={
+                                                        'batch_size': config['batch_size'],
+                                                        'opt': 'Nash',
+                                                        'problem': config['prob'],
+                                                        'data_id': config['data'],
+                                                        'len_exp_replay': 20000,
+                                                        "flag": config['flag'],
+                                                        'network': config['network'],
+                                                        }, dictum = record_dict)
+            optim1 = optim
+            #print("this is the dict:" , record_dict[str(i)])
+
+        # For tasks i = 1 and beyond, search for opt arch and then transfer to new architecture if found
+        else:
+            dataloader_curr, dataloader_exp= data.generate_dataset(task_id=i, batch_size=config['batch_size'], phase='training')
+            test_loader_curr, test_loader_exp= data.generate_dataset(task_id=i, batch_size=config['batch_size'], phase='testing')
+       
+            #----------------------STEP 1: Train task i for some epochs----------------------#
+            print("STEP 1: Train W for a little bit on new task-------------")
+            og_epochs = 100
+            params, static, optim1, record_dict_preAB[str(i)]= trainer.train__CL__class_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                           (test_loader_curr, test_loader_exp)),params, static, optim1, \
+                                                                          n_iter=og_epochs, save_iter=config['save_iter'], \
+                                                                          task_id=i,config={
+                                                                            'batch_size': 20,
+                                                                            'opt': 'Nash',
+                                                                            'problem': config['prob'],
+                                                                            'data_id': config['data'],
+                                                                            'len_exp_replay': 20000,
+                                                                            "flag": config['flag'],
+                                                                            'network': config['network'],
+                                                                            }, dictum = record_dict_preAB)
+            print()
+            arch_dict = record_dict_preAB[str(i)]
+            trainWLoss = np.mean([arch_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,21)])
+            #-----------------STEP 2: Search for new architecture (filter size and MLP size)------------#
+            print("STEP 2: Find new architecture (arch search in future)----------")
+            #We will incorporate search later, set new arch for now
+            prev_feed_sizes = model.feed_sizes
+            prev_filter_size = model.filter_size
+            #opt_filter, opt_MLParch = arch_searchCNN(prev_filter_size,prev_feed_sizes,i,trainWLoss,og_epochs,config,dataloader_curr, dataloader_exp,test_loader_curr,test_loader_exp)
+            opt_MLParch = [1875,700,100,10]
+            opt_filter = 4
+            print("NEW  FILTER Architecture: ", opt_filter)
+            print("NEW MLP Arch: ", opt_MLParch)
+            print()
+            #
+
+            #if a different architecture was chosen then use our method to transfer to new arch
+            if (prev_feed_sizes[1:3] != opt_MLParch[1:3]) or (opt_filter !=prev_filter_size):
+                #----------------STEP 3a: Set New Architecture and Reinitialize A's and B's accordingly------#
+                print("STEP 3A: Set new architecture and A's, B's----------------")
+                conv_output_size = model.calc_output_size(opt_filter)
+                maxpool_output_size = model.pool_output_size(2,conv_output_size)
+                #set MLP input layer to correct size correspongding to new filter size output for Convnet layer
+                opt_MLParch[0] = maxpool_output_size*maxpool_output_size*model.channel_out
+                #print("this is the new spot 1 after!!!:==============", opt_MLParch[0])
+                model = eqx.combine(params,static) #put back model
+                model = eqx.tree_at(lambda x: x.feed_sizes, model, opt_MLParch) #set new arch
+                model = eqx.tree_at(lambda x: x.filter_size, model, opt_filter) #set new filter
+                #initialize and set A's and B's according to optimal architecture found
+                A_feed, B_feed, A_conv, B_conv = prepABs(model, prev_feed_sizes, prev_filter_size)
+                model = eqx.tree_at(lambda x: (x.A_feed, x.B_feed, x.A_conv, x.B_conv), model, replace = (A_feed, B_feed, A_conv, B_conv))
+                #print("model after setting everything: ", model)
+                #print("A_conv: ", model.A_conv[0])
+                #print("A_feed: ", model.A_feed[0])
+                #print("conv weights before: ", model.conv_layers[0].weight)
+                #print("feed weights before: ", model.feed_layers[0].weight)
+                og_epochs = 100
+                model1 = model
+                if (prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter !=prev_filter_size):
+                    print("New feed AND conv!!!------------------")
+                    filter_spec = jtu.tree_map(lambda _: False, model1) #this is a copy of the model
+                    filter_spec = eqx.tree_at(lambda x: (x.A_conv,x.B_conv, x.A_feed, x.B_feed), filter_spec, replace=(True,True,True, True),)
+                    #filter_spec = eqx.tree_at(lambda x: x.layers, filter_spec, replace=True,)
+                elif(prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter ==prev_filter_size):
+                    print("New FEED ONLY!!!------------------")
+                    filter_spec = jtu.tree_map(lambda _: False, model1) #this is a copy of the model
+                    filter_spec = eqx.tree_at(lambda x: (x.A_feed, x.B_feed), filter_spec, replace=(True,True),)
+                    #filter_spec = eqx.tree_at(lambda x: x.layers, filter_spec, replace=True,)
+                else:
+                    print("New CONV ONLY!!!------------------")
+                    filter_spec = jtu.tree_map(lambda _: False, model1) #this is a copy of the model
+                    filter_spec = eqx.tree_at(lambda x: (x.A_conv,x.B_conv), filter_spec, replace=(True,True),)
+                    #filter_spec = eqx.tree_at(lambda x: x.layers, filter_spec, replace=True,)
+
+                #---------------STEP 3b: Train ONLY A's and B's---------------------#
+                print("STEP 3B: Train ONLY on the A's and B's; fix W----------------")
+                diff_model, static_model = eqx.partition(model, filter_spec) #makes weights static and A's, B's params
+                #print("MAKE AB Params diff_model: ", diff_model)
+                #print("MAKE Weights Static static_model: ", static_model)
+                import optax
+                optim2 = optax.adamw(1e-4) #set new optimizer
+                #Train A's and B's only; weights are frozen
+                diff_model, static_model, optim2, record_dict_AB[str(i)] =  trainer.train__CL__class_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                                (test_loader_curr, test_loader_exp)),diff_model, static_model, optim2, \
+                                                                                n_iter=og_epochs, save_iter=config['save_iter'], \
+                                                                                task_id=i,config={
+                                                                                    'batch_size': 20,
+                                                                                    'opt': 'Nash',
+                                                                                    'problem': config['prob'],
+                                                                                    'data_id': config['data'],
+                                                                                    'len_exp_replay': 20000,
+                                                                                    "flag": config['flag'],
+                                                                                    'network': config['network'],
+                                                                                    },dictum = record_dict_AB, notABTrain=False)
+                AB_dict = record_dict_AB[str(i)]
+                trainABLoss = np.mean([AB_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+                prevABLoss = trainABLoss
+                a=1
+                # Below we incorporate a form of metric for A and B training. We continue to train for a
+                #set number of epochs on A and B until the loss value on A and B is 80% of the loss value
+                #for training on original architecture. This insures both improvement will occur and overfitting
+                #will not occur.
+                og_epochs = 100
+                if (trainABLoss>.5):
+                        og_epochs = 300
+                while (trainABLoss>trainWLoss*.8):
+                    diff_model, static_model, optim2, record_dict_AB[str(i)] =  trainer.train__CL__class_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                                (test_loader_curr, test_loader_exp)),diff_model, static_model, optim2, \
+                                                                                n_iter=og_epochs, save_iter=config['save_iter'], \
+                                                                                task_id=i,config={
+                                                                                    'batch_size': 20,
+                                                                                    'opt': 'Nash',
+                                                                                    'problem': config['prob'],
+                                                                                    'data_id': config['data'],
+                                                                                    'len_exp_replay': 20000,
+                                                                                    "flag": config['flag'],
+                                                                                    'network': config['network'],
+                                                                                    },dictum = record_dict_AB, notABTrain=False)
+                    AB_dict = record_dict_AB[str(i)]
+                    prevABLoss = trainABLoss
+                    trainABLoss = np.mean([AB_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,15)])
+                    a +=1
+                    print("AB Loss after AB training iteration ", a-1, ": ", trainABLoss)
+                    if trainABLoss<.1:
+                        og_epochs = 100
+                    if trainABLoss>prevABLoss:
+                        print("increasing break out")
+                        break
+                    if a==7:
+                        print("too many AB training iterations, breaking out of AB training loop")
+                        break
+                model = eqx.combine(diff_model,static_model) #recombine params and statics
+                print("A_conv: ", model.A_conv[0])
+                print("A_feed: ", model.A_feed[0])
+                print("conv weights before: ", model.conv_layers[0].weight)
+                print("feed weights before: ", model.feed_layers[0].weight)
+                print()
+                #--------------Step 4: Set V = AWB^T for ConvNet and MLP--------------------#
+                print("STEP 4: Set new V = AWB^T weights------------------")
+                #set V for convolutional layer
+                if (opt_filter !=prev_filter_size):
+                    weights_list = [[(model.A_conv[i]@(model.conv_layers[0].weight[i][0])@jnp.transpose(model.B_conv[i]))] for i in range(0,model.channel_out)]
+                    weights_list = jnp.array(weights_list)
+                    model = eqx.tree_at(lambda x: x.conv_layers[0].weight, model, replace = weights_list)
+                #set MLP layers
+                if (prev_feed_sizes[1:3] != opt_MLParch[1:3]):
+                    for j in range(0,len(model.feed_layers)):
+                        Vw = model.A_feed[j] @ model.feed_layers[j].weight @ jnp.transpose(model.B_feed[j])
+                        #print("Vw shape: ", Vw.shape)
+                        Vb = (model.A_feed[j]@model.feed_layers[j].bias)
+                        #print("Vb shape: ", Vb.shape)
+                        model = eqx.tree_at(lambda x: x.feed_layers[j].weight, model, Vw)
+                        model = eqx.tree_at(lambda x: x.feed_layers[j].bias, model, Vb)
+                    #print("MODEL AFTER V: ", model)
+
+                #reset params and static
+                params, static = eqx.partition(model, eqx.is_array)
+                #print("here is params: ", params)
+                #print("here is static", static)
+                #reset A's and B's as statics again
+                static = eqx.tree_at(lambda x: x.A_conv, static, replace= model.A_conv)
+                static = eqx.tree_at(lambda x: x.B_conv, static, replace= model.B_conv)
+                static = eqx.tree_at(lambda x: x.A_feed, static, replace= model.A_feed)
+                static = eqx.tree_at(lambda x: x.B_feed, static, replace= model.B_feed)
+                params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), params, replace= (None,None,None,None))
+                #print("here is params AFTER: ", params)
+                #print("here is static AFTER:", static)
+                #--------------Step 5: Train on V for all epochs---------------------------#
+                print("STEP 5: Train CNN on new weights and record---------------")
+                optim3 = optax.adamw(1e-4)
+                optim1 = optim3
+                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                            (test_loader_curr, test_loader_exp)),params, static, optim1, \
+                                                                            n_iter=config['epochs_per_task'], save_iter=config['save_iter'], \
+                                                                            task_id=i,config={
+                                                                                'batch_size': 20,
+                                                                                'opt': 'Nash',
+                                                                                'problem': config['prob'],
+                                                                                'data_id': config['data'],
+                                                                                'len_exp_replay': 20000,
+                                                                                "flag": config['flag'],
+                                                                                'network': config['network'],
+                                                                                }, dictum = record_dict)
+                #recombine to model and the resplit so the model and params/statics are updated for next task
+                model = eqx.combine(params, static)
+                params, static = eqx.partition(model, eqx.is_array)
+                #print("here is params: ", params)
+                #print("here is static", static)
+                static = eqx.tree_at(lambda x: x.A_conv, static, replace= model.A_conv)
+                static = eqx.tree_at(lambda x: x.B_conv, static, replace= model.B_conv)
+                static = eqx.tree_at(lambda x: x.A_feed, static, replace= model.A_feed)
+                static = eqx.tree_at(lambda x: x.B_feed, static, replace= model.B_feed)
+                params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), params, replace= (None,None,None,None))
+                #print("here is params AFTER: ", params)
+                #print("here is static AFTER:", static)
+
+
+            #if better architecture was not found, then skip to step (i.e. complete standard training)
+            else: 
+                #--------------STEP 2: Train on original weights for all epochs and record-----------------#
+                print("STEP 5: Train CNN on new weights and record---------------")
+                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                            (test_loader_curr, test_loader_exp)),params, static, optim1, \
+                                                                            n_iter=config['epochs_per_task'], save_iter=config['save_iter'], \
+                                                                            task_id=i,config={
+                                                                                'batch_size': 20,
+                                                                                'opt': 'Nash',
+                                                                                'problem': config['prob'],
+                                                                                'data_id': config['data'],
+                                                                                'len_exp_replay': 20000,
+                                                                                "flag": config['flag'],
+                                                                                'network': config['network'],
+                                                                                }, dictum = record_dict)
+                #print(record_dict[str(i)])
+                #recombine to model and the resplit so the model and params/statics are updated for next task
+                model = eqx.combine(params, static)
+                params, static = eqx.partition(model, eqx.is_array)
+                #print("here is params: ", params)
+                #print("here is static", static)
+                static = eqx.tree_at(lambda x: x.A_conv, static, replace= model.A_conv)
+                static = eqx.tree_at(lambda x: x.B_conv, static, replace= model.B_conv)
+                static = eqx.tree_at(lambda x: x.A_feed, static, replace= model.A_feed)
+                static = eqx.tree_at(lambda x: x.B_feed, static, replace= model.B_feed)
+                params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), params, replace= (None,None,None,None))
+                #print("here is params AFTER: ", params)
+                #print("here is static AFTER:", static)
+
+        data.append_to_experience(i)
+    model = eqx.combine(params, static) #reconstruct the model
+    eqx.tree_serialise_leaves(config['model_path'], model) #eqx.tree_seriealise_leaves saves the model to a given file.
+    del model #delete model to free memory
+    del params #delete params to free memory
+    del static #delete static to free memory  
+    return record_dict #dictionary containing info from CL trainining. In particular, '(V, dV, dVstar_dx, dVstar_dtheta, H, grad_norm, grad_norm)' for each task and 'train', 'test', etc.
+    
