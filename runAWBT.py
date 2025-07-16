@@ -1,7 +1,7 @@
 #below are the imports from the utilsAWBT folder
 #from utilsAWBT.utils import * #GOAL: provide various easier operation. #CONTAINS: funcs for matrix operations (i.e. special situtation matrix multiplication, normalization) and two graphing funcs. for visualization
 from utilsAWBT.modelAWBT import * #GOAL: class from which we can construct types of NN. #CONTAINS: MLP, CNN, GCN, Linear (uses equinox)
-#from utilsAWBT.trainerAWBT import * #GOAL: CL training constructed NN on data. #CONTAINS: loss funcs (i.e. mse, cross-entropy loss), an accuracy of predictions func, loss and pred/accuracy graph constructing func, and CL training functions
+from utilsAWBT.trainerAWBT import * #GOAL: CL training constructed NN on data. #CONTAINS: loss funcs (i.e. mse, cross-entropy loss), an accuracy of predictions func, loss and pred/accuracy graph constructing func, and CL training functions
 #from utilsAWBT.dataAWBT import * #GOAL: take in dataset and prepare for learning #CONTAINS: preparing and batching funcs (uses torch and torchvision)
 
 #===================LOAD CHECKPOINT====================#
@@ -108,6 +108,114 @@ def load_checkpoint_AWB(config):
         return trainer, optim, dataset, model
 
 #============Architecture NDDS Search for Regression Prob===========#
+def arch_search(original_arch, task, trainW_loss, og_epochs, config,dataloader_curr,\
+                 dataloader_exp,test_loader_curr, test_loader_exp):
+    """
+    GOAL: Complete a local "neighborhood-style" search for ideal architecture for MLP
+    ARGUMENTS:
+    RETURNS: 
+        opt_arch: (list) contains the best MLP architecture for the current (and prev) tasks
+    """
+    trainer1, optim, __, arch_model  = load_checkpoint_AWB(config)
+    i = task
+    x = original_arch[1]
+    y = original_arch[2]
+    og_epochs = 500
+    #print("model before setting new size: ", arch_model)
+    arch_model = eqx.tree_at(lambda x: x.sizes, arch_model, original_arch)
+    initializer = jax.nn.initializers.glorot_uniform()
+    weight_list = [initializer(jax.random.PRNGKey(i), (y, x)) for x,y,i in zip(arch_model.sizes[:-1],arch_model.sizes[1:], range(1,len(arch_model.sizes)))]
+    bias_list = [initializer(jax.random.PRNGKey(i), (1, y)) for y,i in zip(arch_model.sizes[1:], range(1,len(arch_model.sizes)))]
+    #bias_list = [jax.random.truncated_normal(jax.random.PRNGKey(1),-(np.sqrt(1.0/((y+1)/2))/.87962566103423978),(np.sqrt(1.0/((y+1)/2))/.87962566103423978),shape = (1,y)) for y in arch_model.sizes[1:]]
+    #weight_list = [jax.random.truncated_normal(jax.random.PRNGKey(1),-(np.sqrt(1.0/((y+x)/2))/.87962566103423978),(np.sqrt(1.0/((y+x)/2))/.87962566103423978),shape = (y,x)) for x,y in zip(arch_model.sizes[:-1],arch_model.sizes[1:])]
+    for j in range(len(arch_model.sizes)-1):
+        arch_model = eqx.tree_at(lambda x: x.layers[j].weight, arch_model, weight_list[j])
+        arch_model = eqx.tree_at(lambda x: x.layers[j].bias, arch_model, bias_list[j])
+    arch_params, arch_static = eqx.partition(arch_model,eqx.is_array)
+    arch_static = eqx.tree_at(lambda x: x.A, arch_static, replace= arch_model.A)
+    arch_static = eqx.tree_at(lambda x: x.B, arch_static, replace= arch_model.B)
+    arch_params = eqx.tree_at(lambda x: (x.A,x.B), arch_params, replace= (None,None))
+    #print("model after resetting sizes and weights: ", arch_model)
+    s = arch_model.sizes
+    original_arch = arch_model.sizes
+    poll_dict = {}
+    arch_params, arch_static, optim, poll_dict[str(i)] =  trainer1.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                    (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim, \
+                                                                    n_iter=og_epochs, save_iter=config['save_iter'],\
+                                                                    task_id=i, config={
+                                                                        'batch_size': 64,
+                                                                        'opt': 'Nash',
+                                                                        'problem': config['problem'],
+                                                                        'data_id': config['data'],
+                                                                        "flag": config['flag'],
+                                                                        'len_exp_replay': 20000,
+                                                                        'network': config['network'],
+                                                                        }, dictum=poll_dict)
+    arch_model = eqx.combine(arch_params, arch_static)
+    arch_dict = poll_dict[str(i)]
+    loss_orig2 = np.mean([arch_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,26)])
+    smallest = [trainW_loss, loss_orig2]
+    print("loss list: ", smallest)
+    loss_orig = smallest[np.argmin(smallest)]
+    loss_orig = loss_orig2
+    threshold = .6
+    loss = loss_orig
+    step = 1
+    x = original_arch[1]
+    y = original_arch[2]
+    opt_loss = loss_orig
+    opt_arch = arch_model.sizes
+    curr_arch = opt_arch
+    k = 0
+    while(opt_loss>=loss_orig*threshold) and (k<2):
+        for n in range(0,5):
+            for j in range(0,5):
+                curr_arch = [3,x+15*n,y+15*j,10]
+                arch_model = eqx.tree_at(lambda x: x.sizes, arch_model, original_arch)
+                initializer = jax.nn.initializers.glorot_uniform()
+                weight_list = [initializer(jax.random.PRNGKey(l), (y, x)) for x,y,l in zip(arch_model.sizes[:-1],arch_model.sizes[1:], range(1,len(arch_model.sizes)))]
+                bias_list = [initializer(jax.random.PRNGKey(l), (1, y)) for y,l in zip(arch_model.sizes[1:], range(1,len(arch_model.sizes)))]
+                for j in range(len(arch_model.sizes)-1):
+                    arch_model = eqx.tree_at(lambda x: x.layers[j].weight, arch_model, weight_list[j])
+                    arch_model = eqx.tree_at(lambda x: x.layers[j].bias, arch_model, bias_list[j])
+                arch_params, arch_static = eqx.partition(arch_model,eqx.is_array)
+                #print("params after setting weights: ", params)
+                #print(static)
+                #print()
+                poll_dict = {}
+                arch_static = eqx.tree_at(lambda x: x.A, arch_static, replace= arch_model.A)
+                arch_static = eqx.tree_at(lambda x: x.B, arch_static, replace= arch_model.B)
+                arch_params = eqx.tree_at(lambda x: (x.A,x.B), arch_params, replace= (None,None))
+                optim = optax.adam(1e-3)
+                og_epochs = 500
+                arch_params, arch_static, optim, poll_dict[str(i)] =  trainer1.train__CL__reg((dataloader_curr,\
+                                                    dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                    (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim, \
+                                                    n_iter=og_epochs, save_iter=config['save_iter'],\
+                                                    task_id=i, config={
+                                                    'batch_size': 64,
+                                                    'opt': 'Nash',
+                                                    'problem': config['problem'],
+                                                    'data_id': config['data'],
+                                                    "flag": config['flag'],
+                                                    'len_exp_replay': 20000,
+                                                    'network': config['network'],
+                                                    }, dictum=poll_dict)
+                poll_dict1 = poll_dict[str(i)]
+                poll_loss = np.mean([poll_dict1["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+                print("curr arch: ", curr_arch, "--------- curr loss: ", poll_loss, "--------- opt loss: ", opt_loss)
+                if poll_loss<opt_loss:
+                    opt_loss = poll_loss
+                    opt_arch = curr_arch
+                print("opt arch for j round: ", opt_arch)
+        if (opt_arch[1] == original_arch[1] and opt_arch[2] ==original_arch[2]):
+            x = x+250
+            y = y+250
+        else:
+            x = opt_arch[1]
+            y = opt_arch[2]
+        k+=1
+    return opt_arch
 
 
 
@@ -366,3 +474,12 @@ def train_model_reg_AWB(config):
     del params #delete params to free memory
     del static #delete static to free memory  
     return record_dict_preAB, record_dict_AB,record_dict #dictionary containing info from CL trainining. In particular, '(V, dV, dVstar_dx, dVstar_dtheta, H, grad_norm, grad_norm)' for each task and 'train', 'test', etc.
+
+
+#=================Architecture Search for Classification Problem===================#
+#note: I am still debugging this. Will be added by end of week. Once in place it impacts
+#a single line in the 'train_model_classification_AWB' function. This will be very easy to add
+#in future.
+
+
+#
