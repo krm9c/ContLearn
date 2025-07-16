@@ -105,6 +105,86 @@ def return_Hamiltonian_mse_AWB(self, params, data,notABTrain = True):
             grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
             return grad,( (V+dV), V, dV, \
                 f_jvp(wdot, zero_dx),  f_jvp(zero_dtheta, xdot))
+        
+#===============Hamiltonian_class_AWB function (i.e. with flag)=================#
+def return_Hamiltonian_class_AWB(self, params, data, notABTrain=True):
+        statics, (x, y, exp_x, exp_y, deltax, flag)  = data
+        extra=y
+        #if 'notABTrain == True' then run as usual ------------------------#
+        if (notABTrain ==True):
+            def return_V_star_class(params, x):
+                y = extra
+                model = eqx.combine(params, statics)
+                y=y.astype(jnp.int64)
+                #print("shape of y: ", y.shape)
+                #pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
+                pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
+                #print("shape of pred: ", pred_y.shape)
+                #print("mean: ", jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y)))
+                return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels( pred_y,y ))
+                # pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)    
+                # print(pred_y.shape)
+                # return loss 
+            def norm_param(x):
+                return (-1*x) #*(-1*1e-04/jnp.sqrt(jnp.linalg.norm(x**2))))
+            xdot = deltax
+            zero_dx = jnp.zeros(xdot.shape)
+            delta_theta= jax.grad(return_V_star_class,argnums=(0))(params, x) 
+            wdot= jax.tree_util.tree_map(norm_param, delta_theta)
+            zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+            extra = exp_y
+            
+            grad_V =  jax.grad(return_V_star_class,argnums=(0))(params, exp_x) 
+            V, f_jvp = jax.linearize(return_V_star_class, params, exp_x)
+            grad_dV = jax.grad(f_jvp)(wdot, xdot)
+            dV= f_jvp(wdot, xdot)
+            
+            def combine_grad(x, y, z, factor=1):
+                return (x+y)+factor*z
+        
+
+            grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
+            return grad,( (V+dV), V, dV, \
+                        f_jvp(wdot, zero_dx),\
+                        f_jvp(zero_dtheta, xdot))
+        # if notABTrain == False and we want to train on AB's only-----------------#
+        else:
+            def return_V_star_classAWB(params, x):
+                y = extra
+                model = eqx.combine(params, statics)
+                y=y.astype(jnp.int64)
+                #print("shape of y: ", y.shape)
+                #pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
+                pred_y = jax.vmap(model.get_AWBT)(x)
+                #print(pred_y.dtype)
+                pred_y = jax.nn.log_softmax(pred_y)
+                #print("mean: ", jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y)))
+                return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels( pred_y,y ))
+                # pred_y = jnp.take_along_axis(pred_y, jnp.expand_dims(y, 1), axis=1)    
+                # print(pred_y.shape)
+                # return loss 
+            def norm_param(x):
+                return (-1*x) #*(-1*1e-04/jnp.sqrt(jnp.linalg.norm(x**2))))
+            xdot = deltax
+            zero_dx = jnp.zeros(xdot.shape)
+            delta_theta= jax.grad(return_V_star_classAWB,argnums=(0))(params, x) 
+            wdot= jax.tree_util.tree_map(norm_param, delta_theta)
+            zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+            extra = exp_y
+            
+            grad_V =  jax.grad(return_V_star_classAWB,argnums=(0))(params, exp_x) 
+            V, f_jvp = jax.linearize(return_V_star_classAWB, params, exp_x)
+            grad_dV = jax.grad(f_jvp)(wdot, xdot)
+            dV= f_jvp(wdot, xdot)
+            
+            def combine_grad(x, y, z, factor=1):
+                return (x+y)+factor*z
+        
+
+            grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
+            return grad,( (V+dV), V, dV, \
+                        f_jvp(wdot, zero_dx),\
+                        f_jvp(zero_dtheta, xdot))
 
 
         
