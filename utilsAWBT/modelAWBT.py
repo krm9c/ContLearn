@@ -162,3 +162,7 @@ class Linear2(eqx.Module):
         x = x+ self.bias.squeeze(1)
         #print("after bias: ", x.shape)
         return x
+    
+#=================GCN with AWB===================#
+#GCN will be created later in the week. Have yet to implement
+#AWB method for GCN
