@@ -1,9 +1,3 @@
-#below are the imports from the utilsAWBT folder
-#from utilsAWBT.utils import * #GOAL: provide various easier operation. #CONTAINS: funcs for matrix operations (i.e. special situtation matrix multiplication, normalization) and two graphing funcs. for visualization
-from utilsAWBT.modelAWBT import * #GOAL: class from which we can construct types of NN. #CONTAINS: MLP, CNN, GCN, Linear (uses equinox)
-from utilsAWBT.trainerAWBT import * #GOAL: CL training constructed NN on data. #CONTAINS: loss funcs (i.e. mse, cross-entropy loss), an accuracy of predictions func, loss and pred/accuracy graph constructing func, and CL training functions
-#from utilsAWBT.dataAWBT import * #GOAL: take in dataset and prepare for learning #CONTAINS: preparing and batching funcs (uses torch and torchvision)
-
 #===================LOAD CHECKPOINT====================#
 #note: the changes below are due to calling "MLP_AWB" and "CNN_AWB"
 #instead of "MLP" and "CNN" in the load_checkpoint() function
@@ -188,7 +182,7 @@ def arch_search(original_arch, task, trainW_loss, og_epochs, config,dataloader_c
                 arch_params = eqx.tree_at(lambda x: (x.A,x.B), arch_params, replace= (None,None))
                 optim = optax.adam(1e-3)
                 og_epochs = 500
-                arch_params, arch_static, optim, poll_dict[str(i)] =  trainer1.train__CL__reg((dataloader_curr,\
+                arch_params, arch_static, optim, poll_dict[str(i)] =  trainer1.train__CL__reg_AWB((dataloader_curr,\
                                                     dataloader_exp, (test_loader_curr, test_loader_exp),\
                                                     (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim, \
                                                     n_iter=og_epochs, save_iter=config['save_iter'],\
@@ -739,7 +733,7 @@ def train_model_class_AWB(config):
                 print("STEP 5: Train CNN on new weights and record---------------")
                 optim3 = optax.adamw(1e-4)
                 optim1 = optim3
-                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
                                                                             (test_loader_curr, test_loader_exp)),params, static, optim1, \
                                                                             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], \
                                                                             task_id=i,config={
@@ -769,7 +763,7 @@ def train_model_class_AWB(config):
             else: 
                 #--------------STEP 2: Train on original weights for all epochs and record-----------------#
                 print("STEP 5: Train CNN on new weights and record---------------")
-                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                params, static, optim1, record_dict[str(i)]= trainer.train__CL__class_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
                                                                             (test_loader_curr, test_loader_exp)),params, static, optim1, \
                                                                             n_iter=config['epochs_per_task'], save_iter=config['save_iter'], \
                                                                             task_id=i,config={
