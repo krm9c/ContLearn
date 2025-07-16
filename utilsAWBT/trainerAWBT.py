@@ -185,6 +185,177 @@ def return_Hamiltonian_class_AWB(self, params, data, notABTrain=True):
             return grad,( (V+dV), V, dV, \
                         f_jvp(wdot, zero_dx),\
                         f_jvp(zero_dtheta, xdot))
+        
+#===============CL Train Regression AWB Function (i.e. with flag)=================#  
+def train__CL__reg_AWB(self, train__, params,\
+                static, optim, n_iter=1000,\
+                save_iter=10, task_id=0,\
+                config={}, dictum = {}, notABTrain = True):
+
+    trainloader, exploader, valloader, testloader=train__
+    trainiter = iter(trainloader)
+    expiter = iter(exploader)
+    # optim_inner_x, optim_inner_mod = optim_inner
+    batch = next(trainiter)
+    #print("This is a batch: ", batch)
+    #print("This is static", static)
+    x, y = batch
+    x = x.numpy().astype(np_.float64)
+    y = y.numpy().astype(np_.float64)
+    batch = (x, y)
+    
+    opt_state = optim.init(params)
+    from tqdm import tqdm 
+    pbar = tqdm(range(n_iter))
+    if task_id>0:
+        flag=config["flag"]
+    else:
+        flag=config["flag"]
+    sum_delta_x =0.
+    for step in pbar:
+        try:
+            batch = next(trainiter)
+        except StopIteration:
+            trainiter = iter(trainloader)
+            batch = next(trainiter)
+        try:
+            batch_ex = next(expiter)
+        except StopIteration:
+            expiter = iter(exploader)
+            batch_ex = next(expiter)
+
+        (x, y) = batch
+        (exp_x, exp_y) = batch_ex
+        exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        
+        # #print(exp_x.shape, x.shape)
+        
+        delta_x = jnp.abs(exp_x-x)
+        sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
+        delta_x = (delta_x/sum_delta_x)            
+        data = static, ( x, y, exp_x, exp_y, delta_x, flag)
+        #print("THESE ARE PARAMS IN TRAINER MODULE: ", params)
+        grad, losses =  self.return_Hamiltonian_mse_AWB(params, data, notABTrain)      
+        (H, V, dV, dVstar_dtheta, dVstar_dx)  = losses         
+        
+        grad_leav = jax.tree_util.tree_leaves(grad)
+        grad_norm = jnp.sqrt(sum([jnp.linalg.norm(g)**2 for g in grad_leav])/len(grad_leav) )
+        updates, opt_state = optim.update(grad, opt_state, params)
+        params =  optax.apply_updates(params, updates)
+        # print("the details", task_id, step, step+task_id*n_iter )
+        pbar.set_postfix({"Train/MSE:": V,
+                            "Train/dVstar_dx:": dVstar_dx,
+                            "Train/dVstar_dtheta:": dVstar_dtheta,
+                            "Train/H:":  H,
+                            "Train/||dH_dtheta||:": grad_norm,
+                            "Train/Metric:": V
+                        })
+        #if notABTrain:
+        self.writer.add_scalar('train/Loss/H', H.item(), step+task_id*n_iter)
+        self.writer.add_scalar('train/Loss/MSE', V.item(), step+task_id*n_iter)
+        self.writer.add_scalar('train/Loss/MSE', dV.item(), step+task_id*n_iter)
+        self.writer.add_scalar('train/gradient/dVstar_dx',
+                            dVstar_dx.item(), step+task_id*n_iter)
+        self.writer.add_scalar('train/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+        self.writer.add_scalar('train/gradient/dH_dtheta',
+                            grad_norm.item(), step+task_id*n_iter)
+        dictum["train"+str(step+task_id*n_iter)] = ( V, dV, dVstar_dx, dVstar_dtheta, \
+            H,\
+            grad_norm, grad_norm )
+
+        ## Validation Metric calculations on the total exp_replay
+        if step %100==0:
+            sum_delta_x=0.
+            V_star_max=[]
+            dVstar_dx=[]
+            dVstar_dtheta=[]
+            H=[]
+            dV=[]
+            loader_1, loader_2= valloader
+            for (batch_x, batch_ex) in zip(loader_1, loader_2):
+                (x, y) = batch_x
+                (exp_x, exp_y) = batch_ex
+                x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+                y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+                exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+                exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+                delta_x = jnp.abs(exp_x-x)
+                sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
+                delta_x = (delta_x/sum_delta_x)
+                data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
+                _, losses = self.return_Hamiltonian_mse_AWB(params,data,notABTrain = True)         
+                (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
+                V_star_max.append(v)
+                dVstar_dx.append(dvstar_dx)
+                dVstar_dtheta.append(dvstar_dtheta)
+                H.append(h)
+                dV.append(dv)
+            V_star_max=np_.mean(V_star_max)
+            dVstar_dx= np_.mean(dVstar_dx)
+            dVstar_dtheta=np_.mean(dVstar_dtheta)
+            dV=np_.mean(dV)
+            H=np_.mean(H)
+            # #print(H,  dVstar_dx, dVstar_dtheta)
+            # pbar.set_postfix({"Valid/MSE:": V_star_max,
+            #               "Train/dVstar_dx:": dVstar_dx,
+            #               "Train/dVstar_dtheta:": dVstar_dtheta,
+            #               "Train/H:":  V_star_max+dVstar_dx+dVstar_dtheta,
+            #               "Train/||dH_dtheta||:": grad_norm\
+            #             })
+
+            #if notABTrain:
+            self.writer.add_scalar('Valid/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(), step+task_id*n_iter)
+            self.writer.add_scalar('Valid/Loss/MSE', V_star_max.item(), step+task_id*n_iter)
+            self.writer.add_scalar('Valid/Loss/dV', dV.item(), step+task_id*n_iter)
+            self.writer.add_scalar('Valid/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
+            self.writer.add_scalar('valid/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+            
+            dictum["valid"+str(step+task_id*n_iter)] = ( V_star_max,dVstar_dx, dVstar_dtheta, \
+            V_star_max+dVstar_dx+dVstar_dtheta )
+            
+    ## Test Metric calculations on the total exp_replay
+    sum_delta_x=0.
+    V_star_max=[]
+    dVstar_dx=[]
+    dVstar_dtheta=[]
+    H=[]
+    loader_1, loader_2= valloader
+    for (batch_x, batch_ex) in zip(loader_1, loader_2):
+        (x, y) = batch_x
+        (exp_x, exp_y) = batch_ex
+        x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+    
+        delta_x = (exp_x-x)
+        sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
+        delta_x = (delta_x/sum_delta_x)
+        data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
+        _, losses = self.return_Hamiltonian_mse_AWB(params,data,notABTrain)         
+        (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
+        V_star_max.append(v)
+        dVstar_dx.append(dvstar_dx)
+        dVstar_dtheta.append(dvstar_dtheta)
+        H.append(h)
+        
+            
+    V_star_max=np_.mean(V_star_max)
+    dVstar_dx= np_.mean(dVstar_dx)
+    dVstar_dtheta=np_.mean(dVstar_dtheta)
+    H=np_.mean(H)
+    self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter)
+    self.writer.add_scalar('test/Loss/MSE', V_star_max.item(), step+task_id*n_iter)
+    self.writer.add_scalar('test/gradient/dVstar_dx',
+                        dVstar_dx.item(), step+task_id*n_iter)
+    self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+    dictum["test"+str(task_id)] = (V_star_max,dVstar_dx, dVstar_dtheta, H)
+    
+    self.writer.flush()
+    return params, static, optim, dictum
 
 
         
