@@ -513,7 +513,7 @@ def prepABs(model,prev_feed_sizes,prev_filter_size):
 
 
 #=================Train Classification Problem===================#
-def train_model_class(config):
+def train_model_class_AWB(config):
     """
     GOAL: construct and CL train a model which is for a classification problem
 
@@ -803,3 +803,10 @@ def train_model_class(config):
     del static #delete static to free memory  
     return record_dict #dictionary containing info from CL trainining. In particular, '(V, dV, dVstar_dx, dVstar_dtheta, H, grad_norm, grad_norm)' for each task and 'train', 'test', etc.
     
+
+#=================Train Graph Classification Problem ===================#
+#note: this is a placeholder function. It will be implemented later.
+#This will be written and working by end of this week or early next week depending on 
+#potential difficulties.
+def train_model_graph_AWB(config):
+    print("train graph classification model")
