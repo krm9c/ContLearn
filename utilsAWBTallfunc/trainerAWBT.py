@@ -262,7 +262,7 @@ class Trainer(eqx.Module):
         statics, (x, y, exp_x, exp_y, deltax, flag)  = data
         extra=y
         #model = eqx.combine(params, statics)
-        #pred_y = jax.vmap(model)(x)
+        #pred_y = jax.vmap(model)(x)s
         #print("shape of pred_y: ", pred_y.shape)
         #print("shape of y:", y.shape)
         #pred_y = pred_y.squeeze(1)
