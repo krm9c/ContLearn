@@ -17,7 +17,6 @@ import numpy as np_
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Any, Callable, Dict, List, Optional, Tuple
-
 import jax
 import jax.numpy as jnp
 import jax.tree_util as tree
@@ -26,14 +25,13 @@ from jax import lax
 import jax.tree_util as jtu
 import diffrax
 import equinox as eqx
-
-
 from torch.utils.tensorboard import SummaryWriter
 # local imports
 from utilsAWBTallfunc.utilsAWBT import * #GOAL: provide various easier operation. #CONTAINS: funcs for matrix operations (i.e. special situtation matrix multiplication, normalization) and two graphing funcs. for visualization
 from utilsAWBTallfunc.modelAWBT import * #GOAL: class from which we can construct types of NN. #CONTAINS: MLP, CNN, GCN, Linear (uses equinox)
 from utilsAWBTallfunc.trainerAWBT import * #GOAL: CL training constructed NN on data. #CONTAINS: loss funcs (i.e. mse, cross-entropy loss), an accuracy of predictions func, loss and pred/accuracy graph constructing func, and CL training functions
 from utilsAWBTallfunc.dataAWBT import * #GOAL: take in dataset and prepare for learning #CONTAINS: preparing and batching funcs (uses torch and torchvision)
+
 
 
 #=================CLASS TO SET UP PARAMETERS FROM JSON FILE===========================#
@@ -1260,7 +1258,7 @@ def train_model_reg(config):
             #iterate is a batch of the data in the corresponding datasets.
 
             #------------------------------------OG CL train on first task i = 0 for some sub number of epochs-----------------------------#
-            og_epochs = 250
+            og_epochs = 1000
             print("STEP 1: We train for ", og_epochs, " epochs on the next task")
             params, static, optim1, record_dict_preAB[str(i)] =  trainer.train__CL__reg((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
                                                                                   (test_loader_curr, test_loader_exp)),params, static, optim1, \
@@ -1296,8 +1294,6 @@ def train_model_reg(config):
             preWfeed=model.layers[0].weight
 
             #+++++++++++First see whether we need to change the architecture or not++++++++++++++#
-            
-
             if (trainWLoss/end_last0>.45) and (end_last+.01<=trainWLoss):
                 change_arch = True
 
@@ -1677,20 +1673,21 @@ def arch_search_CNN(filter_size, feed_sizes, task, trainW_loss, og_epochs, confi
                     #print("==========================")
                     #print("model after setting: ", arch_model)
                     record_dict_arch = {}
-                    optim2 = optax.adam(1e-3)
-               
-                    arch_params, arch_static, optim2, record_dict_arch[str(i)]= trainer1.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
-                                                                           (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim2, \
-                                                                          n_iter=og_epochs, save_iter=config['save_iter'], \
-                                                                          task_id=i,config={
-                                                                            'batch_size': 20,
-                                                                            'opt': 'Nash',
-                                                                            'problem': config['prob'],
-                                                                            'data_id': config['data'],
-                                                                            'len_exp_replay': 20000,
-                                                                            "flag": config['flag'],
-                                                                            'network': config['network'],
-                                                                            }, dictum = record_dict_arch)
+                    optim2 = optax.adam(1e-2)
+                    arch_params, arch_static, optim2, record_dict_arch[str(i)] \
+                        = trainer1.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                       (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim2, \
+                        n_iter=og_epochs, save_iter=config['save_iter'], \
+                        task_id=i,config={
+                        'batch_size': 20,
+                        'opt': 'Nash',
+                        'problem': config['prob'],
+                        'data_id': config['data'],
+                        'len_exp_replay': 20000,
+                        "flag": config['flag'],
+                        'network': config['network'],
+                        }, dictum = record_dict_arch)
+
                     arch_model = eqx.combine(arch_params,arch_static) #recombine the model
                     #determine whehter curr_arch is opt_arch for each
                     arch_dict = record_dict_arch[str(i)]
@@ -1702,8 +1699,6 @@ def arch_search_CNN(filter_size, feed_sizes, task, trainW_loss, og_epochs, confi
                     #     opt_loss = loss_poll
                     # m+=1
                     # #print("ROUND ",m ,": opt_gcn: ", opt_gcn, "---- opt_mlp: ", opt_mlp)
-        
-
                     # poll_dict1 = poll_dict[str(i)]
                     #poll_loss = np.mean([poll_dict1["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
                     # print("curr arch: ", curr_mlp, "--------- curr loss: ", poll_loss, "--------- opt loss: ", opt_loss)
@@ -2269,13 +2264,11 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(prog="testKcontAWBT.py", description="Test different datasets and different models",) #construct parser
     subparsers = parser.add_subparsers(help='', dest='command')
-
     train_parser = subparsers.add_parser("train") #add subparser
     #.add_argument allows us to add a user-inputed value to parser
     train_parser.add_argument("runs", default=1, help="the number of total runs") #allows user to add value for arument "runs". the help kywd tells user what the value is.
     train_parser.add_argument("json", default=None, help="directory with configurations") # allows to add JSON
-
-    basic_path='/Users/allyhahn/Documents/code/AWBT code/jsons/' #first part of file path
+    basic_path='../ContLearn/jsons/' #first part of file path
     args = parser.parse_args() #the "parser.parse_args()" method runs the parser and places the extracted data in a argparse.Namespace object
     
     '''
@@ -2305,7 +2298,6 @@ if __name__ == "__main__":
                 record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] =train_model_class(params)
             elif params['problem']=='graph':
                 record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] =train_model_graph(params)
-
 
         import pickle 
         with open(str("/Users/allyhahn/Documents/code/AWBT code/logdir/dicts/log_induced_preAB400")+'.pkl', 'wb') as f:

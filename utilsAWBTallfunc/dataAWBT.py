@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torchvision
 from PIL.Image import LANCZOS
+import random
+import pickle
+import torch_geometric
 # from torchmeta.transforms import Categorical, ClassSplitter, Rotation
 import sklearn.model_selection as model_selection
 
@@ -56,7 +59,7 @@ class data_return():
         self.config=Config
         if self.dataset_id == 'omni':
             self.dataset = torchvision.datasets.Omniglot(
-                root="/Users/allyhahn/Documents/code/AWBT code/omniglot-py", download=False, transform=transforms.Compose([
+                root="..", download=True, transform=transforms.Compose([
                     transforms.Resize(28, interpolation=LANCZOS),
                     transforms.ToTensor(),
                     lambda x: 1.0 - x,
@@ -257,7 +260,3 @@ class data_return():
         
         return DataLoader(dataset_curr, batch_size=self.config['batch_size'], shuffle=True), \
             DataLoader(dataset_exp,  batch_size=self.config['batch_size'], shuffle=True)
-
-
-
-
