@@ -71,6 +71,7 @@ class data_return():
             # self.labels.shape, "]")
 
         if self.dataset_id == 'mnist':
+            print("Loading MNIST dataset"   )
             my_transforms = transforms.Compose([
                 transforms.ToTensor()])
             self.dataset = torchvision.datasets.MNIST('./data',
@@ -121,11 +122,11 @@ class data_return():
 
 ###############################################
     def mnist(self, task_id):
-        imp = np.random.randint(0, 9)
-        # #print(imp, task_id)
-        idx = self.labels == imp
-        X = self.images[idx]
-        y = self.labels[idx]
+        # imp = np.random.randint(0, 9)
+        # # #print(imp, task_id)
+        # idx = self.labels == imp
+        X = self.images
+        y = self.labels
         # #print("We have to apply the transformation now.")
         rot_angle = np.random.random()*180
         scaling   = np.random.random()+1

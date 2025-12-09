@@ -1,14 +1,13 @@
 {
     "delta": 1e-04,
-    "tensorfile": "logdir/tensorboard/log_uninduced_CNN",
-    "file": "logdir/dicts/log_uninduced_CNN",
-    "model_path": "model/CNN__",
+    "tensorfile": "logdir/tensorboard/omni_CNN",
+    "file": "logdir/dicts/omni_CNN",
+    "model_path": "model/CNN_omni_",
     "flag":[0, 0], 
     "n_task": 10,
     "epochs_per_task":1000,
     "save_iter": 1,
-
-    "data": "mnist",
+    "data": "omni",
     "loss": "class",
     "metric": "class",
     "problem": "vectors",
