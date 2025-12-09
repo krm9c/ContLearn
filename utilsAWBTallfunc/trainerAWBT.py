@@ -7,9 +7,8 @@ import numpy as np_
 import pickle
 import optax
 import torch_geometric as pyg
-from utilsAWBT import *
-jax.config.update("jax_enable_x64", True)
 
+jax.config.update("jax_enable_x64", True)
 class Trainer(eqx.Module):
     writer: SummaryWriter
     loss: str
