@@ -35,10 +35,10 @@ import random
 
 # =========================================================
 # Local imports - uses unified utilities with AWBT support
-from utilsAWBTallfunc.modelAWBT import *
-from utilsAWBTallfunc.utilsAWBT import *
-from utilsAWBTallfunc.trainerAWBT import *
-from utilsAWBTallfunc.dataAWBT import *
+from utils.model import *
+from utils.utils import *
+from utils.trainer import *
+from utils.data import *
 
 # =========================================================
 # Additional imports for graph data handling
