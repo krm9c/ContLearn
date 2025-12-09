@@ -361,22 +361,20 @@ def load_checkpoint(config):
 # ============================================================================
 # ARCHITECTURE SEARCH FUNCTIONS
 # ============================================================================
-
 def arch_search_GCN(original_gcn, original_mlp, task, trainW_loss, og_epochs, config,
                    train_loader, mem_train_loader, test):
     """
     Architecture search for GCN and MLP layers (graph classification)
-    
     Searches a local neighborhood to find optimal architecture dimensions.
     """
+    
     trainer1, optim5, __, arch_model = load_checkpoint(config)
     i = task
+
     opt_gcn = original_gcn
     opt_mlp = original_mlp
-    
     arch_model = eqx.tree_at(lambda x: (x.gcn_sizes, x.feed_sizes), arch_model,
                              replace=(original_gcn, original_mlp))
-    
     initializer = jax.nn.initializers.glorot_uniform()
     weightsMLP_list = [initializer(jax.random.PRNGKey(5), (y, x))
                       for x, y in zip(arch_model.feed_sizes[:-1], arch_model.feed_sizes[1:])]
@@ -391,17 +389,17 @@ def arch_search_GCN(original_gcn, original_mlp, task, trainW_loss, og_epochs, co
         arch_model = eqx.tree_at(lambda x: x.gcn_layers[k].weight, arch_model, weightsGCN_list[k])
         arch_model = eqx.tree_at(lambda x: x.gcn_layers[k].bias, arch_model, biasGCN_list[k])
     
+
     for j in range(len(arch_model.feed_layers)):
         arch_model = eqx.tree_at(lambda x: x.feed_layers[j].weight, arch_model, weightsMLP_list[j])
         arch_model = eqx.tree_at(lambda x: x.feed_layers[j].bias, arch_model, biasMLP_list[j])
     
+
     record_dict_arch = {}
     arch_params, arch_static = eqx.partition(arch_model, eqx.is_array)
-    arch_static = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), arch_static,
-                             replace=(arch_model.A_gcn, arch_model.B_gcn,
+    arch_static = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), arch_static,replace=(arch_model.A_gcn, arch_model.B_gcn,
                                      arch_model.A_feed, arch_model.B_feed))
-    arch_params = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), arch_params,
-                             replace=(None, None, None, None))
+    arch_params = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed),arch_params, replace=(None, None, None, None))
     
     arch_params, arch_static, optim5, record_dict_arch[str(i)] = trainer1.train__CL__graph(
         (mem_train_loader, test, train_loader), arch_params, arch_static, optim5,
