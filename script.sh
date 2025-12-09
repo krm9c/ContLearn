@@ -1,9 +1,9 @@
 #!/bin/bash
 ##!/bin/bash
 
-export https_proxy="http://proxy.ftm.alcf.anl.gov:3128"
-export http_proxy="http://proxy.ftm.alcf.anl.gov:3128"
-export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
+# export https_proxy="http://proxy.ftm.alcf.anl.gov:3128"
+# export http_proxy="http://proxy.ftm.alcf.anl.gov:3128"
+# export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 
 
 ############################################################
@@ -38,18 +38,19 @@ export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 #conda activate jax__
 ##-------------------------------------------------------
 
-#-------------------------------------
-# Sine
-python run.py train 1 "param2.json"
+# #-------------------------------------
+# # Sine
+# python run.py train 1 "param2.json"
 
-##--------------------------------------
-## Graph Synthetic
-python run.py train 1 "paramgraph0.json"
-
+# ##--------------------------------------
+# ## Graph Synthetic
+# python run.py train 1 "paramgraph0.json"
 
 ##--------------------------------------
 ## Omni
-# python run_merged.py train 1 "paramomni9.json"
+python run.py train 1 "paramomni9.json"
+
+
 ##--------------------------------------
 # # Graph ENZYMES
 # python run.py train 1 "paramgraph1.json"
