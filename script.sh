@@ -40,11 +40,11 @@ export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 
 #-------------------------------------
 # Sine
-python run_merged.py train 1 "param2.json"
+python run.py train 1 "param2.json"
 
 ##--------------------------------------
 ## Graph Synthetic
-# python run_merged.py train 1 "paramgraph0.json"
+python run.py train 1 "paramgraph0.json"
 
 
 ##--------------------------------------
