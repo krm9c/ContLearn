@@ -345,7 +345,7 @@ def load_checkpoint(config):
         elif config['prob'] == 'classification':
             key = jax.random.PRNGKey(SEED)
             key, subkey = jax.random.split(key, 2)
-            model = CNN(subkey, 3, [1875, 512, 64, 10], awb=config['awb'])
+            model = CNN(subkey, 3, [1875, 512, 64, 10])
         elif config['problem'] == 'graph':
             model = myNN(in_size=x.shape[1], feed_sizes=[128, 128, 128, 10],
                         gcn_sizes=[5, 128], node_num=x.shape[0],
