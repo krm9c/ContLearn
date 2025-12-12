@@ -391,13 +391,19 @@ class CNN3D(eqx.Module):
             i += 1
 
         # AWB transformation matrices for architecture search
-        new_arch = [feed_sizes[0], 512, 256, num_classes]
+        # Calculate the flattened size after AWB convolutions (larger filter_size + 2)
+        new_filter_size = filter_size + 2
+        # 32 -> conv(new_filter) -> 32-new_filter+1 -> pool -> //2 -> conv(new_filter) -> ... -> pool -> //2
+        after_awb_conv1 = (32 - new_filter_size + 1) // 2  # conv1 + pool
+        after_awb_conv2 = (after_awb_conv1 - new_filter_size + 1) // 2  # conv2 + pool
+        awb_flatten_size = after_awb_conv2 * after_awb_conv2 * channel_out * 2
+
+        new_arch = [awb_flatten_size, 512, 256, num_classes]
         initializer = jax.nn.initializers.glorot_uniform()
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[1:], new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[:-1], new_arch[:-1])]
 
         # Conv AWB matrices for first conv layer (channel_in -> channel_out)
-        new_filter_size = filter_size + 2
         # For 3-channel input: each output filter has channel_in input channels
         # A_conv1[i][c] transforms the (i,c) filter: shape (new_filter_size, filter_size)
         self.A_conv1 = [[jax.random.normal(jax.random.PRNGKey(j * channel_in + c), shape=(new_filter_size, filter_size))
