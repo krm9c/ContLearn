@@ -22,12 +22,12 @@ echo "Testing CIFAR-100..."
 echo "=========================================="
 python run.py train 1 "test_cifar100.json"
 
-# Test Permuted MNIST
-echo ""
-echo "=========================================="
-echo "Testing Permuted MNIST..."
-echo "=========================================="
-python run.py train 1 "test_permuted_mnist.json"
+# # Test Permuted MNIST
+# echo ""
+# echo "=========================================="
+# echo "Testing Permuted MNIST..."
+# echo "=========================================="
+# python run.py train 1 "test_permuted_mnist.json"
 
 echo ""
 echo "=========================================="

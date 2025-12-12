@@ -359,6 +359,10 @@ class CNN3D(eqx.Module):
     feed_layers: list
     A_conv: jax.Array
     B_conv: jax.Array
+    A_conv1: jax.Array
+    B_conv1: jax.Array
+    A_conv2: jax.Array
+    B_conv2: jax.Array
     A_feed: jax.Array
     B_feed: jax.Array
     feed_sizes: list
@@ -392,10 +396,24 @@ class CNN3D(eqx.Module):
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[1:], new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[:-1], new_arch[:-1])]
 
-        # Conv AWB matrices
+        # Conv AWB matrices for first conv layer (channel_in -> channel_out)
         new_filter_size = filter_size + 2
-        self.B_conv = [jax.random.normal(jax.random.PRNGKey(j), shape=(new_filter_size, filter_size)) for j in range(0, channel_out)]
-        self.A_conv = [jax.random.normal(jax.random.PRNGKey(j), shape=(new_filter_size, filter_size)) for j in range(0, channel_out)]
+        # For 3-channel input: each output filter has channel_in input channels
+        # A_conv1[i][c] transforms the (i,c) filter: shape (new_filter_size, filter_size)
+        self.A_conv1 = [[jax.random.normal(jax.random.PRNGKey(j * channel_in + c), shape=(new_filter_size, filter_size))
+                         for c in range(channel_in)] for j in range(channel_out)]
+        self.B_conv1 = [[jax.random.normal(jax.random.PRNGKey(j * channel_in + c + 100), shape=(new_filter_size, filter_size))
+                         for c in range(channel_in)] for j in range(channel_out)]
+
+        # Conv AWB matrices for second conv layer (channel_out -> channel_out * 2)
+        self.A_conv2 = [[jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 200), shape=(new_filter_size, filter_size))
+                         for c in range(channel_out)] for j in range(channel_out * 2)]
+        self.B_conv2 = [[jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 300), shape=(new_filter_size, filter_size))
+                         for c in range(channel_out)] for j in range(channel_out * 2)]
+
+        # Keep old attributes for backward compatibility
+        self.A_conv = self.A_conv1
+        self.B_conv = self.B_conv1
 
     def calc_output_size(self, input_size, fil_size, pool_size=2):
         # After conv: (input_size - fil_size + 1)
@@ -420,11 +438,25 @@ class CNN3D(eqx.Module):
         return x
 
     def get_AWBT(self, x):
-        # Standard forward through conv layers (AWB on conv is complex for multi-channel)
-        x = jax.nn.relu(self.conv_layers[0](x))
+        # AWB transformation on first conv layer (channel_in -> channel_out)
+        # For each output filter i, apply AWB to each input channel c: A[i][c] @ W[i][c] @ B[i][c].T
+        weights_list1 = [[(self.A_conv1[i][c] @ self.conv_layers[0].weight[i][c] @ jnp.transpose(self.B_conv1[i][c]))
+                          for c in range(self.channel_in)] for i in range(self.channel_out)]
+        x = jnp.expand_dims(x, axis=0)
+        x = jax.lax.conv_general_dilated(lhs=x, rhs=jnp.array(weights_list1), window_strides=(1, 1), padding="VALID")
+        x = x.squeeze(0)
+        x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
-        x = jax.nn.relu(self.conv_layers[1](x))
+
+        # AWB transformation on second conv layer (channel_out -> channel_out * 2)
+        weights_list2 = [[(self.A_conv2[i][c] @ self.conv_layers[1].weight[i][c] @ jnp.transpose(self.B_conv2[i][c]))
+                          for c in range(self.channel_out)] for i in range(self.channel_out * 2)]
+        x = jnp.expand_dims(x, axis=0)
+        x = jax.lax.conv_general_dilated(lhs=x, rhs=jnp.array(weights_list2), window_strides=(1, 1), padding="VALID")
+        x = x.squeeze(0)
+        x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
+
         x = jnp.ravel(x)
 
         # AWB transformation on feed layers

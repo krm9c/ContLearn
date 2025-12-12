@@ -2,7 +2,7 @@
     "delta": 1e-04,
     "tensorfile": "logdir/tensorboard/test_cifar10",
     "file": "logdir/dicts/test_cifar10",
-    "model_path": "model/test_CNN3D_cifar10_",
+    "model_path": "logdir/model/test_CNN3D_cifar10_",
     "flag":[0, 0],
     "n_task": 2,
     "epochs_per_task": 1,

@@ -53,6 +53,7 @@ class data_return():
     def __init__(self, Config= { 'data_id': 'sine',
                                  'len_exp_replay':200 
                                 }):
+        
         self.dataset_id = Config['data_id']
         self.dataset = None
         self.len_exp_replay = Config['len_exp_replay']
@@ -67,8 +68,6 @@ class data_return():
             [self.images, self.labels] = [list(t) for t in zip(*self.dataset)]
             self.images = torch.stack(self.images, dim=0)
             self.labels = np.array(self.labels)
-            # #print("The data shapes,", "[", self.images.shape,
-            # self.labels.shape, "]")
 
         if self.dataset_id == 'mnist':
             print("Loading MNIST dataset"   )
@@ -100,6 +99,7 @@ class data_return():
             [self.images, self.labels] = [list(t) for t in zip(*self.dataset)]
             self.images = torch.stack(self.images, dim=0)
             self.labels = np.array(self.labels)
+            print("CIFAR-10 data loaded successfully", len(self.images), len(self.labels))
 
         if self.dataset_id == 'cifar100':
             print("Loading CIFAR-100 dataset")
@@ -198,7 +198,7 @@ class data_return():
         index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        index = np.random.randint(0, int(0.8*X.shape[0]), X.shape[0])
         self.X_test = X[index]
         self.y_test = y[index]
 
@@ -241,15 +241,11 @@ class data_return():
             # #print("how does this look")
             self.X_train = torch.from_numpy(self.X_train)
             self.X_test  = torch.from_numpy(self.X_test)
-            # #print("In the experience arrauy", self.X_train.shape, self.X_test.shape)
-            
         if task_id > 0:
-            print(self.exp_x_test.shape, self.X_test.shape)
             self.exp_x_test = torch.cat((self.exp_x_test, self.X_test), dim=0)
             self.exp_x_train = torch.cat((self.exp_x_train, self.X_train), dim=0)
             self.exp_y_test = np.concatenate([self.exp_y_test, self.y_test], axis=0)
             self.exp_y_train = np.concatenate([self.exp_y_train, self.y_train], axis=0)
-            # #print("the experiance test shapes", self.exp_y_test.shape, self.exp_x_test.shape)
         else:
             self.exp_x_train.extend(self.X_train)
             self.exp_y_train.extend(self.y_train)
@@ -259,21 +255,26 @@ class data_return():
             # Convert the list into torch tensor
             #print("after extending", len(self.exp_x_train), len(self.exp_x_test))
             if self.dataset_id == 'sine':
-                self.exp_x_train = torch.vstack(self.exp_x_train)# .unsqueeze(dim=1)
+                self.exp_x_train = torch.vstack(self.exp_x_train)
                 self.exp_y_train = np.array(self.exp_y_train)
-                self.exp_x_test = torch.vstack(self.exp_x_test) # .unsqueeze(dim=1)
+                self.exp_x_test = torch.vstack(self.exp_x_test)
                 self.exp_y_test = np.array(self.exp_y_test)
             else:
-                self.exp_x_train = torch.vstack(self.exp_x_train).unsqueeze(dim=1)
+                self.exp_x_train = torch.stack(self.exp_x_train, dim=0)
                 self.exp_y_train = np.array(self.exp_y_train)
-                self.exp_x_test = torch.vstack(self.exp_x_test).unsqueeze(dim=1)
+                self.exp_x_test = torch.stack(self.exp_x_test, dim=0)
                 self.exp_y_test = np.array(self.exp_y_test)
-            ##print("the experiance test shapes", self.exp_x_train.shape, self.exp_x_test.shape)
+                # Only unsqueeze if images don't already have a channel dimension
+                # 3D images (e.g., CIFAR with shape [3, H, W]) already have channels
+                # 2D images (e.g., grayscale [H, W]) need unsqueeze to add channel dim
+                if self.exp_x_train.dim() == 3:
+                    # Shape is [N, H, W] - grayscale without channel, add channel dim
+                    self.exp_x_train = self.exp_x_train.unsqueeze(dim=1)
+                    self.exp_x_test = self.exp_x_test.unsqueeze(dim=1)
             
         # Check for the length of the replay
         if len(self.exp_x_train) > self.config['len_exp_replay']:
-            index = np.random.randint(
-                0, self.exp_x_train.shape[0], self.config['len_exp_replay'])
+            index = np.random.randint(0, self.exp_x_train.shape[0], self.config['len_exp_replay'])
             self.exp_x_train = self.exp_x_train[index]
             self.exp_y_train = self.exp_y_train[index]
 
