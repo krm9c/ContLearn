@@ -967,6 +967,7 @@ class Trainer(eqx.Module):
         # start_iter_inner = task_id*n_iter*inner_iter
         sum_delta_x =0.
         mm=0.
+        print("I have entered the training loop for classification")
         for step in pbar:
             
             try:
@@ -987,21 +988,20 @@ class Trainer(eqx.Module):
             x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
             y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
             
-            # #print(exp_x.shape, x.shape)
-            
+            print(exp_x.shape, x.shape)
             delta_x = jnp.abs(exp_x-x)
             sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
             delta_x = (delta_x/sum_delta_x)            
             data = static, ( x, y, exp_x, exp_y, delta_x, flag)
             grad, losses =  self.return_Hamiltonian_class(params, data, notABTrain)    
+            print("I have computed the gradient")
             (H, V, dV, dVstar_dtheta, dVstar_dx)  = losses         
             grad_leav = jax.tree_util.tree_leaves(grad)
             grad_norm = jnp.sqrt(sum([jnp.linalg.norm(g)**2 for g in grad_leav])/len(grad_leav) )
+
             updates, opt_state = optim.update(grad, opt_state, params)
             params =  optax.apply_updates(params, updates)
-            # print("the details", task_id, step, step+task_id*n_iter )
-            
-            
+            print("the details", task_id, step, step+task_id*n_iter )
             
             
             pbar.set_postfix({"Train/Cross:": V,
@@ -1027,106 +1027,106 @@ class Trainer(eqx.Module):
                 H,\
                 grad_norm, grad_norm )
 
-            ## Validation Metric calculations on the total exp_replay
-            if step %50==0:
-                sum_delta_x=0.
-                V_star_max=[]
-                dVstar_dx=[]
-                dVstar_dtheta=[]
-                H=[]
-                dV=[]
-                metrics =[]
-                loader_1, loader_2= valloader
-                for (batch_x, batch_ex) in zip(loader_1, loader_2):
-                    (x, y) = batch_x
-                    (exp_x, exp_y) = batch_ex
-                    x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-                    y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-                    exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-                    exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-                    delta_x = jnp.abs(exp_x-x)
-                    sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
-                    delta_x = (delta_x/sum_delta_x)
-                    data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
-                    _, losses = self.return_Hamiltonian_class(params,data, notABTrain)         
-                    (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
-                    V_star_max.append(v)
-                    dVstar_dx.append(dvstar_dx)
-                    dVstar_dtheta.append(dvstar_dtheta)
-                    H.append(h)
-                    dV.append(dv)
-                   
-
-                    metrics.append(self.return_metric(params, static, data=(exp_x, exp_y), notABTrain=notABTrain))
+            print("I am supposed to be printing data now.")
+            # ## Validation Metric calculations on the total exp_replay
+            # if step % 1==0:
+            #     sum_delta_x=0.
+            #     V_star_max=[]
+            #     dVstar_dx=[]
+            #     dVstar_dtheta=[]
+            #     H=[]
+            #     dV=[]
+            #     metrics =[]
+            #     loader_1, loader_2= valloader
+            #     for (batch_x, batch_ex) in zip(loader_1, loader_2):
+            #         (x, y) = batch_x
+            #         (exp_x, exp_y) = batch_ex
+            #         x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+            #         y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+            #         exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+            #         exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+            #         delta_x = jnp.abs(exp_x-x)
+            #         sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
+            #         delta_x = (delta_x/sum_delta_x)
+            #         data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
+            #         _, losses = self.return_Hamiltonian_class(params,data, notABTrain)         
+            #         (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
+            #         V_star_max.append(v)
+            #         dVstar_dx.append(dvstar_dx)
+            #         dVstar_dtheta.append(dvstar_dtheta)
+            #         H.append(h)
+            #         dV.append(dv)
+        
+            #         metrics.append(self.return_metric(params, static, data=(exp_x, exp_y), notABTrain=notABTrain))
                                   
-                V_star_max=np_.mean(V_star_max)
-                dVstar_dx= np_.mean(dVstar_dx)
-                dVstar_dtheta=np_.mean(dVstar_dtheta)
-                dV=np_.mean(dV)
-                H=np_.mean(H)
-                mm=(sum(metrics)/len(metrics))
-                # print(len(metrics), sum(metrics), mm)
-                # #print(H,  dVstar_dx, dVstar_dtheta)
-                # pbar.set_postfix({"Valid/MSE:": V_star_max,
-                #               "Train/dVstar_dx:": dVstar_dx,
-                #               "Train/dVstar_dtheta:": dVstar_dtheta,
-                #               "Train/H:":  V_star_max+dVstar_dx+dVstar_dtheta,
-                #               "Train/||dH_dtheta||:": grad_norm\
-                #             })
+                # V_star_max=np_.mean(V_star_max)
+                # dVstar_dx= np_.mean(dVstar_dx)
+                # dVstar_dtheta=np_.mean(dVstar_dtheta)
+                # dV=np_.mean(dV)
+                # H=np_.mean(H)
+                # mm=(sum(metrics)/len(metrics))
+                # # print(len(metrics), sum(metrics), mm)
+                # # #print(H,  dVstar_dx, dVstar_dtheta)
+                # # pbar.set_postfix({"Valid/MSE:": V_star_max,
+                # #               "Train/dVstar_dx:": dVstar_dx,
+                # #               "Train/dVstar_dtheta:": dVstar_dtheta,
+                # #               "Train/H:":  V_star_max+dVstar_dx+dVstar_dtheta,
+                # #               "Train/||dH_dtheta||:": grad_norm\
+                # #             })
                 
-                self.writer.add_scalar('Valid/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(), step+task_id*n_iter)
-                self.writer.add_scalar('Valid/Loss/Cross', V_star_max.item(), step+task_id*n_iter)
-                self.writer.add_scalar('Valid/Loss/dV', dV.item(), step+task_id*n_iter)
-                self.writer.add_scalar('Valid/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
-                self.writer.add_scalar('valid/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
-                self.writer.add_scalar('valid/metrics/ACC', mm.item(), step+task_id*n_iter)
+                # self.writer.add_scalar('Valid/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(), step+task_id*n_iter)
+                # self.writer.add_scalar('Valid/Loss/Cross', V_star_max.item(), step+task_id*n_iter)
+                # self.writer.add_scalar('Valid/Loss/dV', dV.item(), step+task_id*n_iter)
+                # self.writer.add_scalar('Valid/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
+                # self.writer.add_scalar('valid/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+                # self.writer.add_scalar('valid/metrics/ACC', mm.item(), step+task_id*n_iter)
                 
-                dictum["valid"+str(step+task_id*n_iter)] = ( V_star_max,dVstar_dx, dVstar_dtheta, \
-                V_star_max+dVstar_dx+dVstar_dtheta, mm.item() )
+                # dictum["valid"+str(step+task_id*n_iter)] = ( V_star_max,dVstar_dx, dVstar_dtheta, \
+                # V_star_max+dVstar_dx+dVstar_dtheta, mm.item() )
                 
-        ## Test Metric calculations on the total exp_replay
-        sum_delta_x=0.
-        V_star_max=[]
-        dVstar_dx=[]
-        dVstar_dtheta=[]
-        H=[]
-        metrics=[]
-        loader_1, loader_2= testloader
-        for (batch_x, batch_ex) in zip(loader_1, loader_2):
-            (x, y) = batch_x
-            (exp_x, exp_y) = batch_ex
-            x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-            y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-            exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-            exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        # ## Test Metric calculations on the total exp_replay
+        # sum_delta_x=0.
+        # V_star_max=[]
+        # dVstar_dx=[]
+        # dVstar_dtheta=[]
+        # H=[]
+        # metrics=[]
+        # loader_1, loader_2= testloader
+        # for (batch_x, batch_ex) in zip(loader_1, loader_2):
+        #     (x, y) = batch_x
+        #     (exp_x, exp_y) = batch_ex
+        #     x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        #     y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        #     exp_x = exp_x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
+        #     exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
         
-            delta_x = (exp_x-x)
-            sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
-            delta_x = (delta_x/sum_delta_x)
-            data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
-            _, losses = self.return_Hamiltonian_class(params,data, notABTrain)         
-            (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
-            V_star_max.append(v)
-            dVstar_dx.append(dvstar_dx)
-            dVstar_dtheta.append(dvstar_dtheta)
-            H.append(h)
-            metrics.append(self.return_metric(params, static, data = (exp_x, exp_y),notABTrain = notABTrain))
-            pbar.set_postfix({"test/Cross:": v})
-        V_star_max=np_.mean(V_star_max[-50:])
-        dVstar_dx= np_.mean(dVstar_dx)
-        dVstar_dtheta=np_.mean(dVstar_dtheta)
-        H=np_.mean(H)
-        mm = sum(metrics)/len(metrics)
-        self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter)
-        self.writer.add_scalar('test/Loss/Cross', V_star_max.item(), step+task_id*n_iter)
-        self.writer.add_scalar('test/gradient/dVstar_dx',
-                            dVstar_dx.item(), step+task_id*n_iter)
-        self.writer.add_scalar('test/metrics/ACC',
-                            mm.item(), step+task_id*n_iter)
-        self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
-        dictum["test"+str(task_id)] = (V_star_max,dVstar_dx, dVstar_dtheta, H, mm)
+        #     delta_x = (exp_x-x)
+        #     sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
+        #     delta_x = (delta_x/sum_delta_x)
+        #     data = static, ( x, y, exp_x, exp_y, delta_x, flag) 
+        #     _, losses = self.return_Hamiltonian_class(params,data, notABTrain)         
+        #     (h, v, dv, dvstar_dtheta, dvstar_dx) = losses  
+        #     V_star_max.append(v)
+        #     dVstar_dx.append(dvstar_dx)
+        #     dVstar_dtheta.append(dvstar_dtheta)
+        #     H.append(h)
+        #     metrics.append(self.return_metric(params, static, data = (exp_x, exp_y),notABTrain = notABTrain))
+        #     pbar.set_postfix({"test/Cross:": v})
+        # V_star_max=np_.mean(V_star_max[-50:])
+        # dVstar_dx= np_.mean(dVstar_dx)
+        # dVstar_dtheta=np_.mean(dVstar_dtheta)
+        # H=np_.mean(H)
+        # mm = sum(metrics)/len(metrics)
+        # self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter)
+        # self.writer.add_scalar('test/Loss/Cross', V_star_max.item(), step+task_id*n_iter)
+        # self.writer.add_scalar('test/gradient/dVstar_dx',
+        #                     dVstar_dx.item(), step+task_id*n_iter)
+        # self.writer.add_scalar('test/metrics/ACC',
+        #                     mm.item(), step+task_id*n_iter)
+        # self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
+        # dictum["test"+str(task_id)] = (V_star_max,dVstar_dx, dVstar_dtheta, H, mm)
         
-        self.writer.flush()
+        # self.writer.flush()
         return params, static, optim, dictum
     
     
