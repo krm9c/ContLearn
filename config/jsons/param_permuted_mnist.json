@@ -1,0 +1,21 @@
+{
+    "delta": 1e-04,
+    "tensorfile": "logdir/tensorboard/permuted_mnist_CNN",
+    "file": "logdir/dicts/permuted_mnist_CNN",
+    "model_path": "logdir/models/permuted_mnist_CNN",
+    "flag":[0, 0],
+    "n_task": 10,
+    "epochs_per_task":1000,
+    "save_iter": 1,
+    "data": "permuted_mnist",
+    "loss": "class",
+    "metric": "class",
+    "problem": "vectors",
+    "lr": 1e-4,
+    "batch_size":128,
+    "n_layers":4,
+    "network": "cnn",
+    "hln": 129,
+    "prob": "classification",
+    "n_class": 10
+}
