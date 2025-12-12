@@ -16,6 +16,10 @@ import pickle
 from config import Params
 from training import train_model_graph, train_model_reg, train_model_class
 
+import jax
+print(jax.devices()) # Should list your GPU(s)
+print(jax.default_backend()) # Should show 'gpu' or 'tpu'
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -52,6 +56,7 @@ def main():
             if params['prob'] == 'regression':
                 record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_reg(params)
             elif params['prob'] == 'classification':
+                print("Starting classification training...")
                 record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_class(params)
             elif params['problem'] == 'graph':
                 record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_graph(params)
