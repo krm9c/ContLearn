@@ -32,10 +32,12 @@ class TestDataReturn:
 
         data = data_return(config)
 
-        assert data.X_train is not None
-        assert data.Y_train is not None
-        assert data.exp_x_train.shape[0] == 0  # Initially empty
-        assert data.exp_y_train.shape[0] == 0
+        # After initialization, X_train/y_train are None until generate_dataset is called
+        # But dataset should be loaded
+        assert data.dataset is not None
+        # Experience replay starts as empty lists
+        assert len(data.exp_x_train) == 0
+        assert len(data.exp_y_train) == 0
 
     def test_data_return_mnist_initialization(self):
         """Test data_return initializes correctly for MNIST."""
@@ -49,10 +51,11 @@ class TestDataReturn:
 
         data = data_return(config)
 
-        assert data.X_train is not None
-        assert data.Y_train is not None
-        # MNIST has 10 classes
-        assert hasattr(data, 'n_classes')
+        # MNIST images and labels should be loaded
+        assert data.images is not None
+        assert data.labels is not None
+        # MNIST has shape [N, 1, 28, 28]
+        assert data.images.shape[1:] == (1, 28, 28)
 
     def test_data_return_cifar10_initialization(self):
         """Test data_return initializes correctly for CIFAR-10."""
@@ -66,10 +69,11 @@ class TestDataReturn:
 
         data = data_return(config)
 
-        assert data.X_train is not None
-        assert data.Y_train is not None
+        # CIFAR-10 images and labels should be loaded
+        assert data.images is not None
+        assert data.labels is not None
         # CIFAR-10: 3 channels, 32x32
-        assert data.X_train.shape[1:] == (3, 32, 32)
+        assert data.images.shape[1:] == (3, 32, 32)
 
     def test_generate_dataset_sine(self):
         """Test dataset generation for sine regression."""
@@ -109,10 +113,11 @@ class TestDataReturn:
         data = data_return(config)
         data.generate_dataset(task_id=0, batch_size=32, phase='training')
 
-        initial_exp_size = data.exp_x_train.shape[0]
+        # Initially exp_x_train is an empty list
+        initial_exp_size = len(data.exp_x_train)
         data.append_to_experience(task_id=0)
 
-        # Experience replay should have grown
+        # Experience replay should have grown (now a tensor)
         assert data.exp_x_train.shape[0] > initial_exp_size
         assert data.exp_y_train.shape[0] > initial_exp_size
 
@@ -129,10 +134,11 @@ class TestDataReturn:
         data = data_return(config)
         data.generate_dataset(task_id=0, batch_size=32, phase='training')
 
-        initial_exp_size = data.exp_x_train.shape[0]
+        # Initially exp_x_train is an empty list
+        initial_exp_size = len(data.exp_x_train)
         data.append_to_experience(task_id=0)
 
-        # Experience replay should have grown
+        # Experience replay should have grown (now a tensor)
         assert data.exp_x_train.shape[0] > initial_exp_size
         assert data.exp_y_train.shape[0] > initial_exp_size
 
