@@ -32,7 +32,7 @@ def main():
     train_parser.add_argument("runs", default=1, help="the number of total runs")
     train_parser.add_argument("json", default=None, help="directory with configurations")
 
-    basic_path = 'jsons/'
+    basic_path = 'config/jsons/'
     args = parser.parse_args()
     json_path = os.path.join(basic_path + str(args.json))
 

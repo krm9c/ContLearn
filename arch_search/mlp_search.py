@@ -11,6 +11,187 @@ import equinox as eqx
 from training.checkpoint import load_checkpoint
 
 
+            # #CL training regression problem
+            # #print("The params after CL train: ", params)
+            # #print("The statics after CL train: ", static)
+            # #print("WEIGHTS BEFORE Arch Search: ", model.layers[0].weight)
+            # model = eqx.combine(params, static)
+            # arch_dict = record_dict_preAB[str(i)]
+            # trainWLoss = np.mean([arch_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+            # #-------------------------------------STEP 2: Get new architecture------------------------------------------#
+            # print("STEP 2: Search for Best architecture for the data in task " , i)
+            # original_arch = model.sizes
+            # opt_arch = arch_search(original_arch,i,trainWLoss,og_epochs,config,dataloader_curr, dataloader_exp,test_loader_curr,test_loader_exp)
+            # print("NEW Architecture: ", opt_arch)
+            # #print("WEIGHTS AFTER SEARCH BUT BEFORE AB TRAIN: ", model.layers[0].weight)
+
+            # if opt_arch != original_arch: #if arch search found a new architecture, then...
+            #     #----------STEP 3a: Set New Arch and Set/Prep A and B to proper sizes-----------------#
+            #     og_epochs = 350
+            #     print("STEP 3a: Set new Architecture and set/prep A and B to proper sizes")
+            #     s = original_arch
+            #     #opt_arch = [3,385+75*i,385+50*i,10]
+            #     model = eqx.tree_at(lambda x: x.sizes, model, opt_arch)
+            #     initializer = jax.nn.initializers.glorot_uniform()
+            #     A_list = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(s[1:],model.sizes[1:])]
+            #     B_list = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(s[:-1],model.sizes[:-1])]
+            #     model = eqx.tree_at(lambda x: x.A, model, A_list)
+            #     model = eqx.tree_at(lambda x: x.B, model, B_list)
+            #     #print("A BEFORE TRAIN: ", model.A[0])
+            #     #print("WEIGHTS AFTER SETTING A,B: ", model.layers[0].weight)
+            #     #print("model after set A,B:", model)
+
+            #     #-------------STEP 3b: Freeze W train only on A,B-----------#
+            #     og_epochs = 2000
+            #     print("STEP 3b: Train A and B fix W for ", og_epochs, " epochs")
+            #     model1 = model
+            #     filter_spec = jtu.tree_map(lambda _: False, model1) #this is a copy of the model
+            #     filter_spec = eqx.tree_at(lambda x: (x.A,x.B), filter_spec, replace=(True,True),)
+            #     #filter_spec = eqx.tree_at(lambda x: x.layers, filter_spec, replace=True,)
+            #     diff_model, static_model = eqx.partition(model, filter_spec)
+            #     #print("MAKE AB Params diff_model: ", diff_model)
+            #     #print("MAKE Weights Static static_model: ", static_model)
+            #     import optax
+            #     optim2 = optax.adam(1e-4)
+            #     diff_model, static_model, optim2, record_dict_AB[str(i)] =  trainer.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+            #                                                                         (test_loader_curr, test_loader_exp)),diff_model, static_model, optim2, \
+            #                                                                         n_iter=og_epochs, save_iter=config['save_iter'],\
+            #                                                                         task_id=i, config={
+            #                                                                             'batch_size': 64,
+            #                                                                             'opt': 'Nash',
+            #                                                                             'problem': config['problem'],
+            #                                                                             'data_id': config['data'],
+            #                                                                             "flag": config['flag'],
+            #                                                                             'len_exp_replay': 20000,
+            #                                                                             'network': config['network'],
+            #                                                                             }, dictum=record_dict_AB, notABTrain = False) #CL training regression problem
+                
+            #     AB_dict = record_dict_AB[str(i)]
+            #     trainABLoss = np.mean([AB_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+            #     a = 1
+            #     threshold = 0.6
+            #     print("AB Loss after first AB training: ", trainABLoss)
+            #     if trainABLoss<=0.10:
+            #         threshold = .75
+            #     while(trainABLoss> threshold*trainWLoss):
+            #         #og_epochs = 1000
+            #         diff_model, static_model, optim2, record_dict_AB[str(i)] =  trainer.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+            #                                                                         (test_loader_curr, test_loader_exp)),diff_model, static_model, optim2, \
+            #                                                                         n_iter=og_epochs, save_iter=config['save_iter'],\
+            #                                                                         task_id=i, config={
+            #                                                                             'batch_size': 64,
+            #                                                                             'opt': 'Nash',
+            #                                                                             'problem': config['problem'],
+            #                                                                             'data_id': config['data'],
+            #                                                                             "flag": config['flag'],
+            #                                                                             'len_exp_replay': 20000,
+            #                                                                             'network': config['network'],
+            #                                                                             }, dictum=record_dict_AB, notABTrain = False) #CL training regression problem
+            #         AB_dict = record_dict_AB[str(i)]
+            #         prevABLoss = trainABLoss
+            #         trainABLoss = np.mean([AB_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+            #         a +=1
+            #         print("AB Loss after AB training iteration ", a-1, ": ", trainABLoss)
+            #         if prevABLoss< trainABLoss:
+            #             print("AB Loss is increasing, breaking out of AB training loop")
+            #             break
+            #         if a==8:
+            #             print("too many AB training iterations, breaking out of AB training loop")
+            #             break
+            #     model = eqx.combine(diff_model,static_model)
+            #     #print("WEIGHTS AFTER AB TRAIN: ", model.layers[0].weight)
+            #     #print("A AFTER TRAIN: ", model.A[0])
+
+            #     #-----------------------STEP 4: Set new V = AWB^T-----------------------------#
+            #     print("STEP 4: Set the new weights V = AWB^T")
+            #     #print("-------------------------------------")
+            #     for j in range(len(model.sizes)-1):
+            #         Vw = model.A[j] @ model.layers[j].weight @ jnp.transpose(model.B[j])
+            #         #print("shape of bias:", model.layers[i].bias.shape)
+            #         #print("shape of A: ", model.A[i].shape)
+            #         Vb = model.layers[j].bias@ model.A[j].T
+            #         model = eqx.tree_at(lambda x: x.layers[j].weight, model, Vw)
+            #         model = eqx.tree_at(lambda x: x.layers[j].bias, model, Vb)
+            #     params, static = eqx.partition(model, eqx.is_array)
+            #     static = eqx.tree_at(lambda x: x.A, static, replace= model.A)
+            #     static = eqx.tree_at(lambda x: x.B, static, replace= model.B)
+            #     params = eqx.tree_at(lambda x: (x.A,x.B), params, replace= (None,None))
+            #     print("PARAMS AFTER V SET: ", params)
+            #     print("STATIC AFTER V SET: ", static)
+            #     #print("weights size after setting V: ", jnp.shape(model.layers[0].weight))
+            #     #print("WEIGHTS AFTER SETTING V: ", model.layers[0].weight)
+            #     #print("A BEFORE TRAIN V: ", model.A[0])
+
+            #     #-----------STEP 5: Train with weights V for full epochs & record------------#
+            #     print("STEP 5: Train the model with weights V for full amount of epochs")
+            #     import optax
+            #     optim3 = optax.adam(1e-3)
+            #     record_dict_dummy = {}
+                
+            #     params, static, optim3, record_dict_dummy[str(i)] =  trainer.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+            #                                                                         (test_loader_curr, test_loader_exp)),params, static, optim3, \
+            #                                                                         n_iter=50, save_iter=config['save_iter'],\
+            #                                                                         task_id=i, config={
+            #                                                                             'batch_size': 64,
+            #                                                                             'opt': 'Nash',
+            #                                                                             'problem': config['problem'],
+            #                                                                             'data_id': config['data'],
+            #                                                                             "flag": config['flag'],
+            #                                                                             'len_exp_replay': 20000,
+            #                                                                             'network': config['network'],
+            #                                                                             }, dictum=record_dict_dummy)
+                
+            #     params, static, optim3, record_dict[str(i)] =  trainer.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+            #                                                                       (test_loader_curr, test_loader_exp)),params, static, optim3, \
+            #                                                                      n_iter=config['epochs_per_task'], save_iter=config['save_iter'],\
+            #                                                                      task_id=i, config={
+            #                                                                         'batch_size': 64,
+            #                                                                         'opt': 'Nash',
+            #                                                                         'problem': config['problem'],
+            #                                                                         'data_id': config['data'],
+            #                                                                         "flag": config['flag'],
+            #                                                                         'len_exp_replay': 20000,
+            #                                                                         'network': config['network'],
+            #                                                                         }, dictum=record_dict) #CL training regression problem
+            #     params, static = eqx.partition(model, eqx.is_array)
+            #     static = eqx.tree_at(lambda x: x.A, static, replace= model.A)
+            #     static = eqx.tree_at(lambda x: x.B, static, replace= model.B)
+            #     params = eqx.tree_at(lambda x: (x.A,x.B), params, replace= (None,None))
+            #     #print("After re-split params: ", params)
+            #     #print("After re-split statics: ", static)
+            #     same_arch = False
+            #     optim1 = optim3
+            # else: #if arch search did not find a new architecture, then...
+            #     #---------------STEP 3: Train with original weights and architecture---------#
+            #     params, static = eqx.partition(model, eqx.is_array)
+            #     static = eqx.tree_at(lambda x: x.A, static, replace= model.A)
+            #     static = eqx.tree_at(lambda x: x.B, static, replace= model.B)
+            #     params = eqx.tree_at(lambda x: (x.A,x.B), params, replace= (None,None))
+            #     params, static, optim1, record_dict[str(i)] =  trainer.train__CL__reg_AWB((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+            #                                                                       (test_loader_curr, test_loader_exp)),params, static, optim1, \
+            #                                                                      n_iter=config['epochs_per_task'], save_iter=config['save_iter'],\
+            #                                                                      task_id=i, config={
+            #                                                                         'batch_size': 64,
+            #                                                                         'opt': 'Nash',
+            #                                                                         'problem': config['problem'],
+            #                                                                         'data_id': config['data'],
+            #                                                                         "flag": config['flag'],
+            #                                                                         'len_exp_replay': 20000,
+            #                                                                         'network': config['network'],
+            #                                                                         }, dictum=record_dict) #CL training regression problem
+            #     params, static = eqx.partition(model, eqx.is_array)
+            #     static = eqx.tree_at(lambda x: x.A, static, replace= model.A)
+            #     static = eqx.tree_at(lambda x: x.B, static, replace= model.B)
+            #     params = eqx.tree_at(lambda x: (x.A,x.B), params, replace= (None,None))
+            #     #print("After re-split params: ", params)
+            #     #print("After re-split statics: ", static)
+            #     same_arch = True
+            
+
+
+
+
+
 def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
                     dataloader_curr, dataloader_exp, test_loader_curr, test_loader_exp):
     """

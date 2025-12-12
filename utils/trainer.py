@@ -415,18 +415,12 @@ class Trainer(eqx.Module):
     def train__CL__graph(self, train__, params, static,\
                         optim, n_iter=1000, save_iter=5, dictum = {}, 
                         task_id=0, config={}, notABTrain = True):
-        # #print(x)
-        # #print(y)
-        # x = x.numpy().astype(np_.float64)
-        # adj = adj.numpy().astype(np_.float64)
-        # y = jax.nn.one_hot(jnp.array(y.astype(np_.int32)), 7)
         memory_train, test, train = train__
         trainiter = iter(train)
         expiter = iter(memory_train)
         opt_state = optim.init(params)
         from tqdm import tqdm
         pbar = tqdm(range(n_iter), dynamic_ncols=True)
-        # sum_delta_x =0
         V_star_max=[]
         dVstar_dx=[]
         dVstar_dtheta=[]
@@ -467,14 +461,7 @@ class Trainer(eqx.Module):
                 # all over the place
                 # First problem, a distance metric, that does not care about the size of the nodes.
                 x = batch.x.numpy()
-                exp_x = batch_ex.x.numpy()
-                # var__=jnp.sqrt(jnp.linalg.norm(  (jnp.mean( x, axis =0)-jnp.mean(exp_x, axis = 0 ) )**2 ) )
-                # #print(var__)
-                # delta_x = np_.random.normal(0, var__, exp_x.shape) 
-                # var__= ( jnp.sqrt( jnp.linalg.norm(batch.adj.numpy()**2) )- jnp.sqrt(jnp.linalg.norm(batch_ex.adj.numpy()**2) ) )**2
-                # #print(var__)
-                # delta_adj = np_.random.normal(0, var__, batch_ex.adj.shape) 
-                # #--------------------------------------------------------------------------
+                exp_x = batch_ex.x.numpy()#--------------------------------------------------------------------------
                 delta_x = np_.random.normal(0, var_x, exp_x.shape)       
                 delta_adj = np_.random.normal(0, var_adj, batch_ex.adj.shape)   
                 data = (static, (batch, batch_ex, delta_x, delta_adj) )
@@ -487,9 +474,7 @@ class Trainer(eqx.Module):
                 V_star_max.append(V)
                 dVstar_dx.append(dv_dx)
                 dVstar_dtheta.append(dv_dtheta)
-                # print(jnp.linalg.norm(delta_adj), dvstar_dadj, dvstar_dx, dvstar_dtheta)
-                dVstar_dadj.append(dv_dadj)
-                 # +config['flag'][0]*dvstar_dx+config['flag'][0]*dvstar_dadj+config['flag'][1]*dvstar_dtheta    
+                dVstar_dadj.append(dv_dadj)  
                 H.append(h)
                 metrics.append( self.return_metric(params, static, data = (batch, batch_ex),notABTrain = notABTrain))
                 
@@ -605,155 +590,6 @@ class Trainer(eqx.Module):
         #         metrics=[]
         # self.writer.flush()
         return params, static, optim, dictum 
-    
-    """
-    def train__CL__graph(self, train__, params, static,\
-                        optim, n_iter=1000, save_iter=5, dictum = {}, 
-                        task_id=0, config={}, notABTrain = True):
-        # #print(x)
-        # #print(y)
-        # x = x.numpy().astype(np_.float64)
-        # adj = adj.numpy().astype(np_.float64)
-        # y = jax.nn.one_hot(jnp.array(y.astype(np_.int32)), 7)
-        memory_train, test, train = train__
-        trainiter = iter(train)
-        expiter = iter(memory_train)
-        opt_state = optim.init(params)
-        from tqdm import tqdm
-        pbar = tqdm(range(n_iter), dynamic_ncols=True)
-        # sum_delta_x =0
-        V_star_max=[]
-        dVstar_dx=[]
-        dVstar_dtheta=[]
-        dVstar_dadj=[]
-        H=[]
-        metrics=[]
-        import torch_geometric.transforms as T
-        transforms = T.Compose([T.GCNNorm(), T.ToDense(), T.NormalizeFeatures()])
-        
-        var_adj=[]
-        var_x =[]
-        for batch, batch_ex in zip(trainiter, expiter):
-            batch = transforms(batch)
-            batch_ex=transforms(batch_ex)
-            # ---------------------------------------------------------------------
-            # How do you ensure that these distances are reliable or rather not flipping 
-            # all over the place
-            # First problem, a distance metric, that does not care about the size of the nodes.
-            x = batch.x.numpy()
-            exp_x = batch_ex.x.numpy()
-            var_x.append(jnp.sqrt(jnp.linalg.norm(  (jnp.mean( x, axis =0)-jnp.mean(exp_x, axis = 0 ) )**2 ) ))
-            #print(var__)
-            var_adj.append(( jnp.sqrt( jnp.linalg.norm(batch.adj.numpy()**2) )- jnp.sqrt(jnp.linalg.norm(batch_ex.adj.numpy()**2) ) )**2)
-            #print(var__)    
-        var_x = sum(var_x)/len(var_x)
-        var_adj = 1e-3*(sum(var_adj)/len(var_adj))
-        
-        
-        for step in pbar:
-            # print("step -- I am going into the batch", step)
-            trainiter = iter(train)
-            expiter = iter(memory_train)
-            for batch, batch_ex in zip(trainiter, expiter):
-                batch = transforms(batch)
-                batch_ex=transforms(batch_ex)
-                # ---------------------------------------------------------------------
-                # How do you ensure that these distances are reliable or rather not flipping 
-                # all over the place
-                # First problem, a distance metric, that does not care about the size of the nodes.
-                x = batch.x.numpy()
-                exp_x = batch_ex.x.numpy()
-                # var__=jnp.sqrt(jnp.linalg.norm(  (jnp.mean( x, axis =0)-jnp.mean(exp_x, axis = 0 ) )**2 ) )
-                # #print(var__)
-                # delta_x = np_.random.normal(0, var__, exp_x.shape) 
-                # var__= ( jnp.sqrt( jnp.linalg.norm(batch.adj.numpy()**2) )- jnp.sqrt(jnp.linalg.norm(batch_ex.adj.numpy()**2) ) )**2
-                # #print(var__)
-                # delta_adj = np_.random.normal(0, var__, batch_ex.adj.shape) 
-                # #--------------------------------------------------------------------------
-                delta_x = np_.random.normal(0, var_x, exp_x.shape)       
-                delta_adj = np_.random.normal(0, var_adj, batch_ex.adj.shape)   
-                data = (static, (batch, batch_ex, delta_x, delta_adj) )
-                grad, losses = self.return_Hamiltonian_graph(params, data)
-                #Note that h = V + dv      
-                (h, V, dV, dv_dtheta, dv_dx, dv_dadj)     = losses
-                updates, opt_state = optim.update(grad, opt_state, params)
-                params =  optax.apply_updates(params, updates)
-                # ------------------------------------------------------------------
-                #Updated the parameters, now working on storing and viewing things.
-                V_star_max.append(V) # this is the loss
-                dVstar_dx.append(dv_dx)
-                dVstar_dtheta.append(dv_dtheta)
-                # print(jnp.linalg.norm(delta_adj), dvstar_dadj, dvstar_dx, dvstar_dtheta)
-                dVstar_dadj.append(dv_dadj)
-                 # +config['flag'][0]*dvstar_dx+config['flag'][0]*dvstar_dadj+config['flag'][1]*dvstar_dtheta    
-                H.append(h) #this is loss + dv
-                metrics.append(self.return_metric(params, static, data = (batch, batch_ex), notABTrain = True))
-            #if step % save_iter ==0: #I removed this   
-                # print("going into the save iteration")
-                # ------------------------------------------------------
-                import numpy as np
-                V_star_maxtr=np_.mean(dV)
-                V_star_max_loss = np.mean(V_star_max) #I added this
-                dVstar_dxtr= np_.mean(dVstar_dx)
-                dVstar_dthetatr=np_.mean(dVstar_dtheta)
-                dVstar_dadjtr=np_.mean(dVstar_dadj)
-                Htr=np_.mean(H)
-                metricstr=np_.mean(metrics)
-                metrics=[]
-                iter_t = iter(train)
-                for batch in iter_t:
-                    batch = transforms(batch)
-                    #metrics.append(self.return_metric(params, static, data=(exp_x, exp_y), notABTrain=notABTrain))
-                    metrics.append( self.return_metric(params, static, data = (batch, batch), notABTrain = True))
-                # ------------------------------------------------------
-                # V_star_max=np_.mean(V_star_max)
-                # dVstar_dx= np_.mean(dVstar_dx)
-                # dVstar_dtheta=np_.mean(dVstar_dtheta)
-                # dVstar_dadj=np_.mean(dVstar_dadj)
-                # H=np_.mean(H)
-                metrics=np_.mean(metrics)
-                pbar.set_postfix( 
-                                {
-                                "H:": Htr,
-                                "dV": V_star_maxtr.item(),
-                                "V" : V_star_max_loss.item(),
-                                "train/Metric:": metricstr,
-                                "test/Metric:": metrics,
-                                "dvstar_dx": round(dVstar_dxtr,6),
-                                "dVstar_dtheta:": round(dVstar_dthetatr,6),
-                                "dVstar_dadj:": round(dVstar_dadjtr,6),
-                                })
-                # ------------------------------------------------------
-                # self.writer.add_scalar('test/Loss/H', (V_star_max+dVstar_dx+dVstar_dtheta).item(),step+task_id*n_iter )
-                # self.writer.add_scalar('test/Loss/cross entropy', V_star_max.item(), step+task_id*n_iter )
-                # self.writer.add_scalar('test/gradient/dVstar_dx', dVstar_dx.item(), step+task_id*n_iter)
-                # self.writer.add_scalar('test/gradient/dVstar_dtheta', dVstar_dtheta.item(), step+task_id*n_iter)
-                # self.writer.add_scalar('test/gradient/dVstar_dadj', dVstar_dadj.item(), step+task_id*n_iter)
-                self.writer.add_scalar('train/Loss/H', Htr.item(),step+task_id*n_iter )
-                #self.writer.add_scalar('train/Loss/cross entropy', V_star_maxtr.item(), step+task_id*n_iter )
-                self.writer.add_scalar('train/Loss/cross entropy', V_star_max_loss.item(), step+task_id*n_iter )
-                
-                self.writer.add_scalar('train/gradient/dVstar_dx', dVstar_dxtr.item(), step+task_id*n_iter)
-                self.writer.add_scalar('train/gradient/dVstar_dtheta', dVstar_dthetatr.item(), step+task_id*n_iter)
-                self.writer.add_scalar('train/gradient/dVstar_dadj', dVstar_dadjtr.item(), step+task_id*n_iter)
-                self.writer.add_scalar('train/metric', metricstr, task_id)
-                self.writer.add_scalar('test/metric', metrics, task_id)
-                dictum["train"+str(step+task_id*n_iter)] =\
-                ( V_star_max_loss, V_star_maxtr, dVstar_dxtr, dVstar_dthetatr, dVstar_dadjtr, Htr, metricstr, metrics)
-                # dictum["test"+str(step+task_id*n_iter)] =\
-                # ( V_star_max,dVstar_dx, dVstar_dtheta,\
-                # V_star_max+dVstar_dx+dVstar_dtheta, metrics)
-                
-                V_star_max_loss = []
-                V_star_max=[]
-                dVstar_dx=[]
-                dVstar_dtheta=[]
-                dVstar_dadj=[]
-                H=[]
-                metrics=[]
-        self.writer.flush()
-        return params, static, optim, dictum
-        """ 
 
 
 
@@ -767,10 +603,7 @@ class Trainer(eqx.Module):
         trainloader, exploader, valloader, testloader=train__
         trainiter = iter(trainloader)
         expiter = iter(exploader)
-        # optim_inner_x, optim_inner_mod = optim_inner
         batch = next(trainiter)
-        #print("This is a batch: ", batch)
-        #print("This is static", static)
         x, y = batch
         x = x.numpy().astype(np_.float64)
         y = y.numpy().astype(np_.float64)
@@ -783,11 +616,6 @@ class Trainer(eqx.Module):
             flag=config["flag"]
         else:
             flag=config["flag"]
-        # #print("Now the flag is ", flag)
-        # jax.value_and_grad(self.return_loss_function_CL, has_aux=True)
-        # grad_loss_fn_inner = jax.value_and_grad(self.return_loss_function_CL_inner)
-        # grad_loss_fn_inner_mod = jax.value_and_grad(self.return_loss_function_CL_inner_mod)
-        # start_iter_inner = task_id*n_iter*inner_iter
         sum_delta_x =0.
         for step in pbar:
             
@@ -961,14 +789,9 @@ class Trainer(eqx.Module):
             flag=config["flag"]
         else:
             flag=config["flag"]
-        # #print("Now the flag is ", flag)
-        # jax.value_and_grad(self.return_loss_function_CL, has_aux=True)
-        # grad_loss_fn_inner = jax.value_and_grad(self.return_loss_function_CL_inner)
-        # grad_loss_fn_inner_mod = jax.value_and_grad(self.return_loss_function_CL_inner_mod)
-        # start_iter_inner = task_id*n_iter*inner_iter
+
         sum_delta_x =0.
         mm=0.
-        print("I have entered the training loop for classification")
         for step in pbar:
             
             try:
@@ -988,21 +811,18 @@ class Trainer(eqx.Module):
             exp_y = exp_y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
             x = x.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
             y = y.numpy().astype(np_.float64)[:min(exp_x.shape[0], x.shape[0])]
-            
-            print(exp_x.shape, x.shape)
+            # print(exp_x.shape, x.shape)
             delta_x = jnp.abs(exp_x-x)
             sum_delta_x += jnp.sqrt((jnp.linalg.norm(delta_x)**2))
             delta_x = (delta_x/sum_delta_x)            
             data = static, ( x, y, exp_x, exp_y, delta_x, flag)
             grad, losses =  self.return_Hamiltonian_class(params, data, notABTrain)    
-            print("I have computed the gradient")
             (H, V, dV, dVstar_dtheta, dVstar_dx)  = losses         
             grad_leav = jax.tree_util.tree_leaves(grad)
             grad_norm = jnp.sqrt(sum([jnp.linalg.norm(g)**2 for g in grad_leav])/len(grad_leav) )
 
             updates, opt_state = optim.update(grad, opt_state, params)
             params =  optax.apply_updates(params, updates)
-            print("the details", task_id, step, step+task_id*n_iter )
             
             
             pbar.set_postfix({"Train/Cross:": V,
@@ -1028,7 +848,7 @@ class Trainer(eqx.Module):
                 H,\
                 grad_norm, grad_norm )
 
-            print("I am supposed to be printing data now.")
+            # print("I am supposed to be printing data now.")
             # ## Validation Metric calculations on the total exp_replay
             # if step % 1==0:
             #     sum_delta_x=0.
