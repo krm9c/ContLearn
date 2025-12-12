@@ -60,8 +60,8 @@ class MLPorig(eqx.Module):
         else:
             return outfunc(self.output_layers(x))
 
- #------------------------NEW---------------------------------------------------
- class MLP(eqx.Module):
+#------------------------NEW---------------------------------------------------
+class MLP(eqx.Module):
     layers: list
     sizes: list
     #act_fn: Callable
@@ -351,8 +351,88 @@ class CNN(eqx.Module):
             #print("after: ", x.shape)
             x = jax.nn.relu(x)
             #print(x.shape)
-        return x  
-    
+        return x
+
+#---------CNN3D for CIFAR-10/100 (3-channel 32x32 images)---------------#
+class CNN3D(eqx.Module):
+    conv_layers: list
+    feed_layers: list
+    A_conv: jax.Array
+    B_conv: jax.Array
+    A_feed: jax.Array
+    B_feed: jax.Array
+    feed_sizes: list
+    filter_size: int
+    channel_in: int
+    channel_out: int
+
+    def __init__(self, key, filter_size, feed_sizes, channel_in=3, channel_out=32, num_classes=10):
+        key1, key2, key3, key4, key5 = jax.random.split(key, 5)
+        # CNN for 3-channel 32x32 images (CIFAR-10/100)
+        i = 0
+        self.feed_sizes = feed_sizes
+        self.filter_size = filter_size
+        self.feed_layers = []
+        self.channel_in = channel_in
+        self.channel_out = channel_out
+
+        # Two conv layers for better feature extraction
+        self.conv_layers = [
+            eqx.nn.Conv2d(channel_in, channel_out, kernel_size=filter_size, key=key1),
+            eqx.nn.Conv2d(channel_out, channel_out * 2, kernel_size=filter_size, key=key2),
+        ]
+
+        for (in_layer, out_layer) in zip(feed_sizes[:-1], feed_sizes[1:]):
+            self.feed_layers.append(Linear2(in_layer, out_layer, key=jax.random.PRNGKey(i)))
+            i += 1
+
+        # AWB transformation matrices for architecture search
+        new_arch = [feed_sizes[0], 512, 256, num_classes]
+        initializer = jax.nn.initializers.glorot_uniform()
+        self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[1:], new_arch[1:])]
+        self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[:-1], new_arch[:-1])]
+
+        # Conv AWB matrices
+        new_filter_size = filter_size + 2
+        self.B_conv = [jax.random.normal(jax.random.PRNGKey(j), shape=(new_filter_size, filter_size)) for j in range(0, channel_out)]
+        self.A_conv = [jax.random.normal(jax.random.PRNGKey(j), shape=(new_filter_size, filter_size)) for j in range(0, channel_out)]
+
+    def calc_output_size(self, input_size, fil_size, pool_size=2):
+        # After conv: (input_size - fil_size + 1)
+        # After pool: floor((conv_out) / pool_size)
+        conv_out = input_size - fil_size + 1
+        pool_out = conv_out // pool_size
+        return pool_out
+
+    def __call__(self, x: Float[Array, "3 32 32"]) -> Float[Array, "num_classes"]:
+        # First conv + pool
+        x = jax.nn.relu(self.conv_layers[0](x))
+        x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
+        # Second conv + pool
+        x = jax.nn.relu(self.conv_layers[1](x))
+        x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
+        # Flatten
+        x = jnp.ravel(x)
+        # Feed forward layers
+        for lin in self.feed_layers[:-1]:
+            x = jax.nn.relu(lin(x))
+        x = self.feed_layers[-1](x)
+        return x
+
+    def get_AWBT(self, x):
+        # Standard forward through conv layers (AWB on conv is complex for multi-channel)
+        x = jax.nn.relu(self.conv_layers[0](x))
+        x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
+        x = jax.nn.relu(self.conv_layers[1](x))
+        x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
+        x = jnp.ravel(x)
+
+        # AWB transformation on feed layers
+        for i in range(0, len(self.feed_sizes) - 1):
+            x = (self.A_feed[i] @ self.feed_layers[i].weight @ jnp.transpose(self.B_feed[i]) @ x) + (self.A_feed[i] @ self.feed_layers[i].bias).squeeze(1)
+            x = jax.nn.relu(x)
+        return x
+
 class Pool:
     def sum(x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
         out_shape = num_nodes.shape[0]
