@@ -6,14 +6,14 @@ import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as tree
 from functools import partial
-
 import numpy as np_
 from jax import lax
 import diffrax
 import equinox as eqx
 ## Train now a CNN and test the trainer and then, the older model
-
 from jaxtyping import Array, Float, Int, PyTree  # https://github.com/google/jaxtyping
+
+
 ############################################################################################################################
 @partial(jax.jit, static_argnums=(2))
 def sp_matmul(A, B, shape):
@@ -60,8 +60,8 @@ class MLPorig(eqx.Module):
         else:
             return outfunc(self.output_layers(x))
 
-# #------------------------NEW---------------------------------------------------------------------------------
-class MLP(eqx.Module):
+ #------------------------NEW---------------------------------------------------
+ class MLP(eqx.Module):
     layers: list
     sizes: list
     #act_fn: Callable
