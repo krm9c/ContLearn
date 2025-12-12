@@ -17,14 +17,13 @@ echo "=========================================="
 echo "Testing ContLearn with all datasets"
 echo "=========================================="
 
-
 #-------------------------------------------------------
 # # sine dataset test
 echo ""
 echo "=========================================="
 echo "Testing Sine"
 echo "=========================================="
-python run.py train 1 "param_sine.json"
+python run.py train 1 "config/test_param_sine.json"
 
 #-------------------------------------------------------
 # Graph Synthetic
@@ -32,7 +31,15 @@ echo ""
 echo "=========================================="
 echo "Testing Graph Synthetic..."
 echo "=========================================="
-python run.py train 1 "paramgraph_synthetic.json"
+python run.py train 1 "config/test_paramgraph_synthetic.json"
+
+
+# Test Permuted MNIST
+echo ""
+echo "=========================================="
+echo "Testing Permuted OMNIGLOT..."
+echo "=========================================="
+python run.py train 1 "config/paramomni.json"
 
 
 # Test Permuted MNIST
@@ -40,7 +47,7 @@ echo ""
 echo "=========================================="
 echo "Testing Permuted MNIST..."
 echo "=========================================="
-python run.py train 1 "test_permuted_mnist.json"
+python run.py train 1 "config/test_permuted_mnist.json"
 
 
 # Test CIFAR-10
@@ -48,15 +55,14 @@ echo ""
 echo "=========================================="
 echo "Testing CIFAR-10..."
 echo "=========================================="
-python run.py train 1 "test_cifar10.json"
+python run.py train 1 "config/test_cifar10.json"
 
 # Test CIFAR-100
 echo ""
 echo "=========================================="
 echo "Testing CIFAR-100..."
 echo "=========================================="
-python run.py train 1 "test_cifar100.json"
-
+python run.py train 1 "config/test_cifar100.json"
 
 
 echo ""
