@@ -3,10 +3,7 @@
     "tensorfile": "logdir/tensorboard/log_induced_03",
     "file": "logdir/dicts/log_induced_03",
     "model_path": "logdir/model/MLP__03_reg",
-    "flag": [
-        1,
-        0
-    ],
+    "flag": [1, 0],
     "n_task": 20,
     "epochs_per_task": 500,
     "save_iter": 1,

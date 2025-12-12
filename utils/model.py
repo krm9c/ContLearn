@@ -13,6 +13,24 @@ import equinox as eqx
 ## Train now a CNN and test the trainer and then, the older model
 from jaxtyping import Array, Float, Int, PyTree  # https://github.com/google/jaxtyping
 
+from config.constants import (
+    DEFAULT_CHANNEL_OUT_CNN,
+    DEFAULT_CHANNEL_OUT_CNN3D,
+    DEFAULT_CHANNEL_IN_MNIST,
+    DEFAULT_CHANNEL_IN_CIFAR,
+    DEFAULT_INPUT_SIZE_MNIST,
+    DEFAULT_INPUT_SIZE_CIFAR,
+    DEFAULT_AWB_FILTER_INCREMENT,
+    DEFAULT_AWB_CNN_ARCH,
+    DEFAULT_AWB_CNN3D_HIDDEN,
+    DEFAULT_AWB_FNN_ARCH,
+    DEFAULT_AWB_GCN_ARCH,
+    DEFAULT_PADDING,
+    DEFAULT_STRIDE,
+    DEFAULT_POOL_SIZE,
+    DEFAULT_POOL_STRIDE,
+)
+
 
 ############################################################################################################################
 @partial(jax.jit, static_argnums=(2))
@@ -272,41 +290,75 @@ class CNN(eqx.Module):
     feed_sizes: list
     filter_size: int
     channel_out: int
+    channel_in: int
+    input_size: int
+    padding: int
+    stride: int
 
-    def __init__(self, key, filter_size, feed_sizes):
+    def __init__(self, key, filter_size, feed_sizes,
+                 input_size=None,
+                 channel_in=1,
+                 channel_out=None,
+                 awb_arch=None,
+                 awb_filter_size=None,
+                 padding=None,
+                 stride=None):
+        """
+        Args:
+            key: PRNG key
+            filter_size: Convolutional filter size
+            feed_sizes: List of feed-forward layer sizes
+            input_size: Input image size (default: 28 for MNIST/Omniglot)
+            channel_in: Number of input channels (default: 1)
+            channel_out: Number of output channels (default: 3)
+            awb_arch: AWB architecture (default: [1875, 700, 100, 10])
+            awb_filter_size: AWB filter size (default: 5)
+            padding: Convolution padding (default: 0)
+            stride: Convolution stride (default: 1)
+        """
         key1, key2, key3, key4 = jax.random.split(key, 4)
-        # Standard CNN setup: convolutional layer, followed by flattening,
-        # with a small MLP on top.
+
+        # Set defaults from constants
+        self.input_size = input_size if input_size is not None else DEFAULT_INPUT_SIZE_MNIST
+        self.channel_in = channel_in
+        self.channel_out = channel_out if channel_out is not None else DEFAULT_CHANNEL_OUT_CNN
+        self.padding = padding if padding is not None else DEFAULT_PADDING
+        self.stride = stride if stride is not None else DEFAULT_STRIDE
+
         i=0
         self.feed_sizes = feed_sizes
         self.filter_size = filter_size
         self.feed_layers = []
-        self.channel_out = 3
         self.conv_layers = [
-            eqx.nn.Conv2d(1,self.channel_out, kernel_size=filter_size, key=key1),
-            ]
+            eqx.nn.Conv2d(self.channel_in, self.channel_out, kernel_size=filter_size, key=key1),
+        ]
         for (in_layer,out_layer) in zip(feed_sizes[:-1],feed_sizes[1:]):
             self.feed_layers.append(Linear2(in_layer,out_layer, key = jax.random.PRNGKey(i)))
             i+=1
-        new_arch = [1875,700,100,10]
+
+        # AWB architecture - use provided or default
+        new_arch = awb_arch if awb_arch is not None else DEFAULT_AWB_CNN_ARCH.copy()
         initializer = jax.nn.initializers.glorot_uniform()
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(feed_sizes[1:],new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(feed_sizes[:-1],new_arch[:-1])]
-        #below should produce the three weights filters
-        new_filter_size = 5
+
+        # AWB convolution filters
+        new_filter_size = awb_filter_size if awb_filter_size is not None else (filter_size + DEFAULT_AWB_FILTER_INCREMENT)
         self.B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (new_filter_size,filter_size)) for j in range(0,self.channel_out)]
         self.A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (new_filter_size,filter_size)) for j in range(0,self.channel_out)]
 
-    def calc_output_size(self,fil_size):
-        omni_input = 28
-        padding = 0 #this is apparently the default for Conv2d
-        stride = 1
-        output = ((omni_input-fil_size+2*padding)/stride) + 1
+    def calc_output_size(self, fil_size, input_size=None):
+        """Calculate output size after convolution"""
+        if input_size is None:
+            input_size = self.input_size
+        output = ((input_size - fil_size + 2 * self.padding) / self.stride) + 1
         return int(output)
     
-    def pool_output_size(self,pool_size,conv_inputsize):
-        stride = 1
-        output = ((conv_inputsize-pool_size)/stride) + 1
+    def pool_output_size(self, pool_size, conv_inputsize, pool_stride=None):
+        """Calculate output size after pooling"""
+        if pool_stride is None:
+            pool_stride = DEFAULT_POOL_STRIDE
+        output = ((conv_inputsize - pool_size) / pool_stride) + 1
         return int(output)
 
     def __call__(self, x: Float[Array, "1 28 28"]) -> Float[Array, "10"]:  
@@ -369,16 +421,48 @@ class CNN3D(eqx.Module):
     filter_size: int
     channel_in: int
     channel_out: int
+    input_size: int
 
-    def __init__(self, key, filter_size, feed_sizes, channel_in=3, channel_out=32, num_classes=10):
+    def __init__(self, key, filter_size, feed_sizes,
+                 input_size=None,
+                 channel_in=None,
+                 channel_out=None,
+                 num_classes=10,
+                 awb_filter_increment=None,
+                 awb_hidden_layers=None):
+        """
+        Args:
+            key: PRNG key
+            filter_size: Convolutional filter size
+            feed_sizes: List of feed-forward layer sizes
+            input_size: Input image size (default: 32 for CIFAR)
+            channel_in: Number of input channels (default: 3)
+            channel_out: Number of output channels (default: 32)
+            num_classes: Number of output classes (default: 10)
+            awb_filter_increment: Increment for AWB filter size (default: 2)
+            awb_hidden_layers: AWB hidden layer sizes (default: [512, 256])
+        """
         key1, key2, key3, key4, key5 = jax.random.split(key, 5)
-        # CNN for 3-channel 32x32 images (CIFAR-10/100)
+
+        # Set defaults from constants
+        if input_size is None:
+            input_size = DEFAULT_INPUT_SIZE_CIFAR
+        if channel_in is None:
+            channel_in = DEFAULT_CHANNEL_IN_CIFAR
+        if channel_out is None:
+            channel_out = DEFAULT_CHANNEL_OUT_CNN3D
+        if awb_filter_increment is None:
+            awb_filter_increment = DEFAULT_AWB_FILTER_INCREMENT
+        if awb_hidden_layers is None:
+            awb_hidden_layers = DEFAULT_AWB_CNN3D_HIDDEN.copy()
+
         i = 0
         self.feed_sizes = feed_sizes
         self.filter_size = filter_size
         self.feed_layers = []
         self.channel_in = channel_in
         self.channel_out = channel_out
+        self.input_size = input_size
 
         # Two conv layers for better feature extraction
         self.conv_layers = [
@@ -391,14 +475,13 @@ class CNN3D(eqx.Module):
             i += 1
 
         # AWB transformation matrices for architecture search
-        # Calculate the flattened size after AWB convolutions (larger filter_size + 2)
-        new_filter_size = filter_size + 2
-        # 32 -> conv(new_filter) -> 32-new_filter+1 -> pool -> //2 -> conv(new_filter) -> ... -> pool -> //2
-        after_awb_conv1 = (32 - new_filter_size + 1) // 2  # conv1 + pool
+        # Calculate the flattened size after AWB convolutions
+        new_filter_size = filter_size + awb_filter_increment
+        after_awb_conv1 = (input_size - new_filter_size + 1) // 2  # conv1 + pool
         after_awb_conv2 = (after_awb_conv1 - new_filter_size + 1) // 2  # conv2 + pool
         awb_flatten_size = after_awb_conv2 * after_awb_conv2 * channel_out * 2
 
-        new_arch = [awb_flatten_size, 512, 256, num_classes]
+        new_arch = [awb_flatten_size] + awb_hidden_layers + [num_classes]
         initializer = jax.nn.initializers.glorot_uniform()
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[1:], new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[:-1], new_arch[:-1])]
@@ -693,40 +776,53 @@ class myNN(eqx.Module):
     B_feed: jax.Array
     feed_sizes: list
     sparse: bool
-    def __init__(self, in_size, feed_sizes, gcn_sizes, node_num, SEED=1234, out_size=2, graph = True):
-        self.SEED=SEED
-        self.graph=graph
-        self.node_num=node_num
-        gcn_sizes[0] = in_size # make sure the first layer is the input size
+    def __init__(self, in_size, feed_sizes, gcn_sizes, node_num, SEED=1234, out_size=2, graph=True,
+                 awb_fnn_arch=None, awb_gcn_arch=None):
+        """
+        Args:
+            in_size: Input feature size
+            feed_sizes: List of feed-forward layer sizes
+            gcn_sizes: List of GCN layer sizes
+            node_num: Number of nodes
+            SEED: Random seed
+            out_size: Output size
+            graph: Whether to use graph pooling
+            awb_fnn_arch: AWB FNN architecture (default: [100, 140, 140, out_size])
+            awb_gcn_arch: AWB GCN architecture (default: [in_size, 100])
+        """
+        self.SEED = SEED
+        self.graph = graph
+        self.node_num = node_num
+        gcn_sizes[0] = in_size  # make sure the first layer is the input size
         self.gcn_sizes = gcn_sizes
         self.gcn_layers = []
         self.feed_layers = []
-        feed_sizes[-1] = out_size # make sure the last layer is the output size
+        feed_sizes[-1] = out_size  # make sure the last layer is the output size
         self.feed_sizes = feed_sizes
-        #self.in_size = in_size
 
-        new_FNNarch = [100,140,140,out_size] #in other file set new_arch[0] = gcn_arch[-1]
+        # AWB architectures - use provided or defaults
+        if awb_fnn_arch is None:
+            awb_fnn_arch = DEFAULT_AWB_FNN_ARCH.copy() + [out_size]
+        if awb_gcn_arch is None:
+            awb_gcn_arch = [in_size] + DEFAULT_AWB_GCN_ARCH.copy()
+
         initializer = jax.nn.initializers.glorot_uniform()
-        self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(self.feed_sizes[1:],new_FNNarch[1:])]
-        self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(self.feed_sizes[:-1],new_FNNarch[:-1])]
-        gcn_arch = [in_size,100]
-        self.B_gcn = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(self.gcn_sizes[1:],gcn_arch[1:])]
-        self.A_gcn = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(self.gcn_sizes[:-1],gcn_arch[:-1])]
+        self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(self.feed_sizes[1:], awb_fnn_arch[1:])]
+        self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(self.feed_sizes[:-1], awb_fnn_arch[:-1])]
+        self.B_gcn = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(self.gcn_sizes[1:], awb_gcn_arch[1:])]
+        self.A_gcn = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(self.gcn_sizes[:-1], awb_gcn_arch[:-1])]
 
-        for i in range(0,len(self.gcn_sizes)-1):
-            self.gcn_layers.append(GCN(in_size=self.gcn_sizes[i], out_size=self.gcn_sizes[i+1], key=jax.random.PRNGKey(SEED)))
-        #self.gcn_layers = [GCN(in_size=in_size, out_size=hid_size, key=jax.random.PRNGKey(self.SEED))]
+        for i in range(0, len(self.gcn_sizes) - 1):
+            self.gcn_layers.append(GCN(in_size=self.gcn_sizes[i], out_size=self.gcn_sizes[i + 1], key=jax.random.PRNGKey(SEED)))
+
         self.graph = graph
         self.sparse = self.gcn_layers[0].sparse
         if self.graph:
             for (in_layer, out_layer) in zip(self.feed_sizes[:-1], self.feed_sizes[1:]):
                 self.feed_layers.append(Linear3(in_size=in_layer, out_size=out_layer, key=jax.random.PRNGKey(self.SEED)))
-            #self.linear_layer = [Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED)),\
-                                #Linear(hid_size, hid_size, key=jax.random.PRNGKey(self.SEED))]
-            #self.output_layer = Linear(hid_size, out_size, key=jax.random.PRNGKey(self.SEED))
         else:
             self.feed_layers = []
-        
+
         self.pool_layer = GraphPooling(Pool.max)
 
     def matmul(self, A, B, shape):

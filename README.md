@@ -120,7 +120,6 @@ bash test_datasets.sh
    - Results saved as pickle: `pickle.dump(record_dict, f)`
 
 ### AWB (Adaptive Weight Basis) System
-
 Models support optional `A` and `B` transformation matrices for architecture search:
 - Standard forward: `model(x)` uses weights `W` directly
 - AWB forward: `model.getAWB(x)` or `model.get_AWBT(x)` uses `A @ W @ B.T`

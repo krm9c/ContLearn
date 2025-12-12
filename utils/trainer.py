@@ -428,7 +428,15 @@ class Trainer(eqx.Module):
         H=[]
         metrics=[]
         import torch_geometric.transforms as T
-        transforms = T.Compose([T.GCNNorm(), T.ToDense(), T.NormalizeFeatures()])
+        # Custom transform to remove edge_attr before GCNNorm/ToDense
+        # This ensures adj is 2D (N x N) instead of 3D (N x N x edge_features)
+        class RemoveEdgeAttr:
+            def __call__(self, data):
+                data.edge_attr = None
+                return data
+        # Note: We remove edge_attr first so that ToDense creates a 2D adjacency matrix
+        # which is what the GCN layers expect for matmul operations
+        transforms = T.Compose([RemoveEdgeAttr(), T.GCNNorm(), T.ToDense(), T.NormalizeFeatures()])
         
         var_adj=[]
         var_x =[]

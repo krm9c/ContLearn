@@ -9,6 +9,14 @@ import optax
 import equinox as eqx
 
 from training.checkpoint import load_checkpoint
+from config.constants import (
+    DEFAULT_ARCH_SEARCH_EPOCHS,
+    DEFAULT_ARCH_SEARCH_THRESHOLD,
+    DEFAULT_ARCH_SEARCH_MAX_ITER,
+    DEFAULT_ARCH_SEARCH_MLP_INCREMENT,
+    DEFAULT_ARCH_SEARCH_LARGE_INCREMENT,
+    DEFAULT_BATCH_SIZE_VECTOR,
+)
 
 
             # #CL training regression problem
@@ -199,7 +207,7 @@ def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
     """
     trainer1, optim, __, arch_model = load_checkpoint(config)
     i = task
-    og_epochs = 500
+    og_epochs = config.get('arch_search_epochs', DEFAULT_ARCH_SEARCH_EPOCHS)
 
     arch_model = eqx.tree_at(lambda x: x.sizes, arch_model, original_arch)
     initializer = jax.nn.initializers.glorot_uniform()
@@ -231,12 +239,12 @@ def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
         arch_params, arch_static, optim,
         n_iter=og_epochs, save_iter=config['save_iter'], task_id=i,
         config={
-            'batch_size': 64,
+            'batch_size': config.get('vector_batch_size', DEFAULT_BATCH_SIZE_VECTOR),
             'opt': 'Nash',
             'problem': config['problem'],
             'data_id': config['data'],
             'flag': config['flag'],
-            'len_exp_replay': 20000,
+            'len_exp_replay': config.get('vector_replay_size', 20000),
             'network': config['network']
         },
         dictum=poll_dict
@@ -246,17 +254,19 @@ def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
     arch_dict = poll_dict[str(i)]
     loss_orig = np.mean([arch_dict["train" + str((i + 1) * og_epochs - j)][0] for j in range(1, 26)])
 
-    threshold = 0.6
+    threshold = config.get('arch_search_threshold', DEFAULT_ARCH_SEARCH_THRESHOLD)
     x = original_arch[1]
     y = original_arch[2]
     opt_loss = loss_orig
     opt_arch = arch_model.sizes
     k = 0
+    search_range = config.get('arch_search_range', 5)
+    mlp_increment = config.get('arch_search_mlp_increment', DEFAULT_ARCH_SEARCH_MLP_INCREMENT)
 
-    while (opt_loss >= loss_orig * threshold) and (k < 2):
-        for n in range(5):
-            for j in range(5):
-                curr_arch = [3, x + 15 * n, y + 15 * j, 10]
+    while (opt_loss >= loss_orig * threshold) and (k < config.get('arch_search_max_iter', DEFAULT_ARCH_SEARCH_MAX_ITER)):
+        for n in range(search_range):
+            for j in range(search_range):
+                curr_arch = [3, x + mlp_increment * n, y + mlp_increment * j, 10]
                 arch_model = eqx.tree_at(lambda x: x.sizes, arch_model, original_arch)
 
                 initializer = jax.nn.initializers.glorot_uniform()
@@ -309,8 +319,9 @@ def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
                     opt_arch = curr_arch
 
         if opt_arch[1] == original_arch[1] and opt_arch[2] == original_arch[2]:
-            x = x + 250
-            y = y + 250
+            large_increment = config.get('arch_search_large_increment', DEFAULT_ARCH_SEARCH_LARGE_INCREMENT)
+            x = x + large_increment
+            y = y + large_increment
         else:
             x = opt_arch[1]
             y = opt_arch[2]
