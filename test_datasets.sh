@@ -3,6 +3,7 @@
 # Uses minimal epochs (1 epoch, 2 tasks) to quickly check for import/runtime errors
 
 
+#-------------------------------------------------------
 export https_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 export http_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
@@ -12,10 +13,12 @@ export ftp_proxy="http://proxy.ftm.alcf.anl.gov:3128"
 ## The following is for running on JLSE
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate jax__
+
 #-------------------------------------------------------
 echo "=========================================="
 echo "Testing ContLearn with all datasets"
 echo "=========================================="
+
 
 #-------------------------------------------------------
 # # sine dataset test
@@ -34,6 +37,7 @@ echo "=========================================="
 python run.py train 1 "config/test_paramgraph_synthetic.json"
 
 
+#-------------------------------------------------------
 # Test Permuted MNIST
 echo ""
 echo "=========================================="
@@ -42,6 +46,7 @@ echo "=========================================="
 python run.py train 1 "config/paramomni.json"
 
 
+#-------------------------------------------------------
 # Test Permuted MNIST
 echo ""
 echo "=========================================="
@@ -50,6 +55,7 @@ echo "=========================================="
 python run.py train 1 "config/test_permuted_mnist.json"
 
 
+#-------------------------------------------------------
 # Test CIFAR-10
 echo ""
 echo "=========================================="
@@ -57,6 +63,7 @@ echo "Testing CIFAR-10..."
 echo "=========================================="
 python run.py train 1 "config/test_cifar10.json"
 
+#-------------------------------------------------------
 # Test CIFAR-100
 echo ""
 echo "=========================================="
