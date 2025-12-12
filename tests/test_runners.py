@@ -41,7 +41,8 @@ class TestTrainModelRegression:
                 'metric': 'mse',
                 'tensorfile': tmpdir + '/tensorboard',
                 'model_path': tmpdir + '/model',
-                'arch_search': False
+                'arch_search': False,
+                'arch_start_task': 1
             }
 
             # Run training
@@ -77,7 +78,8 @@ class TestTrainModelRegression:
                 'metric': 'mse',
                 'tensorfile': tmpdir + '/tensorboard',
                 'model_path': model_path,
-                'arch_search': False
+                'arch_search': False,
+                'arch_start_task': 1
             }
 
             train_model_reg(config)
@@ -105,7 +107,8 @@ class TestTrainModelRegression:
                 'metric': 'mse',
                 'tensorfile': tmpdir + '/tensorboard',
                 'model_path': tmpdir + '/model',
-                'arch_search': False
+                'arch_search': False,
+                'arch_start_task': 1
             }
 
             record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
@@ -125,7 +128,7 @@ class TestTrainModelClassification:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'classification',
-                'problem': 'classification',
+                'problem': 'vectors',  # trainer expects 'vectors' for classification
                 'data': 'mnist',
                 'network': 'cnn',
                 'lr': 1e-3,
@@ -157,7 +160,7 @@ class TestTrainModelClassification:
 
             config = {
                 'prob': 'classification',
-                'problem': 'classification',
+                'problem': 'vectors',  # trainer expects 'vectors' for classification
                 'data': 'mnist',
                 'network': 'cnn',
                 'lr': 1e-3,
@@ -177,7 +180,7 @@ class TestTrainModelClassification:
 
             train_model_class(config)
 
-            # Check that model was saved
+            # Check that model was saved (model_path is used directly without .eqx extension)
             assert os.path.exists(model_path)
 
     def test_train_model_class_cifar(self):
@@ -185,7 +188,7 @@ class TestTrainModelClassification:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'classification',
-                'problem': 'classification',
+                'problem': 'vectors',  # trainer expects 'vectors' for classification
                 'data': 'cifar10',
                 'network': 'cnn',
                 'lr': 1e-3,
@@ -222,6 +225,7 @@ class TestTrainModelGraph:
                 'network': 'gcn',
                 'lr': 1e-4,
                 'batch': 32,
+                'batch_size': 32,  # Some parts of code use batch_size
                 'n_class': 2,
                 'class_per_task': 1,
                 'n_task': 2,
@@ -254,6 +258,7 @@ class TestTrainModelGraph:
                 'network': 'gcn',
                 'lr': 1e-4,
                 'batch': 32,
+                'batch_size': 32,
                 'n_class': 2,
                 'class_per_task': 1,
                 'n_task': 1,
@@ -282,6 +287,7 @@ class TestTrainModelGraph:
                 'network': 'gcn',
                 'lr': 1e-4,
                 'batch': 32,
+                'batch_size': 32,
                 'n_class': 2,
                 'class_per_task': 1,
                 'n_task': 2,
@@ -326,7 +332,8 @@ class TestTrainingRecordDict:
                 'metric': 'mse',
                 'tensorfile': tmpdir + '/tensorboard',
                 'model_path': tmpdir + '/model',
-                'arch_search': False
+                'arch_search': False,
+                'arch_start_task': 1
             }
 
             _, _, record_dict = train_model_reg(config)
@@ -343,7 +350,7 @@ class TestTrainingRecordDict:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'classification',
-                'problem': 'classification',
+                'problem': 'vectors',  # trainer expects 'vectors' for classification
                 'data': 'mnist',
                 'network': 'cnn',
                 'lr': 1e-3,
@@ -392,7 +399,8 @@ class TestEquinoxPartitionPattern:
                 'metric': 'mse',
                 'tensorfile': tmpdir + '/tensorboard',
                 'model_path': tmpdir + '/model',
-                'arch_search': False
+                'arch_search': False,
+                'arch_start_task': 1
             }
 
             # Training should complete without errors

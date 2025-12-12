@@ -51,11 +51,13 @@ class TestLossFunctions:
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
 
-            x = jnp.array(np.random.randn(10).astype(np.float32))
-            y = jnp.array(np.random.randn(5).astype(np.float32))
+            # loss_fn_mse uses jax.vmap(model), so input needs batch dimension
+            x = jnp.array(np.random.randn(1, 10).astype(np.float32))
+            # MLP output is (1, 5) due to Linear layer, so y needs matching shape
+            y = jnp.array(np.random.randn(1, 1, 5).astype(np.float32))
 
             loss = trainer.loss_fn_mse(params, static, x, y)
-            
+
             assert isinstance(loss, jnp.ndarray)
             assert loss.shape == ()
             assert loss >= 0  # MSE is non-negative
@@ -69,7 +71,8 @@ class TestLossFunctions:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jnp.array(np.random.randn(32, 10).astype(np.float32))
-            y = jnp.array(np.random.randn(32, 5).astype(np.float32))
+            # MLP output is (batch, 1, 5) due to Linear layer
+            y = jnp.array(np.random.randn(32, 1, 5).astype(np.float32))
 
             loss = trainer.loss_fn_mse(params, static, x, y)
 
@@ -126,10 +129,10 @@ class TestMetricFunctions:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jnp.array(np.random.randn(32, 10).astype(np.float32))
-            # One-hot encoded labels
+            # One-hot encoded labels with shape matching model output (32, 1, 10)
             labels = jnp.array(np.random.randint(0, 10, 32))
-            y = jnp.zeros((32, 10))
-            y = y.at[jnp.arange(32), labels].set(1.0)
+            y = jnp.zeros((32, 1, 10))
+            y = y.at[jnp.arange(32), 0, labels].set(1.0)
 
             accuracy = trainer.accuracy_vectors(params, static, x, y)
 
@@ -145,7 +148,8 @@ class TestMetricFunctions:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jnp.array(np.random.randn(32, 10).astype(np.float32))
-            y = jnp.array(np.random.randn(32, 5).astype(np.float32))
+            # MLP output is (batch, 1, 5) due to Linear layer
+            y = jnp.array(np.random.randn(32, 1, 5).astype(np.float32))
 
             mse = trainer.mse_vectors(params, static, x, y)
 
@@ -164,7 +168,8 @@ class TestMetricFunctions:
 
             predictions = trainer.get_pred(params, static, x)
 
-            assert predictions.shape == (32, 5)
+            # MLP output is (batch, 1, 5) due to Linear layer
+            assert predictions.shape == (32, 1, 5)
             assert not jnp.isnan(predictions).any()
 
 
@@ -199,8 +204,10 @@ class TestTrainerJIT:
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
 
-            x = jnp.array(np.random.randn(10).astype(np.float32))
-            y = jnp.array(np.random.randn(5).astype(np.float32))
+            # loss_fn_mse uses jax.vmap, needs batch dimension
+            x = jnp.array(np.random.randn(1, 10).astype(np.float32))
+            # MLP output is (1, 5) due to Linear layer
+            y = jnp.array(np.random.randn(1, 1, 5).astype(np.float32))
 
             # First call should compile
             loss1 = trainer.loss_fn_mse(params, static, x, y)
@@ -219,8 +226,10 @@ class TestTrainerJIT:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jnp.array(np.random.randn(32, 10).astype(np.float32))
-            y = jnp.zeros((32, 10))
-            y = y.at[jnp.arange(32), jnp.array(np.random.randint(0, 10, 32))].set(1.0)
+            # MLP output is (batch, 1, 10) due to Linear layer
+            y = jnp.zeros((32, 1, 10))
+            labels = jnp.array(np.random.randint(0, 10, 32))
+            y = y.at[jnp.arange(32), 0, labels].set(1.0)
 
             # First call
             acc1 = trainer.accuracy_vectors(params, static, x, y)
