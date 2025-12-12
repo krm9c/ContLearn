@@ -11,6 +11,11 @@ import equinox as eqx
 
 from .checkpoint import load_checkpoint
 from data.loaders import continuum_Graph_classification
+from config.constants import (
+    DEFAULT_BATCH_SIZE_VECTOR,
+    DEFAULT_REPLAY_BUFFER_GRAPH,
+    DEFAULT_REPLAY_BUFFER_VECTOR,
+)
 
 
 def train_model_graph(config):
@@ -102,12 +107,12 @@ def train_model_reg(config):
             params, static, optim, n_iter=config['epochs_per_task'],
             save_iter=config['save_iter'], task_id=i,
             config={
-                'batch_size': 64,
+                'batch_size': config.get('vector_batch_size', DEFAULT_BATCH_SIZE_VECTOR),
                 'opt': 'Nash',
                 'problem': config['problem'],
                 'data_id': config['data'],
                 'flag': config['flag'],
-                'len_exp_replay': 20000,
+                'len_exp_replay': config.get('vector_replay_size', DEFAULT_REPLAY_BUFFER_VECTOR),
                 'network': config['network']
             },
             dictum=record_dict
@@ -116,7 +121,7 @@ def train_model_reg(config):
         data.append_to_experience(i)
 
 
-        if config['arch_search'] and i >= config['arch_start_task']:
+        if config.get('arch_search', False) and i >= config.get('arch_start_task', 999):
             # # Architecture search and adaptive training (simplified for merged version)
             # import numpy as np 
             # model = eqx.combine(params, static)
@@ -178,7 +183,7 @@ def train_model_class(config):
                 'opt': 'Nash',
                 'problem': config['prob'],
                 'data_id': config['data'],
-                'len_exp_replay': 200000,
+                'len_exp_replay': config.get('class_replay_size', DEFAULT_REPLAY_BUFFER_GRAPH),
                 'flag': config['flag'],
                 'network': config['network']
             },

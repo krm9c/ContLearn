@@ -17,6 +17,16 @@ opener = urllib.request.build_opener()
 opener.addheaders = [('User-agent', 'Mozilla/5.0')]
 urllib.request.install_opener(opener)
 
+from config.constants import (
+    DEFAULT_INPUT_SIZE_MNIST,
+    DEFAULT_TRAIN_TEST_SPLIT,
+    DEFAULT_ROTATION_RANGE,
+    DEFAULT_SCALING_RANGE,
+    DEFAULT_PERMUTATION_SEED_MULTIPLIER,
+    DEFAULT_NUM_OMNI_CLASSES,
+    DEFAULT_NUM_OMNI_SELECT,
+)
+
 
 ################################################
 class Continual_Dataset(Dataset):
@@ -129,43 +139,45 @@ class data_return():
 ###############################################
     # This is the omniglot dataset function.
     def omni(self, task_id):
-        tasks =  np.random.randint(0,10,3)
-        idx= [(self.labels[j] in tasks) for j in range(len(self.labels))]
-        # task_id = int(task_id)
-        # idx = self.labels == task_id
+        num_classes = self.config.get('omni_num_classes', DEFAULT_NUM_OMNI_CLASSES)
+        num_select = self.config.get('omni_num_select', DEFAULT_NUM_OMNI_SELECT)
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+
+        tasks = np.random.randint(0, num_classes, num_select)
+        idx = [(self.labels[j] in tasks) for j in range(len(self.labels))]
         X = self.images[idx]
         y = self.labels[idx]
         # Split the data
-        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int(train_split * X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int((1 - train_split) * X.shape[0]))
         self.X_test = X[index]
         self.y_test = y[index]
 
 ###############################################
     def mnist(self, task_id):
-        # imp = np.random.randint(0, 9)
-        # # #print(imp, task_id)
-        # idx = self.labels == imp
+        rotation_range = self.config.get('rotation_range', DEFAULT_ROTATION_RANGE)
+        scaling_range = self.config.get('scaling_range', DEFAULT_SCALING_RANGE)
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+
         X = self.images
         y = self.labels
-        # #print("We have to apply the transformation now.")
-        rot_angle = np.random.random()*180
-        scaling   = np.random.random()+1
-        # #print(rot_angle)
-        X =torchvision.transforms.functional.affine(X, rot_angle,\
-            translate = (scaling, scaling),\
-            scale = 1, shear=rot_angle)
-        # #print("Just after the data is defined", X.shape, y.shape)
+        # Apply transformations
+        rot_angle = np.random.random() * rotation_range
+        scaling_min, scaling_max = scaling_range
+        scaling = np.random.random() * (scaling_max - scaling_min) + scaling_min
+
+        X = torchvision.transforms.functional.affine(X, rot_angle,
+            translate=(scaling, scaling),
+            scale=1, shear=rot_angle)
         # Split the data
-        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int(train_split * X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int((1 - train_split) * X.shape[0]))
         self.X_test = X[index]
         self.y_test = y[index]
-        # #print("just before I return the mnist dataset", self.X_train.shape, self.X_test.shape)
 
 ###############################################
     # This is the sine dataset function
@@ -189,48 +201,64 @@ class data_return():
 
 ###############################################
     def cifar10(self, task_id):
+        rotation_range = self.config.get('rotation_range', DEFAULT_ROTATION_RANGE)
+        scaling_range = self.config.get('scaling_range', DEFAULT_SCALING_RANGE)
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+
         X = self.images
         y = self.labels
-        rot_angle = np.random.random()*180
-        scaling = np.random.random()+1
+        rot_angle = np.random.random() * rotation_range
+        scaling_min, scaling_max = scaling_range
+        scaling = np.random.random() * (scaling_max - scaling_min) + scaling_min
+
         X = torchvision.transforms.functional.affine(X, rot_angle,
             translate=(scaling, scaling), scale=1, shear=rot_angle)
-        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int(train_split * X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, int(0.8*X.shape[0]), X.shape[0])
+        index = np.random.randint(0, X.shape[0], int((1 - train_split) * X.shape[0]))
         self.X_test = X[index]
         self.y_test = y[index]
 
 ###############################################
     def cifar100(self, task_id):
+        rotation_range = self.config.get('rotation_range', DEFAULT_ROTATION_RANGE)
+        scaling_range = self.config.get('scaling_range', DEFAULT_SCALING_RANGE)
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+
         X = self.images
         y = self.labels
-        rot_angle = np.random.random()*180
-        scaling = np.random.random()+1
+        rot_angle = np.random.random() * rotation_range
+        scaling_min, scaling_max = scaling_range
+        scaling = np.random.random() * (scaling_max - scaling_min) + scaling_min
+
         X = torchvision.transforms.functional.affine(X, rot_angle,
             translate=(scaling, scaling), scale=1, shear=rot_angle)
-        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int(train_split * X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int((1 - train_split) * X.shape[0]))
         self.X_test = X[index]
         self.y_test = y[index]
 
 ###############################################
     def permuted_mnist(self, task_id):
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+        seed_multiplier = self.config.get('permutation_seed_multiplier', DEFAULT_PERMUTATION_SEED_MULTIPLIER)
+        image_size = self.config.get('image_size', DEFAULT_INPUT_SIZE_MNIST)
+
         X = self.images.clone()
         y = self.labels
         # Generate task-specific permutation
-        rng = np.random.RandomState(seed=task_id * 1000)
-        perm = rng.permutation(28 * 28)
+        rng = np.random.RandomState(seed=task_id * seed_multiplier)
+        perm = rng.permutation(image_size * image_size)
         # Flatten, permute, reshape
-        X = X.view(X.shape[0], -1)[:, perm].view(X.shape[0], 1, 28, 28)
+        X = X.view(X.shape[0], -1)[:, perm].view(X.shape[0], 1, image_size, image_size)
         # Split data
-        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int(train_split * X.shape[0]))
         self.X_train = X[index]
         self.y_train = y[index]
-        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        index = np.random.randint(0, X.shape[0], int((1 - train_split) * X.shape[0]))
         self.X_test = X[index]
         self.y_test = y[index]
 

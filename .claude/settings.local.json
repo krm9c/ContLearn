@@ -1,10 +1,11 @@
 {
-  "outputStyle": "default",
   "permissions": {
     "allow": [
       "Bash(if [ -f \".cursorrules\" ])",
       "Bash(then cat .cursorrules)",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(KMP_DUPLICATE_LIB_OK=TRUE python -m pytest:*)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }
