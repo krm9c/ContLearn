@@ -115,6 +115,21 @@ def train_model_reg(config):
 
         data.append_to_experience(i)
 
+
+        if config['arch_search'] and i >= config['arch_start_task']:
+            # # Architecture search and adaptive training (simplified for merged version)
+            # import numpy as np 
+            # model = eqx.combine(params, static)
+            # arch_dict = record_dict_preAB[str(i)]
+            # trainWLoss = np.mean([arch_dict["train"+str((i+1)*config['epoch_task']-j)][0] for j in range(1,51)])
+            # #-------------------------------------STEP 2: Get new architecture------------------------------------------#
+            # print("STEP 2: Search for Best architecture for the data in task " , i)
+            # original_arch = model.sizes
+            # opt_arch = arch_search(original_arch,i,trainWLoss,og_epochs,config,dataloader_curr, dataloader_exp,test_loader_curr,test_loader_exp)
+            # print("NEW Architecture: ", opt_arch)
+            pass
+
+
     model = eqx.combine(params, static)
     eqx.tree_serialise_leaves(config['model_path'] + '.eqx', model)
     del model, params, static
