@@ -93,6 +93,29 @@ class data_return():
             with open('../synthetic.p', 'rb') as fp:
                 self.dataset = pickle.load(fp)
 
+        if self.dataset_id == 'cifar10':
+            print("Loading CIFAR-10 dataset")
+            my_transforms = transforms.Compose([transforms.ToTensor()])
+            self.dataset = torchvision.datasets.CIFAR10('./data', train=True, download=True, transform=my_transforms)
+            [self.images, self.labels] = [list(t) for t in zip(*self.dataset)]
+            self.images = torch.stack(self.images, dim=0)
+            self.labels = np.array(self.labels)
+
+        if self.dataset_id == 'cifar100':
+            print("Loading CIFAR-100 dataset")
+            my_transforms = transforms.Compose([transforms.ToTensor()])
+            self.dataset = torchvision.datasets.CIFAR100('./data', train=True, download=True, transform=my_transforms)
+            [self.images, self.labels] = [list(t) for t in zip(*self.dataset)]
+            self.images = torch.stack(self.images, dim=0)
+            self.labels = np.array(self.labels)
+
+        if self.dataset_id == 'permuted_mnist':
+            print("Loading Permuted MNIST dataset")
+            my_transforms = transforms.Compose([transforms.ToTensor()])
+            self.dataset = torchvision.datasets.MNIST('./data', train=True, download=True, transform=my_transforms)
+            [self.images, self.labels] = [list(t) for t in zip(*self.dataset)]
+            self.images = torch.stack(self.images, dim=0)
+            self.labels = np.array(self.labels)
 
         self.y_test = None
         self.X_test = None
@@ -164,6 +187,52 @@ class data_return():
         self.X_train, self.X_test, self.y_train, self.y_test \
             = model_selection.train_test_split(X, y, test_size=0.2)
 
+###############################################
+    def cifar10(self, task_id):
+        X = self.images
+        y = self.labels
+        rot_angle = np.random.random()*180
+        scaling = np.random.random()+1
+        X = torchvision.transforms.functional.affine(X, rot_angle,
+            translate=(scaling, scaling), scale=1, shear=rot_angle)
+        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        self.X_train = X[index]
+        self.y_train = y[index]
+        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        self.X_test = X[index]
+        self.y_test = y[index]
+
+###############################################
+    def cifar100(self, task_id):
+        X = self.images
+        y = self.labels
+        rot_angle = np.random.random()*180
+        scaling = np.random.random()+1
+        X = torchvision.transforms.functional.affine(X, rot_angle,
+            translate=(scaling, scaling), scale=1, shear=rot_angle)
+        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        self.X_train = X[index]
+        self.y_train = y[index]
+        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        self.X_test = X[index]
+        self.y_test = y[index]
+
+###############################################
+    def permuted_mnist(self, task_id):
+        X = self.images.clone()
+        y = self.labels
+        # Generate task-specific permutation
+        rng = np.random.RandomState(seed=task_id * 1000)
+        perm = rng.permutation(28 * 28)
+        # Flatten, permute, reshape
+        X = X.view(X.shape[0], -1)[:, perm].view(X.shape[0], 1, 28, 28)
+        # Split data
+        index = np.random.randint(0, X.shape[0], int(0.8*X.shape[0]))
+        self.X_train = X[index]
+        self.y_train = y[index]
+        index = np.random.randint(0, X.shape[0], int(0.2*X.shape[0]))
+        self.X_test = X[index]
+        self.y_test = y[index]
 
 ##############################################
     def append_to_experience(self, task_id):
@@ -251,6 +320,12 @@ class data_return():
                 self.sine(task_id)
             elif self.dataset_id == 'wind':
                 self.wind(task_id)
+            elif self.dataset_id == 'cifar10':
+                self.cifar10(task_id)
+            elif self.dataset_id == 'cifar100':
+                self.cifar100(task_id)
+            elif self.dataset_id == 'permuted_mnist':
+                self.permuted_mnist(task_id)
 
         (x, y), (dat_x, dat_y) = self.retreive_data(task_id, phase)
         ##print(x.shape, y.shape, len(dat_x), len(dat_y) )

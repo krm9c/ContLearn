@@ -25,9 +25,15 @@ python run.py train 1 "paramomni9.json"
 ##--------------------------------------
 ## MNIST
 python run.py train 1 "paramomni10.json"
-
-
-
+##--------------------------------------
+## CIFAR-10
+# python run.py train 1 "param_cifar10.json"
+##--------------------------------------
+## CIFAR-100
+# python run.py train 1 "param_cifar100.json"
+##--------------------------------------
+## Permuted MNIST
+# python run.py train 1 "param_permuted_mnist.json"
 ##--------------------------------------
 # # Graph ENZYMES
 # python run.py train 1 "paramgraph1.json"
