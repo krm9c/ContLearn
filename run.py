@@ -156,38 +156,16 @@ def load_graph_data(data_label):
         from torch_geometric.datasets import CitationFull
         from torch_geometric.transforms import NormalizeFeatures
         dataset = CitationFull(root='data/CitationFull', name=data_label)
-        data = dataset[0]
-        print(data)
-        print("from the load dataset", data.x)
-        print(f'Dataset: {dataset}:')
-        print('======================')
-        print(f'Number of graphs: {len(dataset)}')
-        print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')
         return dataset
         
     elif data_label == 'Reddit':
         from torch_geometric.datasets import Reddit
         dataset = Reddit(root='data/Reddit')
-        data = dataset[0]
-        print(data)
-        print("from the load dataset", data.x)
-        print(f'Dataset: {dataset}:')
-        print('======================')
-        print(f'Number of graphs: {len(dataset)}')
-        print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')
         return dataset
 
     elif data_label == 'tox21':
         from torch_geometric.datasets import MoleculeNet
         dataset = MoleculeNet(root='data/tox21', name="tox21")
-        print("from the load dataset", data.x)
-        print(f'Dataset: {dataset}:')
-        print('======================')
-        print(f'Number of graphs: {len(dataset)}')
-        print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')
         return dataset
         
     elif data_label == 'synthetic':
@@ -198,12 +176,6 @@ def load_graph_data(data_label):
         length = len(dataset)
         train__ = dataset[:int(0.80*length)]
         test__ = dataset[int(0.80*length):]
-        
-        print(f'Dataset: {dataset}:')
-        print('======================')
-        print(f'Number of graphs: {len(train__)}')
-        print(f'Number of features: {dataset.num_features}')
-        print(f'Number of classes: {dataset.num_classes}')
         return train__, test__
 
 
@@ -232,10 +204,8 @@ def generate_sine(delta):
         amplitude = amplitude + delta
         data['task'+str(i)] = (y, time, phase, amplitude, frequency)
     
-    print("Pickling samples...")
     with open('Incremental_Sine1e^4.p', 'wb') as fp:
         pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Finished Pickling")
 
 
 def load_return_dataset(config):
@@ -280,7 +250,7 @@ def load_checkpoint(config):
             'opt': 'Nash',
             'problem': config['prob'],
             'data_id': config['data'],
-            'len_exp_replay': 20000,
+            'len_exp_replay': 200000,
             'network': config['network'],
             'delta': config['delta']
         })
@@ -293,10 +263,6 @@ def load_checkpoint(config):
         )
         
         x = memory_train[0].x
-        print(f'Number of training graphs: {len(dataset)}')
-        print(f'Number of test graphs: {len(test)}')
-        print(f'Memory: Number of training graphs: {len(memory_train)}')
-        print(f'Memory: Number of test graphs: {len(test)}')
         
         from torch_geometric.loader import DataLoader
         test = DataLoader(test, batch_size=config['batch'], shuffle=True)
@@ -307,12 +273,19 @@ def load_checkpoint(config):
         elif config['prob'] == 'classification':
             key = jax.random.PRNGKey(SEED)
             key, subkey = jax.random.split(key, 2)
-            model = CNN(subkey, 3, [1875, 512, 64, 10])
+            # Use CNN3D for CIFAR (3-channel 32x32), CNN for MNIST/Omni (1-channel 28x28)
+            if config['data'] in ['cifar10', 'cifar100']:
+                num_classes = config.get('n_class', 10)
+                # CIFAR: 3x32x32 -> conv1(32) -> pool -> conv2(64) -> pool -> flatten
+                # Output size after 2 conv+pool with filter_size=3: 6x6x64 = 2304
+                model = CNN3D(subkey, filter_size=3, feed_sizes=[2304, 512, 256, num_classes], channel_in=3, channel_out=32, num_classes=num_classes)
+            else:
+                model = CNN(subkey, 3, [1875, 512, 64, 10])
         elif config['problem'] == 'graph':
             model = myNN(in_size=x.shape[1], feed_sizes=[128, 128, 128, 10],
                         gcn_sizes=[5, 128], node_num=x.shape[0],
                         out_size=config['n_class'])
-        
+
         optim = optax.adamw(config['lr'])
         trainer = Trainer(Loss=config['loss'], metric=config['metric'],
                          problem=config['problem'],
@@ -338,19 +311,27 @@ def load_checkpoint(config):
         
         x, y = next(iter(dataloader_curr))
         y = y.numpy().astype(np.float64)
-        
+
         # Model definition
         if config['prob'] == 'regression':
             model = MLP(sizes=[x.shape[1], config['hln'], config['hln'], y.shape[1]])
         elif config['prob'] == 'classification':
             key = jax.random.PRNGKey(SEED)
             key, subkey = jax.random.split(key, 2)
-            model = CNN(subkey, 3, [1875, 512, 64, 10])
+            # Use CNN3D for CIFAR (3-channel 32x32), CNN for MNIST/Omni (1-channel 28x28)
+            if config['data'] in ['cifar10', 'cifar100']:
+                num_classes = config.get('n_class', 10)
+                # CIFAR: 3x32x32 -> conv1(32) -> pool -> conv2(64) -> pool -> flatten
+                # Output size after 2 conv+pool with filter_size=3: 6x6x64 = 2304
+                model = CNN3D(subkey, filter_size=3, feed_sizes=[2304, 512, 256, num_classes],
+                             channel_in=3, channel_out=32, num_classes=num_classes)
+            else:
+                model = CNN(subkey, 3, [1875, 512, 64, 10])
         elif config['problem'] == 'graph':
             model = myNN(in_size=x.shape[1], feed_sizes=[128, 128, 128, 10],
                         gcn_sizes=[5, 128], node_num=x.shape[0],
                         out_size=config['n_class'])
-        
+
         optim = optax.adam(config['lr'])
         trainer = Trainer(Loss=config['loss'], metric=config['metric'],
                          problem=config['problem'],
@@ -438,8 +419,6 @@ def arch_search_GCN(original_gcn, original_mlp, task, trainW_loss, og_epochs, co
                 for r in range(3):
                     curr_mlp = [curr_gcn[-1], x1 + n * (k+1) * step_mlp, x2 + n * (r+1) * step_mlp, 10]
                     arch_model = eqx.tree_at(lambda x: x.feed_sizes, arch_model, curr_mlp)
-                    
-                    print("========= curr_gcn: ", curr_gcn, "========== curr_mlp: ", curr_mlp)
                     
                     weightsMLP_list = [initializer(jax.random.PRNGKey(5), (y, x))
                                      for x, y in zip(curr_mlp[:-1], curr_mlp[1:])]
@@ -577,10 +556,10 @@ def arch_search_MLP(original_arch, task, trainW_loss, og_epochs, config,
     return opt_arch
 
 
+
 # ============================================================================
 # TRAINING FUNCTIONS
 # ============================================================================
-
 def train_model_graph(config):
     """Train model for graph classification task"""
     trainer, optim, data, test, model = load_checkpoint(config)
@@ -590,18 +569,18 @@ def train_model_graph(config):
     record_dict_preAB = {}
     record_dict_AB = {}
     
-    static = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), static,
-                        replace=(model.A_gcn, model.B_gcn, model.A_feed, model.B_feed))
-    params = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), params,
-                        replace=(None, None, None, None))
+    static = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), static, replace=(model.A_gcn, model.B_gcn, model.A_feed, model.B_feed))
+    params = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), params, replace=(None, None, None, None))
     
     for i in range(config['n_task']):
-        print("task--", i)
         
+
         train_loader, mem_train_loader, memory_train = continuum_Graph_classification(
-            data, memory_train, n_class=config['n_class'],
+            data, memory_train,\
+            n_class=config['n_class'],
             select=config['class_per_task'])
         
+
         if i == 0:
             og_epochs = config['epochs_per_task']
             params, static, optim, record_dict[str(i)] = trainer.train__CL__graph(
@@ -643,7 +622,6 @@ def train_model_reg(config):
     params = eqx.tree_at(lambda x: (x.A, x.B), params, replace=(None, None))
     
     for i in range(config['n_task']):
-        print("task--", i)
         
         dataloader_curr, dataloader_exp = data.generate_dataset(
             task_id=i, batch_size=config['batch_size'], phase='training')
@@ -669,6 +647,185 @@ def train_model_reg(config):
     return record_dict_preAB, record_dict_AB, record_dict
 
 
+
+
+#===============Arch Search Function for CNN Architecture=======================#
+def arch_search_CNN(filter_size, feed_sizes, task, trainW_loss, og_epochs, config,dataloader_curr,\
+                 dataloader_exp,test_loader_curr, test_loader_exp):
+    """
+    GOAL: Complete a local "neighborhood-style" search for ideal architecture for CNN
+    ARGUMENTS:
+    RETURNS: 
+        opt_arch: (list) contains the best MLP architecture for the current (and prev) tasks
+    """
+    trainer1, optim, __, arch_model  = load_checkpoint(config)
+    i = task
+    original_arch = feed_sizes
+    x = original_arch[1]
+    y = original_arch[2]
+    og_epochs = 100
+    #print("model before setting new size: ", arch_model)s
+    conv_output_size = arch_model.calc_output_size(filter_size)
+    maxpool_output_size = arch_model.pool_output_size(2,conv_output_size)
+    #set MLP input layer to correct size correspongding to new filter size output for Convnet layer
+    original_arch[0] = maxpool_output_size*maxpool_output_size*arch_model.channel_out
+    arch_model = eqx.tree_at(lambda x: x.feed_sizes, arch_model, original_arch)
+    arch_model = eqx.tree_at(lambda x: x.filter_size, arch_model, filter_size)
+    initializer = jax.nn.initializers.glorot_uniform()
+    feed_wlist = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(feed_sizes[:],feed_sizes[1:])]
+    feed_blist = [initializer(jax.random.PRNGKey(5), (y, 1)) for y in feed_sizes[1:]]
+    conv_wlist = [[jax.random.normal(jax.random.PRNGKey(j),shape = (arch_model.filter_size,arch_model.filter_size))] for j in range(0,arch_model.channel_out)]
+    #print("conv weights list: ", jnp.array(conv_wlist).shape)
+    #print(('current model: ', arch_model))
+    for j in range(len(arch_model.feed_sizes)-1):
+        arch_model = eqx.tree_at(lambda x: x.feed_layers[j].weight, arch_model, feed_wlist[j])
+        arch_model = eqx.tree_at(lambda x: x.feed_layers[j].bias, arch_model, feed_blist[j])
+    #print("current filter weights: ", arch_model.conv_layers[0].weight[0][0].shape)
+    arch_model = eqx.tree_at(lambda x: x.conv_layers[0].weight, arch_model, replace= jnp.array(conv_wlist))
+    #print("model after setting: ", arch_model)
+
+    arch_params, arch_static = eqx.partition(arch_model,eqx.is_array)
+    arch_static = eqx.tree_at(lambda x: x.A_conv, arch_static, replace= arch_model.A_conv)
+    arch_static = eqx.tree_at(lambda x: x.B_conv, arch_static, replace= arch_model.B_conv)
+    arch_static = eqx.tree_at(lambda x: x.A_feed, arch_static, replace= arch_model.A_feed)
+    arch_static = eqx.tree_at(lambda x: x.B_feed, arch_static, replace= arch_model.B_feed)
+    arch_params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), arch_params, replace= (None,None,None,None))
+    #print("model after resetting sizes and weights: ", arch_model)
+    poll_dict = {}
+    arch_params, arch_static, optim, poll_dict[str(i)]= trainer1.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                           (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim, \
+                                                                          n_iter=og_epochs, save_iter=config['save_iter'], \
+                                                                          task_id=i,config={
+                                                                            'batch_size': 20,
+                                                                            'opt': 'Nash',
+                                                                            'problem': config['prob'],
+                                                                            'data_id': config['data'],
+                                                                            'len_exp_replay': 20000,
+                                                                            "flag": config['flag'],
+                                                                            'network': config['network'],
+                                                                            }, dictum = poll_dict)
+
+    arch_model = eqx.combine(arch_params, arch_static)
+    #more search------------------------
+    arch_dict = poll_dict[str(i)]
+    loss_orig = np.mean([arch_dict["train"+str((i+1)*og_epochs-j)][0] for j in range(1,15)])
+    threshold = .6
+    loss = loss_orig
+    step = 1
+    x = original_arch[1]
+    y = original_arch[2]
+    opt_loss = loss_orig
+    opt_mlp = arch_model.feed_sizes
+    opt_filter = arch_model.filter_size
+    curr_mlp = opt_mlp
+    curr_filter = opt_filter
+    k = 1
+    m=1
+    step_mlp = 10
+    while(opt_loss>=loss_orig*threshold) and (k<10):
+        for p in range(2,5): #for filter
+            for n in range(0,3):
+                for j in range(0,3):
+                    #curr_arch = [3,x+15*n,y+15*j,10]
+                    curr_filter = p
+                    #print("curr filter: ", curr_filter)
+                    curr_mlp = [3, x+k*(j+1)*step_mlp, y+k*(n+1)*step_mlp,10]
+                    #print("curr mlp: ", curr_mlp)
+                    conv_output_size = arch_model.calc_output_size(curr_filter)
+                    maxpool_output_size = arch_model.pool_output_size(2,conv_output_size)
+                    #set MLP input layer to correct size correspongding to new filter size output for Convnet layer
+                    curr_mlp[0] = maxpool_output_size*maxpool_output_size*arch_model.channel_out
+
+                    arch_model = eqx.tree_at(lambda x: (x.feed_sizes, x.filter_size), arch_model, replace = (curr_mlp, curr_filter))
+                    initializer = jax.nn.initializers.glorot_uniform()
+                    feed_wlist = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(arch_model.feed_sizes[:],arch_model.feed_sizes[1:])]
+                    feed_blist = [initializer(jax.random.PRNGKey(5), (y, 1)) for y in arch_model.feed_sizes[1:]]
+                    conv_wlist = [[jax.random.normal(jax.random.PRNGKey(j),shape = (arch_model.filter_size,arch_model.filter_size))] for j in range(0,arch_model.channel_out)]
+                    for r in range(len(arch_model.feed_sizes)-1):
+                        arch_model = eqx.tree_at(lambda x: x.feed_layers[r].weight, arch_model, feed_wlist[r])
+                        arch_model = eqx.tree_at(lambda x: x.feed_layers[r].bias, arch_model, feed_blist[r])
+                    #weights_list = [[(model.conv_layers[0].weight[i][0])] for i in range(0,model.channel_out)]
+                    weights_list = jnp.array(conv_wlist)
+                    arch_model = eqx.tree_at(lambda x: x.conv_layers[0].weight, arch_model, replace = weights_list)
+
+                    arch_params, arch_static = eqx.partition(arch_model,eqx.is_array)
+                    arch_static = eqx.tree_at(lambda x: x.A_conv, arch_static, replace= arch_model.A_conv)
+                    arch_static = eqx.tree_at(lambda x: x.B_conv, arch_static, replace= arch_model.B_conv)
+                    arch_static = eqx.tree_at(lambda x: x.A_feed, arch_static, replace= arch_model.A_feed)
+                    arch_static = eqx.tree_at(lambda x: x.B_feed, arch_static, replace= arch_model.B_feed)
+                    arch_params = eqx.tree_at(lambda x: (x.A_conv,x.B_conv,x.A_feed,x.B_feed), arch_params, replace= (None,None,None,None))
+                    #print("==========================")
+                    #print("model after setting: ", arch_model)
+                    record_dict_arch = {}
+                    optim2 = optax.adam(1e-3)
+               
+                    arch_params, arch_static, optim2, record_dict_arch[str(i)]= trainer1.train__CL__class((dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),\
+                                                                           (test_loader_curr, test_loader_exp)),arch_params, arch_static, optim2, \
+                                                                          n_iter=og_epochs, save_iter=config['save_iter'], \
+                                                                          task_id=i,config={
+                                                                            'batch_size': 20,
+                                                                            'opt': 'Nash',
+                                                                            'problem': config['prob'],
+                                                                            'data_id': config['data'],
+                                                                            'len_exp_replay': 20000,
+                                                                            "flag": config['flag'],
+                                                                            'network': config['network'],
+                                                                            }, dictum = record_dict_arch)
+                    arch_model = eqx.combine(arch_params,arch_static) #recombine the model
+                    #determine whehter curr_arch is opt_arch for each
+                    arch_dict = record_dict_arch[str(i)]
+                    poll_loss = np.mean([arch_dict["train"+str((i+1)*og_epochs-r)][0] for r in range(1,10)])
+                    print("curr_mlp for round: ", curr_mlp, "---- opt filter for round: ", curr_filter, "---- curr_loss:", poll_loss, "----- opt loss: ", opt_loss)
+                    # if loss_poll<opt_loss:
+                    #     opt_gcn = curr_filter
+                    #     opt_mlp = curr_mlp
+                    #     opt_loss = loss_poll
+                    # m+=1
+                    # #print("ROUND ",m ,": opt_gcn: ", opt_gcn, "---- opt_mlp: ", opt_mlp)
+        
+
+                    # poll_dict1 = poll_dict[str(i)]
+                    #poll_loss = np.mean([poll_dict1["train"+str((i+1)*og_epochs-j)][0] for j in range(1,51)])
+                    # print("curr arch: ", curr_mlp, "--------- curr loss: ", poll_loss, "--------- opt loss: ", opt_loss)
+                    if poll_loss<opt_loss:
+                        opt_loss = poll_loss
+                        opt_mlp = curr_mlp
+                        opt_filter = curr_filter
+                    print("opt mlp for round: ", opt_mlp, "---- opt filter for round: ", opt_filter)
+                    arch_model = eqx.combine(arch_params,arch_static) #recombine the model
+        k+=3
+    return opt_mlp, opt_filter
+
+
+def prepABs(model,prev_feed_sizes,prev_filter_size):
+    opt_MLParch = model.feed_sizes
+    opt_filter = model.filter_size
+    initializer = jax.nn.initializers.glorot_uniform()
+    if (prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter !=prev_filter_size):
+        print("New feed AND conv!!!------------------")
+        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[1:],opt_MLParch[1:])]
+        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[:-1],opt_MLParch[:-1])]
+        B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+    elif(prev_feed_sizes[1:3] != opt_MLParch[1:3]) and (opt_filter ==prev_filter_size):
+        print("New FEED ONLY!!!------------------")
+        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[1:],opt_MLParch[1:])]
+        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(prev_feed_sizes[:-1],opt_MLParch[:-1])]
+        #set conv A's B's to identity to keep them
+        B_conv = [jnp.eye(opt_filter,opt_filter) for j in range(0,model.channel_out)]
+        A_conv = [jnp.eye(opt_filter,opt_filter) for j in range(0,model.channel_out)]
+    else:
+        print("New CONV ONLY!!!------------------")
+        B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (opt_filter,prev_filter_size)) for j in range(0,model.channel_out)]
+        #set feed A's B's to identity to keep them
+        A_feed = [jnp.eye(x,x) for x in prev_feed_sizes[1:]]
+        B_feed = [jnp.eye(x,x) for x in prev_feed_sizes[:-1]]
+    return A_feed, B_feed, A_conv, B_conv
+
+
+
+
 def train_model_class(config):
     """Train model for classification task"""
     trainer, optim, data, model = load_checkpoint(config)
@@ -690,6 +847,10 @@ def train_model_class(config):
         test_loader_curr, _ = data.generate_dataset(
             task_id=i, batch_size=config['batch_size'], phase='testing')
         
+
+        data.append_to_experience(i)
+
+
         params, static, optim, record_dict[str(i)] = trainer.train__CL__class(
             (dataloader_curr, dataloader_curr, (test_loader_curr, test_loader_curr),
              (test_loader_curr, test_loader_curr)),
@@ -697,11 +858,11 @@ def train_model_class(config):
             save_iter=config['save_iter'], task_id=i,
             config={'batch_size': config['batch_size'], 'opt': 'Nash',
                    'problem': config['prob'], 'data_id': config['data'],
-                   'len_exp_replay': 20000, 'flag': config['flag'],
+                   'len_exp_replay': 200000, 'flag': config['flag'],
                    'network': config['network']},
             dictum=record_dict)
         
-        data.append_to_experience(i)
+        
     
     model = eqx.combine(params, static)
     eqx.tree_serialise_leaves(config['model_path'], model)
@@ -737,8 +898,6 @@ if __name__ == "__main__":
         params['runs'] = int(args.runs)
     else:
         params['runs'] = 5
-    
-    print("The configuration is", params)
     
     if args.command == 'train':
         record_dict = {}
