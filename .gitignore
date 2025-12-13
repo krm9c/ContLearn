@@ -9,6 +9,9 @@ logdir/
 *.pkl
 model/
 *.zip
+*.cobalt
+*.output
+*.error
 # C extensions
 *.so
 

@@ -12,11 +12,11 @@ source ~/miniconda3/etc/profile.d/conda.sh
 
 #-------------------------------------------------------
 # for JLSE
-# conda activate jax__
+conda activate jax__
 
 #-------------------------------------------------------
 # for local
-conda activate jaxss
+# conda activate jaxss
 
 
 #-------------------------------------------------------
