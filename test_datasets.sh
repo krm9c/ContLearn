@@ -19,7 +19,6 @@ echo "=========================================="
 echo "Testing ContLearn with all datasets"
 echo "=========================================="
 
-
 #-------------------------------------------------------
 # # sine dataset test
 echo ""
@@ -27,6 +26,13 @@ echo "=========================================="
 echo "Testing Sine"
 echo "=========================================="
 python run.py train 1 "test_param_sine.json"
+#-------------------------------------------------------
+# AWB-enabled sine dataset test
+echo ""
+echo "=========================================="
+echo "Testing AWB Pipeline (Sine Regression)"
+echo "=========================================="
+python run.py train 1 "test_awb_sine.json"
 
 #-------------------------------------------------------
 # Graph Synthetic

@@ -4,8 +4,8 @@
     "file": "logdir/dicts/log_induced_03",
     "model_path": "logdir/model/MLP__03_reg",
     "flag": [1, 0],
-    "n_task": 20,
-    "epochs_per_task": 500,
+    "n_task":3,
+    "epochs_per_task": 3,
     "save_iter": 1,
     "data": "sine",
     "loss": "mse",
@@ -18,5 +18,13 @@
     "n_layers": 4,
     "hln": 129,
     "network": "fcnn",
-    "prob": "regression"
+    "prob": "regression",
+
+    "__comment_awb": "AWB Pipeline Settings (set awb_enabled=true to activate)",
+    "awb_enabled": false,
+    "awb_preliminary_epochs": 250,
+    "awb_ab_training_epochs": 2000,
+    "awb_ab_warmup_epochs": 50,
+    "awb_ab_max_iterations": 8,
+    "awb_averaging_window": 10
 }

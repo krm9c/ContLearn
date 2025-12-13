@@ -27,6 +27,28 @@ python run.py train 1 "param_permuted_mnist.json" # Permuted MNIST
 
 Configuration files are stored in [config/jsons/](config/jsons/) directory.
 
+### Visualizing Results
+```bash
+# Quick plot of latest training results
+bash plot_latest.sh
+
+# Plot specific results file
+python plot_results.py logdir/model/regression_sine_fcnn_run0_records.pkl
+python plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl
+
+# Specify output directory
+python plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl --output-dir figures/experiment1
+
+# See docs/PLOTTING_GUIDE.md for comprehensive guide
+```
+
+Generated plots include:
+- **Losses**: All loss components (H, V, dV, gradients) over iterations
+- **Metrics**: Train/test performance (current task vs experience replay)
+- **Eigenvalues**: Box plots of A/B matrix eigenvalues per layer
+- **Overview**: Combined visualization for quick assessment
+- **Multi-run statistics**: Mean ± std across multiple runs
+
 ### Running Tests
 ```bash
 # Using test runner scripts (recommended)

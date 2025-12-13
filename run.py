@@ -15,6 +15,7 @@ import pickle
 
 from config import Params
 from training import train_model_graph, train_model_reg, train_model_class
+from utils.trainer import Trainer
 
 import jax
 print(jax.devices()) # Should list your GPU(s)
@@ -46,25 +47,28 @@ def main():
         params['runs'] = 5
 
     if args.command == 'train':
-        record_dict = {}
-        record_dict_preAB = {}
-        record_dict_AB = {}
+        all_runs_records = {}
 
         for j in range(params['runs']):
             print(f"runs {j}, problem: {params['problem']}")
 
             if params['prob'] == 'regression':
-                record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_reg(params)
+                all_runs_records[str(j)] = train_model_reg(params, run_id=j)
             elif params['prob'] == 'classification':
                 print("Starting classification training...")
-                record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_class(params)
+                all_runs_records[str(j)] = train_model_class(params, run_id=j)
             elif params['problem'] == 'graph':
-                record_dict_preAB[str(j)], record_dict_AB[str(j)], record_dict[str(j)] = train_model_graph(params)
+                all_runs_records[str(j)] = train_model_graph(params, run_id=j)
 
-        # Save results
+        # Save all runs together using the unified recording system
+        if all_runs_records:
+            # Use the save_all_runs static method
+            Trainer.save_all_runs(all_runs_records, params.get('model_path', ''), params)
+
+        # Legacy pickle save if 'file' parameter exists
         if 'file' in params:
             with open(str(params['file']) + '.pkl', 'wb') as f:
-                pickle.dump(record_dict, f)
+                pickle.dump(all_runs_records, f)
             print(f"Saved results to {params['file']}.pkl")
 
 
