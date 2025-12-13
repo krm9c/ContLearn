@@ -15,7 +15,7 @@ import pytest
 import torch_geometric as pyg
 from torch_geometric.data import Data
 
-from utils.utils import (
+from contlearn.utils.helpers import (
     sp_matmul, normalize, preprocess_features, normalize_adj,
     preprocess_adj, to_sparse, plot_dists, visualize_gradients
 )

@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 import pytest
 
-from utils.data import data_return, Continual_Dataset
+from contlearn.data.datasets import data_return, Continual_Dataset
 
 
 class TestDataReturn:

@@ -16,8 +16,8 @@ import pytest
 import tempfile
 import shutil
 
-from utils.trainer import Trainer
-from utils.model import MLP, CNN3D
+from contlearn.trainers import Trainer
+from contlearn.models import MLP, CNN3D
 
 
 class TestTrainerInit:
@@ -26,17 +26,16 @@ class TestTrainerInit:
     def test_trainer_initialization(self):
         """Test Trainer initializes correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             assert trainer.loss == 'mse'
             assert trainer.metric == 'mse'
             assert trainer.problem == 'vectors'
-            assert trainer.writer is not None
 
     def test_trainer_classification_init(self):
         """Test Trainer initialization for classification."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
             assert trainer.loss == 'class'
             assert trainer.metric == 'class'
 
@@ -46,7 +45,7 @@ class TestLossFunctions:
     def test_loss_fn_mse(self):
         """Test MSE loss function for regression."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -65,7 +64,7 @@ class TestLossFunctions:
     def test_loss_fn_mse_batch(self):
         """Test MSE loss with batch of inputs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -82,7 +81,7 @@ class TestLossFunctions:
     def test_loss_fn_class(self):
         """Test classification loss function."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
 
             model = MLP(sizes=[10, 64, 10])
             params, static = eqx.partition(model, eqx.is_array)
@@ -100,7 +99,7 @@ class TestLossFunctions:
     def test_loss_fn_class_gradient(self):
         """Test that classification loss can be differentiated."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
 
             model = MLP(sizes=[10, 64, 10])
             params, static = eqx.partition(model, eqx.is_array)
@@ -123,7 +122,7 @@ class TestMetricFunctions:
     def test_accuracy_vectors(self):
         """Test accuracy metric for classification."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
 
             model = MLP(sizes=[10, 64, 10])
             params, static = eqx.partition(model, eqx.is_array)
@@ -142,7 +141,7 @@ class TestMetricFunctions:
     def test_mse_vectors(self):
         """Test MSE metric for regression."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -159,7 +158,7 @@ class TestMetricFunctions:
     def test_get_pred(self):
         """Test get_pred function for predictions."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -179,7 +178,7 @@ class TestGraphLossFunctions:
     def test_loss_fn_class_graph_structure(self):
         """Test that graph classification loss function exists and has correct signature."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='graph')
+            trainer = Trainer(Loss='class', metric='class', problem='graph')
 
             # Just verify the method exists and can be called
             assert hasattr(trainer, 'loss_fn_class_graph')
@@ -187,7 +186,7 @@ class TestGraphLossFunctions:
     def test_accuracy_graphs_structure(self):
         """Test that graph accuracy function exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='graph')
+            trainer = Trainer(Loss='class', metric='class', problem='graph')
 
             assert hasattr(trainer, 'accuracy_graphs')
             assert hasattr(trainer, 'accuracy_graphs_AWBT')
@@ -199,7 +198,7 @@ class TestTrainerJIT:
     def test_loss_fn_mse_is_jitted(self):
         """Test that loss_fn_mse is JIT compiled."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -220,7 +219,7 @@ class TestTrainerJIT:
     def test_accuracy_vectors_is_jitted(self):
         """Test that accuracy_vectors is JIT compiled."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
 
             model = MLP(sizes=[10, 64, 10])
             params, static = eqx.partition(model, eqx.is_array)
@@ -246,7 +245,7 @@ class TestTrainerWithOptimizer:
     def test_training_step_regression(self):
         """Test a single training step for regression."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)
@@ -271,7 +270,7 @@ class TestTrainerWithOptimizer:
     def test_training_step_classification(self):
         """Test a single training step for classification."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='class', metric='class', problem='vectors')
+            trainer = Trainer(Loss='class', metric='class', problem='vectors')
 
             model = MLP(sizes=[10, 64, 10])
             params, static = eqx.partition(model, eqx.is_array)
@@ -297,7 +296,7 @@ class TestTrainerWithOptimizer:
     def test_multiple_training_steps_decreases_loss(self):
         """Test that multiple training steps decrease loss."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = Trainer(logdir=tmpdir, Loss='mse', metric='mse', problem='vectors')
+            trainer = Trainer(Loss='mse', metric='mse', problem='vectors')
 
             model = MLP(sizes=[10, 64, 5])
             params, static = eqx.partition(model, eqx.is_array)

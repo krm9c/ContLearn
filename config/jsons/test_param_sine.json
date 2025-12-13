@@ -7,8 +7,8 @@
         1,
         0
     ],
-    "n_task": 10,
-    "epochs_per_task": 500,
+    "n_task": 3,
+    "epochs_per_task": 3,
     "save_iter": 1,
     "data": "sine",
     "loss": "mse",

@@ -15,7 +15,7 @@ import pytest
 import tempfile
 import pickle
 
-from training.runners import train_model_reg, train_model_class, train_model_graph
+from contlearn.training.runners import train_model_reg, train_model_class, train_model_graph
 
 
 class TestTrainModelRegression:
@@ -26,7 +26,7 @@ class TestTrainModelRegression:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'regression',
-                'problem': 'regression',
+                'problem': 'vectors',
                 'data': 'sine',
                 'network': 'fcnn',
                 'lr': 1e-3,
@@ -46,15 +46,16 @@ class TestTrainModelRegression:
             }
 
             # Run training
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
-            # Verify output structure - record_dict contains nested training metrics
+            # Verify output structure - record_dict contains metadata and iterations
             assert isinstance(record_dict, dict)
             # Training should complete without errors and return a dict
             assert record_dict is not None
-            # Check that task keys exist (they may be nested)
-            assert '0' in record_dict
-            assert '1' in record_dict
+            # Check that metadata and iterations exist
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
+            assert len(record_dict['iterations']) > 0  # Should have recorded some iterations
 
     def test_train_model_reg_saves_model(self):
         """Test that regression training saves model."""
@@ -63,7 +64,7 @@ class TestTrainModelRegression:
 
             config = {
                 'prob': 'regression',
-                'problem': 'regression',
+                'problem': 'vectors',
                 'data': 'sine',
                 'network': 'fcnn',
                 'lr': 1e-3,
@@ -92,7 +93,7 @@ class TestTrainModelRegression:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'regression',
-                'problem': 'regression',
+                'problem': 'vectors',
                 'data': 'sine',
                 'network': 'fcnn',
                 'lr': 1e-3,
@@ -111,13 +112,12 @@ class TestTrainModelRegression:
                 'arch_start_task': 1
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # Should have records for all 3 tasks (nested structure)
             assert isinstance(record_dict, dict)
-            assert '0' in record_dict
-            assert '1' in record_dict
-            assert '2' in record_dict
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
 
 
 class TestTrainModelClassification:
@@ -147,14 +147,14 @@ class TestTrainModelClassification:
             }
 
             # Run training
-            record_dict_preAB, record_dict_AB, record_dict = train_model_class(config)
+            record_dict = train_model_class(config)
 
             # Verify output structure - record_dict contains nested training metrics
             assert isinstance(record_dict, dict)
             assert record_dict is not None
-            # Check that task keys exist
-            assert '0' in record_dict
-            assert '1' in record_dict
+            # Check that metadata and iterations exist
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
 
     def test_train_model_class_saves_model(self):
         """Test that classification training saves model."""
@@ -211,7 +211,7 @@ class TestTrainModelClassification:
                 'model_path': tmpdir + '/model'
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_class(config)
+            record_dict = train_model_class(config)
 
             assert isinstance(record_dict, dict)
             assert len(record_dict) >= 1
@@ -245,13 +245,13 @@ class TestTrainModelGraph:
             }
 
             # Run training
-            record_dict_preAB, record_dict_AB, record_dict = train_model_graph(config)
+            record_dict = train_model_graph(config)
 
             # Verify output structure
             assert isinstance(record_dict, dict)
             assert record_dict is not None
-            assert '0' in record_dict
-            assert '1' in record_dict
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
 
     def test_train_model_graph_saves_model(self):
         """Test that graph training saves model."""
@@ -308,12 +308,12 @@ class TestTrainModelGraph:
                 'model_path': tmpdir + '/model'
             }
             
-            record_dict_preAB, record_dict_AB, record_dict = train_model_graph(config)
+            record_dict = train_model_graph(config)
 
             # Should have records for all tasks
             assert isinstance(record_dict, dict)
-            assert '0' in record_dict
-            assert '1' in record_dict
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
 
 
 class TestTrainingRecordDict:
@@ -324,7 +324,7 @@ class TestTrainingRecordDict:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'regression',
-                'problem': 'regression',
+                'problem': 'vectors',
                 'data': 'sine',
                 'network': 'fcnn',
                 'lr': 1e-3,
@@ -343,14 +343,14 @@ class TestTrainingRecordDict:
                 'arch_start_task': 1
             }
 
-            _, _, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
-            # Check that task 0 has records
-            assert '0' in record_dict
-            task_record = record_dict['0']
+            # Check that iterations dict has records
+            assert 'iterations' in record_dict
+            assert len(record_dict['iterations']) > 0
 
-            # Task record should be a dictionary with training metrics
-            assert isinstance(task_record, dict)
+            # Iterations should be a dictionary with training metrics
+            assert isinstance(record_dict['iterations'], dict)
 
     def test_record_dict_structure_classification(self):
         """Test that record_dict has expected structure for classification."""
@@ -375,10 +375,10 @@ class TestTrainingRecordDict:
                 'model_path': tmpdir + '/model'
             }
 
-            _, _, record_dict = train_model_class(config)
+            record_dict = train_model_class(config)
 
-            assert '0' in record_dict
-            assert isinstance(record_dict['0'], dict)
+            assert 'iterations' in record_dict
+            assert isinstance(record_dict['iterations'], dict)
 
 
 class TestEquinoxPartitionPattern:
@@ -391,7 +391,7 @@ class TestEquinoxPartitionPattern:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 'prob': 'regression',
-                'problem': 'regression',
+                'problem': 'vectors',
                 'data': 'sine',
                 'network': 'fcnn',
                 'lr': 1e-3,
@@ -412,7 +412,7 @@ class TestEquinoxPartitionPattern:
 
             # Training should complete without errors
             # The partition pattern is applied internally
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             assert record_dict is not None
 

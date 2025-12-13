@@ -5,7 +5,7 @@
     "model_path": "logdir/model/MLP_awb_test",
     "flag": [1, 0],
     "n_task": 3,
-    "epochs_per_task": 5,
+    "epochs_per_task": 3,
     "save_iter": 1,
     "data": "sine",
     "loss": "mse",

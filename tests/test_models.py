@@ -13,7 +13,7 @@ import numpy as np
 import equinox as eqx
 import pytest
 
-from utils.model import MLP, MLPorig, CNN, CNN3D, Linear, Linear2, Linear3
+from contlearn.models import MLP, MLPorig, CNN, CNN3D, Linear, Linear2, Linear3
 
 
 class TestMLP:

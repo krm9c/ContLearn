@@ -13,9 +13,9 @@ import argparse
 import os
 import pickle
 
-from config import Params
-from training import train_model_graph, train_model_reg, train_model_class
-from utils.trainer import Trainer
+from contlearn.config import Params
+from contlearn.training import train_model_graph, train_model_reg, train_model_class
+from contlearn.trainers import Trainer
 
 import jax
 print(jax.devices()) # Should list your GPU(s)

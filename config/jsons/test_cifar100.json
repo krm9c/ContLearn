@@ -4,7 +4,7 @@
     "file": "logdir/dicts/test_cifar100",
     "model_path": "logdir/model/test_CNN3D_cifar100_",
     "flag":[0, 0],
-    "n_task": 2,
+    "n_task": 3,
     "epochs_per_task": 3,
     "save_iter": 1,
     "data": "cifar100",
