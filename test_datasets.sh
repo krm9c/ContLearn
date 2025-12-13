@@ -34,14 +34,13 @@ echo "Testing AWB Pipeline (Sine Regression)"
 echo "=========================================="
 python run.py train 1 "test_awb_sine.json"
 
-# #-------------------------------------------------------
-# # Graph Synthetic
-# echo ""
-# echo "=========================================="
-# echo "Testing Graph Synthetic..."
-# echo "=========================================="
-# python run.py train 1 "test_paramgraph_synthetic.json"
-
+#-------------------------------------------------------
+# Graph Synthetic
+echo ""
+echo "=========================================="
+echo "Testing Graph Synthetic..."
+echo "=========================================="
+python run.py train 1 "test_paramgraph_synthetic.json"
 
 # #-------------------------------------------------------
 # # Test Permuted MNIST
@@ -51,14 +50,13 @@ python run.py train 1 "test_awb_sine.json"
 # echo "=========================================="
 # python run.py train 1 "paramomni.json"
 
-
-# #-------------------------------------------------------
-# # Test Permuted MNIST
-# echo ""
-# echo "=========================================="
-# echo "Testing Permuted MNIST..."
-# echo "=========================================="
-# python run.py train 1 "test_permuted_mnist.json"
+#-------------------------------------------------------
+# Test Permuted MNIST
+echo ""
+echo "=========================================="
+echo "Testing Permuted MNIST..."
+echo "=========================================="
+python run.py train 1 "test_permuted_mnist.json"
 
 
 # #-------------------------------------------------------
