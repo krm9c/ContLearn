@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import equinox as eqx
 
-from training.awb_utils import (
+from contlearn.training.awb_utils import (
     compute_avg_loss,
     should_change_arch,
     compute_ab_threshold,
@@ -25,7 +25,7 @@ from training.awb_utils import (
     restore_layer_weights,
     create_optimizer_for_phase,
 )
-from utils.model import MLP
+from contlearn.models import MLP
 
 
 class TestComputeAvgLoss:

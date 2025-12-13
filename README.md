@@ -1,10 +1,16 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
+# ContLearn
 
 ContLearn is a JAX-based framework for continual learning research. It implements universal continual learning methods supporting multiple neural network architectures (MLP, CNN, GCN, GAT) with optional AWB (Adaptive Weight Basis) transformations for architecture search during lifelong learning.
+
+## Installation
+
+Install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+This will install ContLearn as a package, making all modules importable via `from contlearn.*`.
 
 ## Commands
 
@@ -14,15 +20,15 @@ ContLearn is a JAX-based framework for continual learning research. It implement
 bash script.sh
 
 # Direct execution with JSON config
-python run.py train <num_runs> "<config_file>.json"
+python scripts/run.py train <num_runs> "<config_file>.json"
 
 # Examples:
-python run.py train 1 "param_sine.json"           # Sine regression
-python run.py train 1 "paramgraph_enzymes.json"   # Graph classification (ENZYMES)
-python run.py train 5 "paramgraph_mutag.json"     # Graph classification (MUTAG)
-python run.py train 1 "paramomni10.json"          # MNIST classification
-python run.py train 1 "param_cifar10.json"        # CIFAR-10
-python run.py train 1 "param_permuted_mnist.json" # Permuted MNIST
+python scripts/run.py train 1 "param_sine.json"           # Sine regression
+python scripts/run.py train 1 "paramgraph_enzymes.json"   # Graph classification (ENZYMES)
+python scripts/run.py train 5 "paramgraph_mutag.json"     # Graph classification (MUTAG)
+python scripts/run.py train 1 "paramomni10.json"          # MNIST classification
+python scripts/run.py train 1 "param_cifar10.json"        # CIFAR-10
+python scripts/run.py train 1 "param_permuted_mnist.json" # Permuted MNIST
 ```
 
 Configuration files are stored in [config/jsons/](config/jsons/) directory.
@@ -33,11 +39,11 @@ Configuration files are stored in [config/jsons/](config/jsons/) directory.
 bash plot_latest.sh
 
 # Plot specific results file
-python plot_results.py logdir/model/regression_sine_fcnn_run0_records.pkl
-python plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl
+python scripts/plot_results.py logdir/model/regression_sine_fcnn_run0_records.pkl
+python scripts/plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl
 
 # Specify output directory
-python plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl --output-dir figures/experiment1
+python scripts/plot_results.py logdir/model/regression_sine_fcnn_allruns.pkl --output-dir figures/experiment1
 
 # See docs/PLOTTING_GUIDE.md for comprehensive guide
 ```
@@ -74,57 +80,101 @@ bash test_datasets.sh
 # See TESTING.md for comprehensive testing guide
 ```
 
+## Directory Structure
+
+```
+ContLearn/
+├── src/contlearn/              # Main package (installable)
+│   ├── models/                 # Neural network architectures
+│   │   ├── mlp.py             # MLP, MLPorig classes
+│   │   ├── cnn.py             # CNN, CNN3D classes
+│   │   ├── graph.py           # GCN, GAT, myNN classes
+│   │   └── layers.py          # Linear layers, Dropout
+│   ├── trainers/              # Training logic
+│   │   ├── trainer.py         # Main Trainer class
+│   │   ├── losses.py          # Loss function mixin
+│   │   ├── hamiltonian.py     # Hamiltonian regularization
+│   │   ├── loops.py           # Training loop methods
+│   │   └── recording.py       # Metrics recording
+│   ├── data/                  # Data handling
+│   │   ├── loaders.py         # Dataset loading functions
+│   │   └── datasets.py        # data_return, Continual_Dataset classes
+│   ├── training/              # Training orchestration
+│   │   ├── checkpoint.py      # Model/optimizer initialization
+│   │   ├── runners.py         # Training workflows
+│   │   └── awb_utils.py       # AWB-specific utilities
+│   ├── config/                # Configuration
+│   │   ├── params.py          # Params class for JSON configs
+│   │   └── constants.py       # Global constants
+│   ├── arch_search/           # Architecture search
+│   │   ├── mlp_search.py      # MLP architecture search
+│   │   ├── cnn_search.py      # CNN architecture search
+│   │   └── gcn_search.py      # GCN architecture search
+│   └── utils/                 # Utilities
+│       ├── plotting.py        # Visualization utilities
+│       └── helpers.py         # Sparse matrix operations
+├── scripts/                   # Executable scripts
+│   ├── run.py                 # Main training entry point
+│   ├── plot_results.py        # Results visualization
+│   ├── example*.py            # Usage examples
+│   └── verify*.py             # Verification scripts
+├── tests/                     # Test suite
+├── config/jsons/              # JSON configuration files
+├── data/                      # Dataset storage
+└── pyproject.toml             # Package metadata
+```
+
 ## Architecture
 
 ### Core Components
 
-**[run.py](run.py)** - Main entry point:
+**[scripts/run.py](scripts/run.py)** - Main entry point:
 - Argument parsing for training runs
 - Dispatches to problem-specific training functions based on `prob` field
 
-**[config/params.py](config/params.py)** - Configuration management:
+**[src/contlearn/config/params.py](src/contlearn/config/params.py)** - Configuration management:
 - `Params` class for loading/saving JSON configurations
 - Provides dict-like access to hyperparameters
 
-**[training/](training/)** - Training orchestration:
-- [training/runners.py](training/runners.py): `train_model_graph`, `train_model_reg`, `train_model_class`
-- [training/checkpoint.py](training/checkpoint.py): `load_checkpoint` - initializes model, optimizer, trainer, and dataset
+**[src/contlearn/training/](src/contlearn/training/)** - Training orchestration:
+- [runners.py](src/contlearn/training/runners.py): `train_model_graph`, `train_model_reg`, `train_model_class`
+- [checkpoint.py](src/contlearn/training/checkpoint.py): `load_checkpoint` - initializes model, optimizer, trainer, and dataset
 
-**[data/loaders.py](data/loaders.py)** - Data loading:
+**[src/contlearn/data/loaders.py](src/contlearn/data/loaders.py)** - Data loading:
 - `load_return_dataset`: Creates dataset objects for regression/classification
 - `continuum_Graph_classification`: Splits graph datasets into continual learning tasks
 
-**[utils/model.py](utils/model.py)** - Neural network architectures using Equinox:
-- `MLP` / `MLPorig` - Feedforward networks with optional AWB transformation via `getAWB()`
-- `CNN` / `CNN3D` - Convolutional networks (CNN for MNIST/Omniglot, CNN3D for CIFAR)
-- `myNN` - Combined GCN + MLP for graph classification with `get_AWBT()` support
-- `SingleHeadGAT`, `MultiHeadGAT` - Graph Attention Networks
-- `Linear`, `Linear2`, `Linear3` - Custom linear layers with different bias shapes
+**[src/contlearn/models/](src/contlearn/models/)** - Neural network architectures using Equinox:
+- [mlp.py](src/contlearn/models/mlp.py): `MLP` / `MLPorig` - Feedforward networks with optional AWB transformation via `getAWB()`
+- [cnn.py](src/contlearn/models/cnn.py): `CNN` / `CNN3D` - Convolutional networks (CNN for MNIST/Omniglot, CNN3D for CIFAR)
+- [graph.py](src/contlearn/models/graph.py): `myNN` - Combined GCN + MLP for graph classification with `get_AWBT()` support
+- [graph.py](src/contlearn/models/graph.py): `SingleHeadGAT`, `MultiHeadGAT` - Graph Attention Networks
+- [layers.py](src/contlearn/models/layers.py): `Linear`, `Linear2`, `Linear3` - Custom linear layers with different bias shapes
 
-**[utils/trainer.py](utils/trainer.py)** - Training logic:
+**[src/contlearn/trainers/trainer.py](src/contlearn/trainers/trainer.py)** - Training logic:
 - `Trainer` class with loss functions for vectors and graphs
 - JIT-compiled loss/metric functions (`loss_fn_class`, `loss_fn_mse`, `accuracy_graphs`)
 - Training methods: `train__CL__graph`, `train__CL__reg`, `train__CL__class`
 - TensorBoard integration via `SummaryWriter`
 
-**[utils/data.py](utils/data.py)** - Data handling:
+**[src/contlearn/data/datasets.py](src/contlearn/data/datasets.py)** - Data handling:
 - `data_return` class managing datasets (MNIST, Omniglot, CIFAR, sine, synthetic)
 - Experience replay buffer management (`append_to_experience`)
 - `Continual_Dataset` for PyTorch DataLoader compatibility
 
-**[arch_search/](arch_search/)** - Architecture search modules:
-- [arch_search/mlp_search.py](arch_search/mlp_search.py): MLP architecture search
-- [arch_search/cnn_search.py](arch_search/cnn_search.py): CNN architecture search
-- [arch_search/gcn_search.py](arch_search/gcn_search.py): GCN architecture search with `arch_search_GCN`
+**[src/contlearn/arch_search/](src/contlearn/arch_search/)** - Architecture search modules:
+- [mlp_search.py](src/contlearn/arch_search/mlp_search.py): MLP architecture search
+- [cnn_search.py](src/contlearn/arch_search/cnn_search.py): CNN architecture search
+- [gcn_search.py](src/contlearn/arch_search/gcn_search.py): GCN architecture search with `arch_search_GCN`
 
 ### Continual Learning Training Flow
 
-1. **Initialization** ([training/checkpoint.py](training/checkpoint.py:14)):
+1. **Initialization** ([src/contlearn/training/checkpoint.py](src/contlearn/training/checkpoint.py)):
    - Load dataset via `load_return_dataset` or graph data
    - Initialize model based on `prob` and `network` config
    - Create optimizer (Adam/AdamW) and Trainer
 
-2. **Task Loop** (in [training/runners.py](training/runners.py)):
+2. **Task Loop** (in [src/contlearn/training/runners.py](src/contlearn/training/runners.py)):
    - For each task `i` in `range(config['n_task'])`:
      - Generate task-specific data (continual learning splits)
      - Train on current task using `trainer.train__CL__*` methods
@@ -147,7 +197,7 @@ Models support optional `A` and `B` transformation matrices for architecture sea
 - AWB forward: `model.getAWB(x)` or `model.get_AWBT(x)` uses `A @ W @ B.T`
 - This enables continuous architecture morphing without discrete changes
 
-**Training phases** (currently in development, see [arch_search/](arch_search/)):
+**Training phases** (currently in development, see [src/contlearn/arch_search/](src/contlearn/arch_search/)):
 1. Train with fixed architecture (W trainable, A/B frozen)
 2. Architecture search: evaluate neighboring architectures
 3. If new architecture found: initialize new A/B, train A/B with W frozen

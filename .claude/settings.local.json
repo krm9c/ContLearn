@@ -7,7 +7,8 @@
       "Bash(KMP_DUPLICATE_LIB_OK=TRUE python -m pytest:*)",
       "Bash(python -m pytest tests/test_awb_training.py::TestAWBTrainingBasic::test_train_model_reg_with_awb_disabled -xvs)",
       "Bash(./test_datasets.sh)",
-      "Bash(/Users/kraghavan/miniconda3/envs/jaxss/bin/python:*)"
+      "Bash(/Users/kraghavan/miniconda3/envs/jaxss/bin/python:*)",
+      "Bash(ls:*)"
     ]
   },
   "outputStyle": "default"

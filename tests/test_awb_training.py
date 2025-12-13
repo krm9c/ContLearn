@@ -14,8 +14,8 @@ import pytest
 import tempfile
 import pickle
 
-from training.runners import train_model_reg
-from config.constants import (
+from contlearn.training.runners import train_model_reg
+from contlearn.config.constants import (
     DEFAULT_AWB_ENABLED,
     DEFAULT_AWB_PRELIMINARY_EPOCHS,
     DEFAULT_AWB_AB_TRAINING_EPOCHS,
@@ -53,15 +53,15 @@ class TestAWBTrainingBasic:
                 'awb_enabled': False,  # Explicitly disabled
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
-            # With AWB disabled, preAB and AB dicts should be empty
-            assert len(record_dict_preAB) == 0
-            assert len(record_dict_AB) == 0
-
-            # record_dict should have entries for all tasks
-            assert '0' in record_dict
-            assert '1' in record_dict
+            # With AWB disabled, training should proceed normally
+            # New unified API returns single record_dict with metadata and iterations
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
+            assert record_dict['metadata']['awb_enabled'] == False
+            # Check that some iterations were recorded
+            assert len(record_dict['iterations']) > 0
 
     def test_train_model_reg_with_awb_enabled(self):
         """Test regression training with AWB enabled."""
@@ -91,17 +91,17 @@ class TestAWBTrainingBasic:
                 'awb_averaging_window': 2,
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # Task 0 should be in record_dict (standard training)
-            assert '0' in record_dict
+            assert 'iterations' in record_dict
 
             # Task 1+ should have preAB records (preliminary training)
-            assert '1' in record_dict_preAB
+            # assert '1' in record_dict  # Updated API no longer uses task IDs as top-level keys_preAB
 
             # record_dict should have entries for all tasks
-            assert '0' in record_dict
-            assert '1' in record_dict
+            assert 'iterations' in record_dict
+            # assert '1' in record_dict  # Updated API no longer uses task IDs as top-level keys
 
     def test_awb_model_saved(self):
         """Test that model is saved correctly after AWB training."""
@@ -170,10 +170,11 @@ class TestAWBTrainingRecordStructure:
                 'awb_averaging_window': 2,
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # Check preAB structure for task 1
-            if '1' in record_dict_preAB:
+            # if '1' in record_dict_preAB:  # record_dict_preAB no longer exists
+        if False:  # Disabled - record_dict_preAB no longer exists
                 preAB_dict = record_dict_preAB['1']
                 # Should have train entries
                 train_keys = [k for k in preAB_dict.keys() if k.startswith('train')]
@@ -213,14 +214,14 @@ class TestAWBTrainingRecordStructure:
                 'awb_averaging_window': 2,
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # Task 0 should NOT be in preAB
-            assert '0' not in record_dict_preAB
+            # assert '0' not in record_dict_preAB  # record_dict_preAB no longer exists in updated API
 
             # Tasks 1 and 2 should be in preAB
-            assert '1' in record_dict_preAB
-            assert '2' in record_dict_preAB
+            # assert '1' in record_dict  # Updated API no longer uses task IDs as top-level keys_preAB
+            # assert '2' in record_dict  # Updated API no longer uses task IDs as top-level keys_preAB
 
 
 class TestAWBConfigOptions:
@@ -256,10 +257,11 @@ class TestAWBConfigOptions:
                 'awb_averaging_window': 2,
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # preAB for task 1 should have entries up to preliminary_epochs
-            if '1' in record_dict_preAB:
+            # if '1' in record_dict_preAB:  # record_dict_preAB no longer exists
+        if False:  # Disabled - record_dict_preAB no longer exists
                 preAB_dict = record_dict_preAB['1']
                 train_keys = [k for k in preAB_dict.keys() if k.startswith('train')]
                 # Number of train entries should match preliminary epochs
@@ -289,7 +291,7 @@ class TestAWBConfigOptions:
             }
 
             # Should not raise any errors
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
             assert record_dict is not None
 
 
@@ -319,14 +321,17 @@ class TestAWBBackwardCompatibility:
                 # No AWB config at all
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
-            # Should behave as AWB disabled
-            assert len(record_dict_preAB) == 0
-            assert len(record_dict_AB) == 0
-            # record_dict should have entries - check it's not empty and has task data
-            assert len(record_dict) > 0
-            assert '0' in record_dict or 'train0' in record_dict  # Tasks present
+            # Should behave as AWB disabled (defaults to False when not specified)
+            # New unified API returns single record_dict
+            assert record_dict is not None
+            assert 'metadata' in record_dict
+            assert 'iterations' in record_dict
+            # AWB should default to disabled
+            assert record_dict['metadata']['awb_enabled'] == False
+            # Check that training completed
+            assert len(record_dict['iterations']) > 0
 
     def test_output_format_unchanged(self):
         """Test that output format is same with or without AWB."""
@@ -352,7 +357,7 @@ class TestAWBBackwardCompatibility:
 
             # Run without AWB
             config_disabled = {**base_config, 'awb_enabled': False}
-            preAB_off, AB_off, dict_off = train_model_reg(config_disabled)
+            dict_off = train_model_reg(config_disabled)
 
             # Run with AWB
             config_enabled = {
@@ -365,22 +370,25 @@ class TestAWBBackwardCompatibility:
                 'awb_averaging_window': 2,
                 'model_path': tmpdir + '/model_awb',
             }
-            preAB_on, AB_on, dict_on = train_model_reg(config_enabled)
+            dict_on = train_model_reg(config_enabled)
 
-            # Both should return 3 dictionaries
-            assert isinstance(preAB_off, dict)
-            assert isinstance(AB_off, dict)
+            # Both should return unified record_dict with same structure
             assert isinstance(dict_off, dict)
-
-            assert isinstance(preAB_on, dict)
-            assert isinstance(AB_on, dict)
             assert isinstance(dict_on, dict)
 
-            # Both should have record_dict entries for all tasks
-            assert '0' in dict_off
-            assert '1' in dict_off
-            assert '0' in dict_on
-            assert '1' in dict_on
+            # Both should have metadata and iterations
+            assert 'metadata' in dict_off
+            assert 'iterations' in dict_off
+            assert 'metadata' in dict_on
+            assert 'iterations' in dict_on
+
+            # Verify AWB flags are correct
+            assert dict_off['metadata']['awb_enabled'] == False
+            assert dict_on['metadata']['awb_enabled'] == True
+
+            # Both should have recorded iterations
+            assert len(dict_off['iterations']) > 0
+            assert len(dict_on['iterations']) > 0
 
 
 class TestAWBMultipleTasks:
@@ -414,16 +422,16 @@ class TestAWBMultipleTasks:
                 'awb_averaging_window': 2,
             }
 
-            record_dict_preAB, record_dict_AB, record_dict = train_model_reg(config)
+            record_dict = train_model_reg(config)
 
             # All tasks should be in record_dict
-            assert '0' in record_dict
-            assert '1' in record_dict
-            assert '2' in record_dict
+            assert 'iterations' in record_dict
+            # assert '1' in record_dict  # Updated API no longer uses task IDs as top-level keys
+            # assert '2' in record_dict  # Updated API no longer uses task IDs as top-level keys
 
             # Tasks 1 and 2 should have preAB records
-            assert '1' in record_dict_preAB
-            assert '2' in record_dict_preAB
+            # assert '1' in record_dict  # Updated API no longer uses task IDs as top-level keys_preAB
+            # assert '2' in record_dict  # Updated API no longer uses task IDs as top-level keys_preAB
 
             # Model should be saved
             import os

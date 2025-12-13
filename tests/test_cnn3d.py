@@ -13,8 +13,8 @@ import numpy as np
 import torch
 import equinox as eqx
 
-from utils.model import CNN3D
-from utils.data import data_return, Continual_Dataset
+from contlearn.models import CNN3D
+from contlearn.data.datasets import data_return, Continual_Dataset
 
 
 def test_cnn3d_forward_pass():

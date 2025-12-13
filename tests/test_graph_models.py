@@ -13,8 +13,8 @@ import numpy as np
 import equinox as eqx
 import pytest
 
-from utils.model import GCN, GCNorig, SingleHeadGAT, MultiHeadGAT, myNN, myNNorig
-from utils.model import Pool, GraphPooling, Linear, Linear2, Linear3, sp_matmul
+from contlearn.models import GCN, GCNorig, SingleHeadGAT, MultiHeadGAT, myNN, myNNorig
+from contlearn.models import Pool, GraphPooling, Linear, Linear2, Linear3, sp_matmul
 
 
 class TestGCNLayers:

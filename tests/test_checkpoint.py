@@ -13,9 +13,9 @@ import numpy as np
 import pytest
 import tempfile
 
-from training.checkpoint import load_checkpoint
-from utils.model import MLP, CNN, CNN3D, myNN
-from utils.trainer import Trainer
+from contlearn.training.checkpoint import load_checkpoint
+from contlearn.models import MLP, CNN, CNN3D, myNN
+from contlearn.trainers import Trainer
 
 
 class TestCheckpointRegression:
