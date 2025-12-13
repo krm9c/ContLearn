@@ -1,0 +1,25 @@
+{
+    "delta": 1e-03,
+    "tensorfile": "logdir/tensorboard/comprehensive_sine",
+    "file": "logdir/dicts/comprehensive_sine",
+    "model_path": "logdir/model/comprehensive_sine_fcnn",
+    "flag": [1, 0],
+    "n_task": 10,
+    "epochs_per_task": 1000,
+    "save_iter": 100,
+    "data": "sine",
+    "loss": "mse",
+    "metric": "mse",
+    "problem": "vectors",
+    "lr": 1e-4,
+    "batch_size": 64,
+    "n_points": 500000,
+    "sched_factor": 10,
+    "n_layers": 4,
+    "hln": 129,
+    "network": "fcnn",
+    "prob": "regression",
+
+    "__comment": "Comprehensive testing: 10 tasks with 500 epochs each",
+    "awb_enabled": false
+}

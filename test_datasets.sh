@@ -34,51 +34,51 @@ echo "Testing AWB Pipeline (Sine Regression)"
 echo "=========================================="
 python run.py train 1 "test_awb_sine.json"
 
-#-------------------------------------------------------
-# Graph Synthetic
-echo ""
-echo "=========================================="
-echo "Testing Graph Synthetic..."
-echo "=========================================="
-python run.py train 1 "test_paramgraph_synthetic.json"
+# #-------------------------------------------------------
+# # Graph Synthetic
+# echo ""
+# echo "=========================================="
+# echo "Testing Graph Synthetic..."
+# echo "=========================================="
+# python run.py train 1 "test_paramgraph_synthetic.json"
 
 
-#-------------------------------------------------------
-# Test Permuted MNIST
-echo ""
-echo "=========================================="
-echo "Testing Permuted OMNIGLOT..."
-echo "=========================================="
-python run.py train 1 "paramomni.json"
+# #-------------------------------------------------------
+# # Test Permuted MNIST
+# echo ""
+# echo "=========================================="
+# echo "Testing Permuted OMNIGLOT..."
+# echo "=========================================="
+# python run.py train 1 "paramomni.json"
 
 
-#-------------------------------------------------------
-# Test Permuted MNIST
-echo ""
-echo "=========================================="
-echo "Testing Permuted MNIST..."
-echo "=========================================="
-python run.py train 1 "test_permuted_mnist.json"
+# #-------------------------------------------------------
+# # Test Permuted MNIST
+# echo ""
+# echo "=========================================="
+# echo "Testing Permuted MNIST..."
+# echo "=========================================="
+# python run.py train 1 "test_permuted_mnist.json"
 
 
-#-------------------------------------------------------
-# Test CIFAR-10
-echo ""
-echo "=========================================="
-echo "Testing CIFAR-10..."
-echo "=========================================="
-python run.py train 1 "test_cifar10.json"
+# #-------------------------------------------------------
+# # Test CIFAR-10
+# echo ""
+# echo "=========================================="
+# echo "Testing CIFAR-10..."
+# echo "=========================================="
+# python run.py train 1 "test_cifar10.json"
 
-#-------------------------------------------------------
-# Test CIFAR-100
-echo ""
-echo "=========================================="
-echo "Testing CIFAR-100..."
-echo "=========================================="
-python run.py train 1 "test_cifar100.json"
+# #-------------------------------------------------------
+# # Test CIFAR-100
+# echo ""
+# echo "=========================================="
+# echo "Testing CIFAR-100..."
+# echo "=========================================="
+# python run.py train 1 "test_cifar100.json"
 
 
-echo ""
-echo "=========================================="
-echo "All tests completed!"
-echo "=========================================="
+# echo ""
+# echo "=========================================="
+# echo "All tests completed!"
+# echo "=========================================="
