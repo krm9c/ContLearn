@@ -5,7 +5,7 @@
     "model_path": "logdir/model/CNN_mnist_",
     "flag": [1, 1],
     "n_task": 3,
-    "epochs_per_task": 20,
+    "epochs_per_task": 3,
     "save_iter": 10,
     "data": "mnist",
     "loss": "class",

@@ -53,7 +53,7 @@ DEFAULT_POOL_STRIDE = 2
 DEFAULT_ARCH_SEARCH_ENABLED = False  # Whether to enable architecture search
 DEFAULT_ARCH_SEARCH_START_TASK = 999  # Task number to start arch search (999 = never)
 DEFAULT_ARCH_SEARCH_EPOCHS = 100
-DEFAULT_ARCH_SEARCH_THRESHOLD = 0.6
+DEFAULT_ARCH_SEARCH_THRESHOLD = 0.9
 DEFAULT_ARCH_SEARCH_MAX_ITER = 10
 DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP = 10
 DEFAULT_ARCH_SEARCH_STEP_SIZE_GCN = 10
@@ -75,3 +75,14 @@ DEFAULT_SYNTHETIC_NUM_GRAPHS = 1000
 DEFAULT_SYNTHETIC_NUM_CHANNELS = 5
 DEFAULT_SYNTHETIC_AVG_NUM_NODES = 2
 DEFAULT_SYNTHETIC_NUM_CLASSES = 10
+
+# AWB Training Pipeline Defaults (5-Step Algorithm)
+DEFAULT_AWB_ENABLED = False  # Master switch for AWB pipeline
+DEFAULT_AWB_PRELIMINARY_EPOCHS = 250  # STEP 1: Epochs to train before checking arch change
+DEFAULT_AWB_AB_TRAINING_EPOCHS = 2000  # STEP 3b: Epochs to train A/B matrices
+DEFAULT_AWB_AB_WARMUP_EPOCHS = 50  # STEP 5: Warmup epochs after V = AWB^T computation
+DEFAULT_AWB_CHANGE_THRESHOLD_HIGH = 0.9  # Ratio threshold to trigger arch change
+DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA = 0.01  # Minimum loss increase to trigger change
+DEFAULT_AWB_AB_THRESHOLD_BASE = 0.6  # Base threshold for AB training convergence
+DEFAULT_AWB_AB_MAX_ITERATIONS = 8  # Maximum iterations for AB training loop
+DEFAULT_AWB_AVERAGING_WINDOW = 10  # Number of epochs to average for loss computation

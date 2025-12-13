@@ -99,8 +99,7 @@ def load_checkpoint(config):
 
         optim = optax.adamw(config['lr'])
         trainer = Trainer(Loss=config['loss'], metric=config['metric'],
-                          problem=config['problem'],
-                          logdir=str(config['tensorfile']))
+                          problem=config['problem'])
 
         return trainer, optim, dataset, test, model
 
@@ -122,9 +121,9 @@ def load_checkpoint(config):
         test_loader_curr, test_loader_exp = dataset.generate_dataset(
             task_id=0, batch_size=config['batch_size'], phase='testing')
 
+
         x, y = next(iter(dataloader_curr))
         y = y.numpy().astype(float)
-
         # Model definition
         if config['prob'] == 'regression':
             # Build MLP architecture from config
@@ -165,7 +164,6 @@ def load_checkpoint(config):
 
         optim = optax.adam(config['lr'])
         trainer = Trainer(Loss=config['loss'], metric=config['metric'],
-                          problem=config['problem'],
-                          logdir=str(config['tensorfile']))
+                          problem=config['problem'])
 
         return trainer, optim, dataset, model
