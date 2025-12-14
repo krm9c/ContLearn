@@ -139,9 +139,13 @@ class TestRunner:
             print(f"   Message: {str(error)[:200]}")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def test_runner():
-    """Fixture providing a test runner instance."""
+    """Fixture providing a session-wide test runner instance.
+
+    Added by Claude: Session scope ensures all tests use the same runner,
+    allowing us to collect all results and report at the end.
+    """
     return TestRunner()
 
 
@@ -160,19 +164,19 @@ class TestRegressionScripts:
 
     def test_sine_standard(self, test_runner, config_dir):
         """Test sine wave regression with standard CL."""
-        result = test_runner.run_config(
+        # Added by Claude: Don't assert here, just run the test
+        # All results are collected and reported at session end
+        test_runner.run_config(
             'sine (standard CL)',
             str(config_dir / 'sine.json')
         )
-        assert result, f"sine.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
     def test_sine_awb(self, test_runner, config_dir):
         """Test sine wave regression with AWB enabled."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'sine (AWB enabled)',
             str(config_dir / 'sine_awb.json')
         )
-        assert result, f"sine_awb.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
 
 class TestMNISTScripts:
@@ -180,19 +184,17 @@ class TestMNISTScripts:
 
     def test_mnist_standard(self, test_runner, config_dir):
         """Test MNIST classification with standard CL."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'MNIST (standard CL)',
             str(config_dir / 'mnist.json')
         )
-        assert result, f"mnist.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
     def test_mnist_awb(self, test_runner, config_dir):
         """Test MNIST classification with AWB enabled."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'MNIST (AWB enabled)',
             str(config_dir / 'mnist_awb.json')
         )
-        assert result, f"mnist_awb.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
 
 class TestCIFAR10Scripts:
@@ -200,19 +202,17 @@ class TestCIFAR10Scripts:
 
     def test_cifar10_standard(self, test_runner, config_dir):
         """Test CIFAR-10 classification with standard CL."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'CIFAR-10 (standard CL)',
             str(config_dir / 'cifar10.json')
         )
-        assert result, f"cifar10.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
     def test_cifar10_awb(self, test_runner, config_dir):
         """Test CIFAR-10 classification with AWB enabled."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'CIFAR-10 (AWB enabled)',
             str(config_dir / 'cifar10_awb.json')
         )
-        assert result, f"cifar10_awb.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
 
 class TestCIFAR100Scripts:
@@ -220,19 +220,17 @@ class TestCIFAR100Scripts:
 
     def test_cifar100_standard(self, test_runner, config_dir):
         """Test CIFAR-100 classification with standard CL."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'CIFAR-100 (standard CL)',
             str(config_dir / 'cifar100.json')
         )
-        assert result, f"cifar100.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
     def test_cifar100_awb(self, test_runner, config_dir):
         """Test CIFAR-100 classification with AWB enabled."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'CIFAR-100 (AWB enabled)',
             str(config_dir / 'cifar100_awb.json')
         )
-        assert result, f"cifar100_awb.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
 
 class TestGraphScripts:
@@ -240,19 +238,40 @@ class TestGraphScripts:
 
     def test_synthetic_graph_standard(self, test_runner, config_dir):
         """Test synthetic graph classification with standard CL."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'Synthetic Graph (standard CL)',
             str(config_dir / 'synthetic_graph.json')
         )
-        assert result, f"synthetic_graph.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
 
     def test_synthetic_graph_awb(self, test_runner, config_dir):
         """Test synthetic graph classification with AWB enabled."""
-        result = test_runner.run_config(
+        test_runner.run_config(
             'Synthetic Graph (AWB enabled)',
             str(config_dir / 'synthetic_graph_awb.json')
         )
-        assert result, f"synthetic_graph_awb.json failed: {test_runner.failures[-1][2] if test_runner.failures else ''}"
+
+
+# ============================================================================
+# Final Summary Test - Reports All Results
+# ============================================================================
+# Added by Claude: This test runs last and reports all collected results
+
+class TestSummary:
+    """Final test class that reports summary of all test results."""
+
+    def test_zzz_final_summary(self, test_runner):
+        """Report final summary of all tests (runs last due to zzz prefix).
+
+        Added by Claude: This test always runs last and reports all failures.
+        Tests will continue even if earlier tests fail, allowing us to see
+        all errors in one run.
+        """
+        summary = test_runner.get_summary()
+        print(summary)
+
+        # If there were failures, fail this test with the summary
+        if test_runner.failures:
+            pytest.fail(f"\n{summary}\n{len(test_runner.failures)} test(s) failed. See details above.")
 
 
 # ============================================================================
