@@ -11,8 +11,17 @@ a sequence of related but distinct learning problems.
 import numpy as np
 import pickle
 import os
+import sys
 from typing import Dict, Any, Optional
 import sklearn.model_selection as model_selection
+
+# Added by Claude: NumPy 2.0 compatibility fix for pickle
+# NumPy 2.0 renamed numpy.core to numpy._core, but older pickle files may reference the old name
+# This ensures compatibility when unpickling data across NumPy versions
+if not hasattr(np, '_core'):
+    sys.modules['numpy._core'] = np.core
+if not hasattr(np, 'core'):
+    sys.modules['numpy.core'] = np._core
 
 from .base import BaseDataset
 from ..config.constants import DEFAULT_SINE_TIME_STEP
@@ -109,8 +118,20 @@ class SineDataset(BaseDataset):
             generate_sine_data(self.delta, n_tasks=40, output_path=self.data_path)
 
         # Load the data
-        with open(self.data_path, 'rb') as fp:
-            self.raw_data = pickle.load(fp)
+        # Added by Claude: Handle NumPy version compatibility when unpickling
+        try:
+            with open(self.data_path, 'rb') as fp:
+                self.raw_data = pickle.load(fp)
+        except ModuleNotFoundError as e:
+            if 'numpy._core' in str(e) or 'numpy.core' in str(e):
+                # NumPy version mismatch - regenerate the data file
+                print(f"Warning: Pickle file incompatible with current NumPy version. Regenerating data...")
+                os.remove(self.data_path)
+                generate_sine_data(self.delta, n_tasks=40, output_path=self.data_path)
+                with open(self.data_path, 'rb') as fp:
+                    self.raw_data = pickle.load(fp)
+            else:
+                raise
 
         # Determine actual number of tasks available
         self._available_tasks = len(self.raw_data)
