@@ -1,6 +1,6 @@
 #!/bin/bash
-# Test script to verify all datasets work without errors
-# Uses minimal epochs (1 epoch, 2 tasks) to quickly check for import/runtime errors
+# Test script to verify sine regression dataset works without errors
+# Tests both standard CL and AWB-enabled training
 
 #-------------------------------------------------------
 # Change to project root directory
@@ -21,81 +21,48 @@ conda activate jaxss
 
 #-------------------------------------------------------
 echo "=========================================="
-echo "Testing ContLearn with all datasets"
+echo "Testing CL Framework - Sine Regression"
 echo "=========================================="
 echo "Working directory: $(pwd)"
 
-#-------------------------------------------------------
-# # sine dataset test
-echo ""
-echo "=========================================="
-echo "Testing Sine"
-echo "=========================================="
-python scripts/run.py train 1 "test_param_sine.json"
-#-------------------------------------------------------
-# AWB-enabled sine dataset test
-echo ""
-echo "=========================================="
-echo "Testing AWB Pipeline (Sine Regression)"
-echo "=========================================="
-python scripts/run.py train 1 "test_awb_sine.json"
-
-#-------------------------------------------------------
-# Graph Synthetic
-echo ""
-echo "=========================================="
-echo "Testing Graph Synthetic..."
-echo "=========================================="
-python scripts/run.py train 1 "test_paramgraph_synthetic.json"
-
-
-#-------------------------------------------------------
-# Test Permuted MNIST
-echo ""
-echo "=========================================="
-echo "Testing Permuted MNIST..."
-echo "=========================================="
-python scripts/run.py train 1 "test_permuted_mnist.json"
-
-
-#-------------------------------------------------------
-# Test CIFAR-10
-echo ""
-echo "=========================================="
-echo "Testing CIFAR-10..."
-echo "=========================================="
-python scripts/run.py train 1 "test_cifar10.json"
-
-#-------------------------------------------------------
-# Test CIFAR-100
-echo ""
-echo "=========================================="
-echo "Testing CIFAR-100..."
-echo "=========================================="
-python scripts/run.py train 1 "test_cifar100.json"
-
-
-echo ""
-echo "=========================================="
-echo "All tests completed!"
-echo "=========================================="
-
-
-
 # #-------------------------------------------------------
-# # Graph mutag
+# # Sine dataset test (standard CL, no AWB) - Quick test config
 # echo ""
 # echo "=========================================="
-# echo "Testing Graph Synthetic..."
+# echo "Test 1: Sine Regression (Standard CL) - Quick"
 # echo "=========================================="
-# python scripts/run.py train 1 "paramgraph_mutag.json"
-
+# echo "Config: config/test_sine.json"
+# python scripts/run.py config/test_sine.json --runs 1
 
 # #-------------------------------------------------------
-# # Test Permuted MNIST
+# # AWB-enabled sine dataset test - Quick test config
 # echo ""
 # echo "=========================================="
-# echo "Testing Permuted OMNIGLOT..."
+# echo "Test 2: Sine Regression (AWB Pipeline) - Quick"
 # echo "=========================================="
-# python scripts/run.py train 1 "paramomni.json"
+# echo "Config: config/test_sine_awb.json"
+# python scripts/run.py config/test_sine_awb.json --runs 1
 
+# #-------------------------------------------------------
+# # Sine dataset test (standard CL, no AWB) - Full config
+# echo ""
+# echo "=========================================="
+# echo "Test 3: Sine Regression (Standard CL) - Full"
+# echo "=========================================="
+# echo "Config: config/sine.json"
+# python scripts/run.py config/sine.json --runs 1
+
+#-------------------------------------------------------
+# AWB-enabled sine dataset test - Full config
+echo ""
+echo "=========================================="
+echo "Test 4: Sine Regression (AWB Pipeline) - Full"
+echo "=========================================="
+echo "Config: config/sine_awb.json"
+python scripts/run.py config/sine_awb.json --runs 1
+
+#-------------------------------------------------------
+echo ""
+echo "=========================================="
+echo "All dataset tests completed!"
+echo "=========================================="
