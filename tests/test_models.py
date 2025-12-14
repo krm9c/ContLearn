@@ -1,11 +1,12 @@
 """
-Unit tests for neural network models in utils/model.py.
-Tests MLP, CNN, CNN3D architectures with and without AWB transformations.
+Unit tests for neural network models in models/mlp.py.
+Tests MLP model with and without AWB transformations.
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 import jax
 import jax.numpy as jnp
@@ -13,26 +14,39 @@ import numpy as np
 import equinox as eqx
 import pytest
 
-from contlearn.models import MLP, MLPorig, CNN, CNN3D, Linear, Linear2, Linear3
+from cl.models import MLP, create_mlp, Linear
 
 
 class TestMLP:
     """Tests for MLP model."""
 
-    def test_mlp_initialization(self):
+    def test_mlp_initialization(self, jax_key):
         """Test MLP initializes with correct layer sizes."""
         sizes = [10, 64, 64, 5]
-        model = MLP(sizes=sizes)
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
 
         assert model.sizes == sizes
-        assert len(model.layers) == len(sizes) - 1
+        assert len(model.layers) == len(sizes) - 1  # 3 layers
+        assert model.awb_enabled == False
+        assert model.A is None
+        assert model.B is None
+
+    def test_mlp_initialization_with_awb(self, jax_key):
+        """Test MLP initializes with AWB matrices when enabled."""
+        sizes = [10, 64, 64, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=True)
+
+        assert model.sizes == sizes
+        assert model.awb_enabled == True
+        assert model.A is not None
+        assert model.B is not None
         assert len(model.A) == len(sizes) - 1
         assert len(model.B) == len(sizes) - 1
 
-    def test_mlp_forward_pass(self):
+    def test_mlp_forward_pass(self, jax_key):
         """Test MLP forward pass."""
         sizes = [10, 64, 64, 5]
-        model = MLP(sizes=sizes)
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
 
         x = jnp.array(np.random.randn(10).astype(np.float32))
         output = model(x)
@@ -41,10 +55,10 @@ class TestMLP:
         assert output.shape == (1, 5)
         assert not jnp.isnan(output).any()
 
-    def test_mlp_batch_forward(self):
+    def test_mlp_batch_forward(self, jax_key):
         """Test MLP forward pass with batch of inputs."""
         sizes = [10, 64, 64, 5]
-        model = MLP(sizes=sizes)
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
 
         x = jnp.array(np.random.randn(32, 10).astype(np.float32))
         output = jax.vmap(model)(x)
@@ -53,251 +67,68 @@ class TestMLP:
         assert output.shape == (32, 1, 5)
         assert not jnp.isnan(output).any()
 
-    def test_mlp_awb_matrices_exist(self):
-        """Test MLP AWB transformation matrices exist and have correct structure."""
-        sizes = [10, 64, 64, 5]
-        model = MLP(sizes=sizes)
+    def test_mlp_awb_matrices_shape(self, jax_key):
+        """Test AWB transformation matrices have correct shapes."""
+        sizes = [10, 64, 32, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=True)
 
-        # Verify AWB matrices exist and have correct dimensions
-        assert len(model.A) == len(sizes) - 1
-        assert len(model.B) == len(sizes) - 1
-
-        # Each A matrix should be (out_size, 1) column vector
+        # A matrices: (out_size, 1) column vectors
         for i, (in_size, out_size) in enumerate(zip(sizes[:-1], sizes[1:])):
             assert model.A[i].shape == (out_size, 1)
             assert model.B[i].shape == (out_size, in_size)
 
-    def test_mlp_awb_matrices_shape(self):
-        """Test that AWB matrices have correct shapes."""
-        sizes = [10, 64, 32, 5]
-        model = MLP(sizes=sizes)
 
-        # A matrices: output dimension for each layer
-        assert model.A[0].shape[0] == sizes[1]  # First hidden layer
-        assert model.A[-1].shape[0] == sizes[-1]  # Output layer
+class TestCreateMLP:
+    """Tests for create_mlp factory function."""
 
-        # B matrices: transformation between layers
-        for i, (in_size, out_size) in enumerate(zip(sizes[:-1], sizes[1:])):
-            assert model.B[i].shape[0] == out_size
-            assert model.B[i].shape[1] == in_size
+    def test_create_mlp_basic(self, test_sine_config, jax_key):
+        """Test create_mlp creates model from config."""
+        # Added by Claude: create_mlp expects input_size/output_size in config dict
+        config = test_sine_config.copy()
+        config['input_size'] = 3
+        config['output_size'] = 10
+        model = create_mlp(config)
 
+        assert model is not None
+        assert model.sizes[0] == 3   # input
+        assert model.sizes[-1] == 10  # output
 
-class TestMLPorig:
-    """Tests for MLPorig (original MLP architecture)."""
+    def test_create_mlp_with_awb(self, test_sine_awb_config, jax_key):
+        """Test create_mlp creates AWB-enabled model."""
+        # Added by Claude: create_mlp expects input_size/output_size in config dict
+        config = test_sine_awb_config.copy()
+        config['input_size'] = 3
+        config['output_size'] = 10
+        model = create_mlp(config)
 
-    def test_mlporig_initialization(self):
-        """Test MLPorig initializes correctly."""
-        model = MLPorig(key=42, input_dim=10, out_dim=5, n_layers=4, hln=64)
+        assert model.awb_enabled == True
+        assert model.A is not None
+        assert model.B is not None
 
-        assert model.input_layer is not None
-        assert model.output_layers is not None
-        # feed_layers = range(1, n_layers-2) = range(1, 2) = [1], so 1 element
-        assert len(model.feed_layers) == 1
+    def test_create_mlp_architecture(self, test_sine_config, jax_key):
+        """Test create_mlp creates correct architecture from config."""
+        # Added by Claude: create_mlp expects input_size/output_size in config dict
+        config = test_sine_config.copy()
+        config['n_layers'] = 3
+        config['hln'] = 64
+        config['input_size'] = 5
+        config['output_size'] = 2
 
-    def test_mlporig_forward_pass(self):
-        """Test MLPorig forward pass."""
-        model = MLPorig(key=42, input_dim=10, out_dim=5, n_layers=4, hln=64)
+        model = create_mlp(config)
 
-        x = jnp.array(np.random.randn(10).astype(np.float32))
-        output = model(x)
-
-        assert output.shape == (5,)
-        assert not jnp.isnan(output).any()
-
-    def test_mlporig_with_output_activation(self):
-        """Test MLPorig with custom output activation."""
-        model = MLPorig(key=42, input_dim=10, out_dim=5, n_layers=4, hln=64)
-
-        x = jnp.array(np.random.randn(10).astype(np.float32))
-        output = model(x, outfunc=jax.nn.softmax)
-
-        assert output.shape == (5,)
-        assert jnp.allclose(jnp.sum(output), 1.0, atol=1e-5)  # Softmax sums to 1
+        # Sizes: [input, hln, hln, ..., output]
+        assert model.sizes[0] == 5
+        assert model.sizes[-1] == 2
+        assert len(model.layers) == config['n_layers'] - 1
 
 
-class TestCNN:
-    """Tests for CNN model (1-channel images)."""
-
-    def test_cnn_initialization(self):
-        """Test CNN initializes correctly."""
-        key = jax.random.PRNGKey(42)
-        filter_size = 3
-        feed_sizes = [1875, 512, 64, 10]
-
-        model = CNN(key, filter_size=filter_size, feed_sizes=feed_sizes)
-
-        assert model.filter_size == filter_size
-        assert model.feed_sizes == feed_sizes
-        assert len(model.feed_layers) == len(feed_sizes) - 1
-
-    def test_cnn_forward_pass(self):
-        """Test CNN forward pass with 1x28x28 input (MNIST-style)."""
-        key = jax.random.PRNGKey(42)
-        model = CNN(key, filter_size=3, feed_sizes=[1875, 512, 64, 10])
-
-        # Create 1-channel 28x28 input
-        x = jax.random.normal(key, (1, 28, 28))
-        output = model(x)
-
-        assert output.shape == (10,)
-        assert not jnp.isnan(output).any()
-
-    def test_cnn_awbt_matrices_exist(self):
-        """Test CNN AWB transformation matrices exist."""
-        key = jax.random.PRNGKey(42)
-        model = CNN(key, filter_size=3, feed_sizes=[1875, 512, 64, 10])
-
-        # Verify AWB matrices exist for conv and feed layers
-        assert hasattr(model, 'A_conv')
-        assert hasattr(model, 'B_conv')
-        assert hasattr(model, 'A_feed')
-        assert hasattr(model, 'B_feed')
-
-        # Check feed AWB matrices have correct count (one per feed layer)
-        assert len(model.A_feed) == len(model.feed_sizes) - 1
-        assert len(model.B_feed) == len(model.feed_sizes) - 1
-
-
-class TestCNN3D:
-    """Tests for CNN3D model (3-channel images)."""
-
-    def test_cnn3d_initialization(self):
-        """Test CNN3D initializes correctly."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
-
-        assert model.filter_size == 3
-        assert model.channel_in == 3
-        assert model.channel_out == 32
-        # num_classes is passed to feed_sizes[-1], not stored as attribute
-        assert model.feed_sizes[-1] == 10
-
-    def test_cnn3d_forward_pass(self):
-        """Test CNN3D forward pass with 3x32x32 input (CIFAR-style)."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
-
-        x = jax.random.normal(key, (3, 32, 32))
-        output = model(x)
-
-        assert output.shape == (10,)
-        assert not jnp.isnan(output).any()
-
-    def test_cnn3d_batch_forward(self):
-        """Test CNN3D with batch of inputs."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
-
-        x = jax.random.normal(key, (16, 3, 32, 32))
-        output = jax.vmap(model)(x)
-
-        assert output.shape == (16, 10)
-        assert not jnp.isnan(output).any()
-
-    def test_cnn3d_calc_output_size(self):
-        """Test CNN3D output size calculation."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
-
-        # 32x32 -> conv(3) -> 30 -> pool -> 15
-        result = model.calc_output_size(32, 3)
-        assert result == 15
-
-        # 15 -> conv(3) -> 13 -> pool -> 6
-        result = model.calc_output_size(15, 3)
-        assert result == 6
-
-    def test_cnn3d_awbt_forward(self):
-        """Test CNN3D AWB transformation."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
-
-        x = jax.random.normal(key, (3, 32, 32))
-        output = model.get_AWBT(x)
-
-        assert not jnp.isnan(output).any()
-
-
-class TestLinearLayers:
-    """Tests for custom Linear layer variants."""
-
-    def test_linear_initialization(self):
-        """Test Linear layer initialization."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear(in_size=10, out_size=5, key=key)
-
-        assert layer.weight.shape == (5, 10)
-        # Linear bias has shape (1, out_size) for broadcasting
-        assert layer.bias.shape == (1, 5)
-
-    def test_linear_forward(self):
-        """Test Linear layer forward pass."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear(in_size=10, out_size=5, key=key)
-
-        x = jnp.array(np.random.randn(10).astype(np.float32))
-        output = layer(x)
-
-        # Output has shape (1, 5) due to bias broadcasting
-        assert output.shape == (1, 5)
-        assert not jnp.isnan(output).any()
-
-    def test_linear2_initialization(self):
-        """Test Linear2 layer initialization (bias shape (out_size, 1))."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear2(in_size=10, out_size=5, key=key)
-
-        assert layer.weight.shape == (5, 10)
-        # Linear2 bias has shape (out_size, 1)
-        assert layer.bias.shape == (5, 1)
-
-    def test_linear2_forward(self):
-        """Test Linear2 layer forward pass."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear2(in_size=10, out_size=5, key=key)
-
-        # Linear2 expects column vector input (for W @ x)
-        x = jnp.array(np.random.randn(10).astype(np.float32))
-        output = layer(x)
-
-        # Output shape is (5,) after squeeze
-        assert output.shape == (5,)
-        assert not jnp.isnan(output).any()
-
-    def test_linear3_initialization(self):
-        """Test Linear3 layer initialization (bias shape (1, out_size))."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear3(in_size=10, out_size=5, key=key)
-
-        assert layer.weight.shape == (5, 10)
-        # Linear3 bias has shape (1, out_size)
-        assert layer.bias.shape == (1, 5)
-
-    def test_linear3_forward(self):
-        """Test Linear3 layer forward pass."""
-        key = jax.random.PRNGKey(42)
-        layer = Linear3(in_size=10, out_size=5, key=key)
-
-        x = jnp.array(np.random.randn(10).astype(np.float32))
-        output = layer(x)
-
-        # Output shape is (1, 5) from x @ W.T + bias
-        assert output.shape == (1, 5)
-        assert not jnp.isnan(output).any()
-
-
-class TestModelSerialization:
+class TestMLPSerialization:
     """Tests for model serialization with Equinox."""
 
-    def test_mlp_serialization(self, tmp_path):
+    def test_mlp_serialization(self, jax_key, tmp_path):
         """Test MLP can be serialized and deserialized."""
         sizes = [10, 64, 64, 5]
-        model = MLP(sizes=sizes)
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
 
         # Test input
         x = jnp.array(np.random.randn(10).astype(np.float32))
@@ -314,17 +145,16 @@ class TestModelSerialization:
         # Check outputs match
         assert jnp.allclose(output_before, output_after)
 
-    def test_cnn3d_serialization(self, tmp_path):
-        """Test CNN3D can be serialized and deserialized."""
-        key = jax.random.PRNGKey(42)
-        model = CNN3D(key, filter_size=3, feed_sizes=[2304, 512, 256, 10],
-                      channel_in=3, channel_out=32, num_classes=10)
+    def test_mlp_awb_serialization(self, jax_key, tmp_path):
+        """Test MLP with AWB can be serialized and deserialized."""
+        sizes = [10, 64, 64, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=True)
 
-        x = jax.random.normal(key, (3, 32, 32))
+        x = jnp.array(np.random.randn(10).astype(np.float32))
         output_before = model(x)
 
         # Serialize
-        filepath = tmp_path / "cnn3d.eqx"
+        filepath = tmp_path / "model_awb.eqx"
         eqx.tree_serialise_leaves(str(filepath), model)
 
         # Deserialize
@@ -332,6 +162,91 @@ class TestModelSerialization:
         output_after = model_loaded(x)
 
         # Check outputs match
+        assert jnp.allclose(output_before, output_after)
+
+        # Check AWB matrices preserved
+        for i in range(len(sizes) - 1):
+            assert jnp.allclose(model.A[i], model_loaded.A[i])
+            assert jnp.allclose(model.B[i], model_loaded.B[i])
+
+
+class TestMLPGradients:
+    """Tests for gradient computation through MLP."""
+
+    def test_mlp_gradient_flow(self, jax_key):
+        """Test gradients flow through MLP."""
+        sizes = [10, 32, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
+
+        # Added by Claude: partition model to separate arrays from non-arrays (like sizes)
+        # This prevents JAX from trying to differentiate integer values
+        params, static = eqx.partition(model, eqx.is_array)
+
+        def loss_fn(params, static, x):
+            model = eqx.combine(params, static)
+            return jnp.sum(model(x) ** 2)
+
+        x = jnp.array(np.random.randn(10).astype(np.float64))
+        grads = jax.grad(loss_fn)(params, static, x)
+
+        # Check gradients exist for all layers
+        for i, layer in enumerate(grads.layers):
+            assert layer.weight is not None
+            assert layer.bias is not None
+            assert not jnp.isnan(layer.weight).any()
+            assert not jnp.isnan(layer.bias).any()
+
+    def test_mlp_awb_gradient_flow(self, jax_key):
+        """Test gradients flow to AWB matrices when enabled."""
+        sizes = [10, 32, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=True)
+
+        # Added by Claude: partition model to separate arrays from non-arrays
+        params, static = eqx.partition(model, eqx.is_array)
+
+        def loss_fn(params, static, x):
+            model = eqx.combine(params, static)
+            return jnp.sum(model(x) ** 2)
+
+        x = jnp.array(np.random.randn(10).astype(np.float64))
+        grads = jax.grad(loss_fn)(params, static, x)
+
+        # Check gradients exist for A and B matrices
+        for i in range(len(sizes) - 1):
+            assert grads.A[i] is not None
+            assert grads.B[i] is not None
+
+
+class TestMLPPartitioning:
+    """Tests for Equinox model partitioning."""
+
+    def test_mlp_partition_is_array(self, jax_key):
+        """Test MLP can be partitioned by is_array filter."""
+        sizes = [10, 32, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
+
+        params, static = eqx.partition(model, eqx.is_array)
+
+        # Added by Claude: sizes is a Python list (not array), so it appears in static
+        # params has arrays (weights/biases), static has non-arrays (sizes, awb_enabled)
+        assert static.sizes == sizes
+        for layer in params.layers:
+            assert layer.weight is not None
+            assert layer.bias is not None
+
+    def test_mlp_combine_after_partition(self, jax_key):
+        """Test MLP can be combined after partitioning."""
+        sizes = [10, 32, 5]
+        model = MLP(sizes=sizes, key=jax_key, awb_enabled=False)
+
+        x = jnp.array(np.random.randn(10).astype(np.float32))
+        output_before = model(x)
+
+        # Partition and recombine
+        params, static = eqx.partition(model, eqx.is_array)
+        model_combined = eqx.combine(params, static)
+        output_after = model_combined(x)
+
         assert jnp.allclose(output_before, output_after)
 
 

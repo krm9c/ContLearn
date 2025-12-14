@@ -240,7 +240,11 @@ def plot_metrics(run_data: Dict[str, Any], output_dir: str, run_id: str = ''):
 
 
 def plot_eigenvalues_violin(run_data: Dict[str, Any], output_dir: str, run_id: str = ''):
-    """Plot eigenvalue evolution as violin plots."""
+    """Plot eigenvalue evolution as violin plots.
+
+    For AWB-enabled runs: plots A and B matrix eigenvalues.
+    For standard runs: plots weight matrix eigenvalues (stored in 'A' key).
+    """
     metadata = run_data['metadata']
     iterations = sorted(run_data['iterations'].keys())
 
@@ -249,11 +253,25 @@ def plot_eigenvalues_violin(run_data: Dict[str, Any], output_dir: str, run_id: s
     layer_names_A = sorted(first_iter['eigenvalues']['A'].keys())
     layer_names_B = sorted(first_iter['eigenvalues']['B'].keys())
 
+    # Added by Claude: Detect AWB vs standard mode for appropriate labeling
+    awb_enabled = metadata.get('awb_enabled', False)
+    # If B is empty, we're in standard mode (weight eigenvalues stored in A)
+    is_standard_mode = len(layer_names_B) == 0
+
+    # Determine column count based on mode
+    n_cols = 1 if is_standard_mode else 2
+    n_layers = max(len(layer_names_A), len(layer_names_B)) if not is_standard_mode else len(layer_names_A)
+
     # Create subplot grid
-    n_layers = max(len(layer_names_A), len(layer_names_B))
-    fig = plt.figure(figsize=(20, 4 * n_layers))
-    gs = gridspec.GridSpec(n_layers, 2, figure=fig, hspace=0.3)
-    fig.suptitle(f'Eigenvalue Evolution (Violin Plot) - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})',
+    fig = plt.figure(figsize=(10 * n_cols, 4 * n_layers))
+    gs = gridspec.GridSpec(n_layers, n_cols, figure=fig, hspace=0.3)
+
+    # Title based on mode
+    if is_standard_mode:
+        title_suffix = "Weight Matrix Eigenvalues"
+    else:
+        title_suffix = "A/B Matrix Eigenvalues"
+    fig.suptitle(f'Eigenvalue Evolution - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})\n{title_suffix}',
                  fontsize=14, fontweight='bold')
 
     # Plot A matrices
@@ -297,7 +315,11 @@ def plot_eigenvalues_violin(run_data: Dict[str, Any], output_dir: str, run_id: s
 
             ax.set_xlabel('Iteration', fontsize=11)
             ax.set_ylabel('Eigenvalue Magnitude', fontsize=11)
-            ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            # Added by Claude: Use appropriate title based on mode
+            if is_standard_mode:
+                ax.set_title(f'Weight Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            else:
+                ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
             ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             ax.set_facecolor('#f8f9fa')
 
@@ -311,7 +333,7 @@ def plot_eigenvalues_violin(run_data: Dict[str, Any], output_dir: str, run_id: s
             for tc_idx in task_changes_idx:
                 ax.axvline(iter_indices[tc_idx + 1], color='k', linestyle='--', alpha=0.5, linewidth=1.5)
 
-    # Plot B matrices
+    # Plot B matrices (only if AWB mode - not in standard mode)
     for idx, layer_name in enumerate(layer_names_B):
         ax = fig.add_subplot(gs[idx, 1])
 
@@ -377,7 +399,11 @@ def plot_eigenvalues_violin(run_data: Dict[str, Any], output_dir: str, run_id: s
 
 
 def plot_eigenvalues_heatmap(run_data: Dict[str, Any], output_dir: str, run_id: str = ''):
-    """Plot eigenvalue evolution as heatmaps."""
+    """Plot eigenvalue evolution as heatmaps.
+
+    For AWB-enabled runs: plots A and B matrix eigenvalues.
+    For standard runs: plots weight matrix eigenvalues (stored in 'A' key).
+    """
     metadata = run_data['metadata']
     iterations = sorted(run_data['iterations'].keys())
 
@@ -386,11 +412,24 @@ def plot_eigenvalues_heatmap(run_data: Dict[str, Any], output_dir: str, run_id: 
     layer_names_A = sorted(first_iter['eigenvalues']['A'].keys())
     layer_names_B = sorted(first_iter['eigenvalues']['B'].keys())
 
+    # Added by Claude: Detect AWB vs standard mode for appropriate labeling
+    awb_enabled = metadata.get('awb_enabled', False)
+    is_standard_mode = len(layer_names_B) == 0
+
+    # Determine column count based on mode
+    n_cols = 1 if is_standard_mode else 2
+    n_layers = max(len(layer_names_A), len(layer_names_B)) if not is_standard_mode else len(layer_names_A)
+
     # Create subplot grid
-    n_layers = max(len(layer_names_A), len(layer_names_B))
-    fig = plt.figure(figsize=(20, 5 * n_layers))
-    gs = gridspec.GridSpec(n_layers, 2, figure=fig, hspace=0.4, wspace=0.3)
-    fig.suptitle(f'Eigenvalue Evolution (Heatmap) - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})',
+    fig = plt.figure(figsize=(10 * n_cols, 5 * n_layers))
+    gs = gridspec.GridSpec(n_layers, n_cols, figure=fig, hspace=0.4, wspace=0.3)
+
+    # Title based on mode
+    if is_standard_mode:
+        title_suffix = "Weight Matrix Eigenvalues"
+    else:
+        title_suffix = "A/B Matrix Eigenvalues"
+    fig.suptitle(f'Eigenvalue Evolution (Heatmap) - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})\n{title_suffix}',
                  fontsize=14, fontweight='bold')
 
     # Plot A matrices
@@ -423,7 +462,11 @@ def plot_eigenvalues_heatmap(run_data: Dict[str, Any], output_dir: str, run_id: 
 
             ax.set_xlabel('Iteration', fontsize=11)
             ax.set_ylabel('Eigenvalue Rank', fontsize=11)
-            ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            # Added by Claude: Use appropriate title based on mode
+            if is_standard_mode:
+                ax.set_title(f'Weight Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            else:
+                ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
 
             # Add colorbar
             cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -435,7 +478,7 @@ def plot_eigenvalues_heatmap(run_data: Dict[str, Any], output_dir: str, run_id: 
             for tc_idx in task_changes_idx:
                 ax.axvline(iter_indices[tc_idx + 1], color='black', linestyle='--', alpha=0.8, linewidth=2)
 
-    # Plot B matrices
+    # Plot B matrices (only if AWB mode - not in standard mode)
     for idx, layer_name in enumerate(layer_names_B):
         ax = fig.add_subplot(gs[idx, 1])
 
@@ -490,11 +533,14 @@ def plot_eigenvalues_heatmap(run_data: Dict[str, Any], output_dir: str, run_id: 
 def plot_eigenvalues(run_data: Dict[str, Any], output_dir: str, run_id: str = '', style: str = 'violin'):
     """Plot eigenvalue distributions per layer over iterations.
 
+    For AWB-enabled runs: plots A and B matrix eigenvalues.
+    For standard runs: plots weight matrix eigenvalues (stored in 'A' key).
+
     Args:
         run_data: Single run data dictionary
         output_dir: Output directory for saving plots
         run_id: Run identifier
-        style: Plot style - 'box' for box plots, 'heatmap' for heatmaps
+        style: Plot style - 'box' for box plots, 'heatmap' for heatmaps, 'violin' for violin plots
     """
     metadata = run_data['metadata']
     iterations = sorted(run_data['iterations'].keys())
@@ -513,11 +559,24 @@ def plot_eigenvalues(run_data: Dict[str, Any], output_dir: str, run_id: str = ''
     elif style == 'violin':
         return plot_eigenvalues_violin(run_data, output_dir, run_id)
 
+    # Added by Claude: Detect AWB vs standard mode for appropriate labeling
+    awb_enabled = metadata.get('awb_enabled', False)
+    is_standard_mode = len(layer_names_B) == 0
+
+    # Determine column count based on mode
+    n_cols = 1 if is_standard_mode else 2
+    n_layers = max(len(layer_names_A), len(layer_names_B)) if not is_standard_mode else len(layer_names_A)
+
     # Create subplot grid for box plots
-    n_layers = max(len(layer_names_A), len(layer_names_B))
-    fig = plt.figure(figsize=(20, 4 * n_layers))
-    gs = gridspec.GridSpec(n_layers, 2, figure=fig)
-    fig.suptitle(f'Eigenvalue Evolution - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})',
+    fig = plt.figure(figsize=(10 * n_cols, 4 * n_layers))
+    gs = gridspec.GridSpec(n_layers, n_cols, figure=fig)
+
+    # Title based on mode
+    if is_standard_mode:
+        title_suffix = "Weight Matrix Eigenvalues"
+    else:
+        title_suffix = "A/B Matrix Eigenvalues"
+    fig.suptitle(f'Eigenvalue Evolution - {metadata["prob"]} {metadata["dataset"]} {metadata["network"]} (Run {run_id})\n{title_suffix}',
                  fontsize=14, fontweight='bold')
 
     # Plot A matrices
@@ -549,7 +608,11 @@ def plot_eigenvalues(run_data: Dict[str, Any], output_dir: str, run_id: str = ''
 
             ax.set_xlabel('Iteration', fontsize=11)
             ax.set_ylabel('Eigenvalue Magnitude', fontsize=11)
-            ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            # Added by Claude: Use appropriate title based on mode
+            if is_standard_mode:
+                ax.set_title(f'Weight Matrix - {layer_name}', fontsize=12, fontweight='bold')
+            else:
+                ax.set_title(f'A Matrix - {layer_name}', fontsize=12, fontweight='bold')
             ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             ax.set_facecolor('#f8f9fa')
 
@@ -564,7 +627,7 @@ def plot_eigenvalues(run_data: Dict[str, Any], output_dir: str, run_id: str = ''
             for tc_idx in task_changes_idx:
                 ax.axvline(iter_indices[tc_idx + 1], color='k', linestyle='--', alpha=0.5, linewidth=1.5)
 
-    # Plot B matrices
+    # Plot B matrices (only if AWB mode - not in standard mode)
     for idx, layer_name in enumerate(layer_names_B):
         ax = fig.add_subplot(gs[idx, 1])
 
@@ -863,6 +926,58 @@ def plot_multi_run_statistics(all_runs_data: Dict[str, Any], output_dir: str):
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     print(f'Saved: {filepath}')
     plt.close()
+
+
+# Added by Claude: Programmatic API for generating plots from record_dict
+def generate_plots(record_dict: Dict[str, Any], output_dir: str = 'figures', run_id: str = '0'):
+    """Generate all plots for a single run record_dict.
+
+    This function can be called programmatically after training to generate
+    all plots without using the CLI.
+
+    Args:
+        record_dict: The record dictionary from training (with 'metadata' and 'iterations')
+        output_dir: Output directory for figures (default: 'figures')
+        run_id: Run identifier for filenames
+
+    Returns:
+        List of generated file paths
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    generated_files = []
+
+    try:
+        print(f'\nGenerating plots for run {run_id}...')
+
+        # Check if record_dict has required structure
+        if 'metadata' not in record_dict or 'iterations' not in record_dict:
+            print(f'Warning: Invalid record_dict structure, skipping plots')
+            return generated_files
+
+        if not record_dict['iterations']:
+            print(f'Warning: No iterations in record_dict, skipping plots')
+            return generated_files
+
+        # Generate all plot types
+        plot_losses(record_dict, output_dir, run_id=str(run_id))
+        plot_metrics(record_dict, output_dir, run_id=str(run_id))
+        plot_eigenvalues(record_dict, output_dir, run_id=str(run_id))
+        plot_combined_metrics(record_dict, output_dir, run_id=str(run_id))
+
+        # Collect generated filenames
+        metadata = record_dict['metadata']
+        prefix = f'{metadata["prob"]}_{metadata["dataset"]}_{metadata["network"]}_run{run_id}'
+        for suffix in ['losses', 'metrics', 'eigenvalues', 'overview']:
+            filepath = os.path.join(output_dir, f'{prefix}_{suffix}.png')
+            if os.path.exists(filepath):
+                generated_files.append(filepath)
+
+        print(f'Generated {len(generated_files)} plots in {output_dir}/')
+
+    except Exception as e:
+        print(f'Warning: Plot generation failed: {e}')
+
+    return generated_files
 
 
 def main():

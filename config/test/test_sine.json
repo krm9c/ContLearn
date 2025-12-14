@@ -1,0 +1,36 @@
+{
+    "data": "sine",
+    "prob": "regression",
+    "problem": "vectors",
+    "network": "fcnn",
+    "delta": 0,
+    "n_task": 5,
+    "epochs_per_task": 200,
+    "batch_size": 64,
+    "n_layers": 2,
+    "hln": 512,
+    "flag": [1.0, 1.0],
+    "loss": "mse",
+    "metric": "mse",
+    "save_iter": 10,
+    "model_path": "outputs/sine_model",
+    "len_exp_replay": 20000,
+    "awb_enabled": false,
+    "debug_mode": true,
+    "debug_limit": 50,
+
+    "__comment_optimizer": "Optimizer settings: adam, adamw, sgd, rmsprop",
+    "optimizer": "adam",
+    "lr": 1e-4,
+    "weight_decay": 1e-4,
+    "momentum": 0.9,
+
+    "__comment_lr_schedule": "LR schedule: constant, step, exponential, cosine, linear",
+    "lr_schedule": "exponential",
+    "lr_decay_factor": 0.9,
+    "lr_decay_steps": 1,
+    "lr_min": 1e-6,
+
+    "__comment_grad_weights": "Gradient combination: [alpha, beta, gamma] for [current_task, experience, hamiltonian]",
+    "grad_weights": [0.01, 0.98, 0.1]
+}

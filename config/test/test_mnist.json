@@ -1,0 +1,27 @@
+{
+    "data": "mnist",
+    "prob": "classification",
+    "problem": "vectors",
+    "network": "cnn",
+    "n_task": 2,
+    "epochs_per_task": 5,
+    "batch_size": 32,
+    "filter_size": 4,
+    "channel_out": 3,
+    "feed_sizes": [1728, 512, 64, 10],
+    "flag": [1.0, 1.0],
+    "loss": "class",
+    "metric": "class",
+    "save_iter": 1,
+    "model_path": "outputs/test_mnist_model",
+    "len_exp_replay": 500,
+    "awb_enabled": false,
+    "debug_mode": true,
+    "debug_limit": 50,
+
+    "optimizer": "adam",
+    "lr": 1e-3,
+    "lr_schedule": "constant",
+
+    "grad_weights": [0.01, 0.98, 0.1]
+}
