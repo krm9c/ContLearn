@@ -62,8 +62,8 @@ EXAMPLES:
 EOF
 }
 
-# Change to project root
-cd "$(dirname "$0")/.."
+# # Change to project root
+# cd "$(dirname "$0")/.."
 
 # Activate conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
