@@ -1,47 +1,28 @@
 {
+    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
+
     "data": "cifar100",
-    "prob": "classification",
-    "problem": "vectors",
-    "network": "cnn",
+
     "n_task": 10,
     "epochs_per_task": 40,
-    "batch_size": 128,
-    "filter_size": 3,
-    "channel_out": 32,
-    "channel_in": 3,
-    "input_size": 32,
+
+    "__comment_arch": "100 classes architecture",
     "feed_sizes": [2304, 512, 256, 100],
     "awb_arch": [2304, 512, 256, 100],
-    "flag": [1.0, 1.0],
-    "loss": "class",
-    "metric": "class",
-    "save_iter": 2,
-    "model_path": "outputs/cifar100_awb_model",
-    "len_exp_replay": 20000,
     "n_class": 100,
-    "debug_mode": true,
-    "debug_limit": 100,
 
-    "__comment_awb": "AWB (Adaptive Weight Basis) settings",
+    "model_path": "outputs/cifar100_awb_model",
+    "save_iter": 2,
+
     "awb_enabled": true,
     "awb_preliminary_epochs": 2,
     "awb_ab_training_epochs": 2,
     "awb_ab_warmup_epochs": 1,
     "awb_ab_max_iterations": 2,
-    "awb_averaging_window": 10,
 
-    "__comment_optimizer": "Optimizer settings: adam, adamw, sgd, rmsprop",
-    "optimizer": "adam",
-    "lr": 1e-4,
-    "weight_decay": 1e-4,
-    "momentum": 0.9,
-
-    "__comment_lr_schedule": "LR schedule: constant, step, exponential, cosine, linear",
     "lr_schedule": "exponential",
     "lr_decay_factor": 0.95,
-    "lr_decay_steps": 1,
     "lr_min": 1e-5,
 
-    "__comment_grad_weights": "Gradient combination: [alpha, beta, gamma] for [current_task, experience, hamiltonian]",
-    "grad_weights": [0.01, 0.98, 0.1]
+    "debug_mode": true
 }

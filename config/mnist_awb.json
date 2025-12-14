@@ -1,44 +1,26 @@
 {
+    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
+
     "data": "mnist",
-    "prob": "classification",
-    "problem": "vectors",
-    "network": "cnn",
+
     "n_task": 10,
     "epochs_per_task": 40,
     "batch_size": 64,
-    "filter_size": 4,
-    "channel_out": 3,
-    "feed_sizes": [1728, 512, 64, 10],
-    "awb_arch": [1728, 512, 64, 10],
-    "flag": [1.0, 1.0],
-    "loss": "class",
-    "metric": "class",
-    "save_iter": 2,
-    "model_path": "outputs/mnist_awb_model",
-    "len_exp_replay": 20000,
-    "debug_mode": true,
-    "debug_limit": 100,
 
-    "__comment_awb": "AWB (Adaptive Weight Basis) settings",
+    "model_path": "outputs/mnist_awb_model",
+    "save_iter": 2,
+
+    "__comment_awb": "AWB architecture morphing enabled",
     "awb_enabled": true,
     "awb_preliminary_epochs": 2,
     "awb_ab_training_epochs": 2,
     "awb_ab_warmup_epochs": 1,
     "awb_ab_max_iterations": 2,
-    "awb_averaging_window": 10,
 
-    "__comment_optimizer": "Optimizer settings: adam, adamw, sgd, rmsprop",
-    "optimizer": "adam",
-    "lr": 1e-3,
-    "weight_decay": 1e-4,
-    "momentum": 0.9,
-
-    "__comment_lr_schedule": "LR schedule: constant, step, exponential, cosine, linear",
+    "__comment_lr_schedule": "Exponential decay schedule",
     "lr_schedule": "exponential",
     "lr_decay_factor": 0.95,
-    "lr_decay_steps": 1,
     "lr_min": 1e-5,
 
-    "__comment_grad_weights": "Gradient combination: [alpha, beta, gamma] for [current_task, experience, hamiltonian]",
-    "grad_weights": [0.01, 0.98, 0.1]
+    "debug_mode": true
 }
