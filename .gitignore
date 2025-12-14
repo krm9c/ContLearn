@@ -55,7 +55,8 @@ figures/
 plots/
 checkpoints/
 saved_models/
-models/
+# Added by Claude: Use /models/ to only ignore root-level models directory, not src/cl/models/
+/models/
 
 # Logs
 *.log
