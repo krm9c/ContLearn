@@ -23,9 +23,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from cl.config import Params, load_config
-from cl.runners.regression import train_model_reg
-from cl.runners.classification import train_model_class
-from cl.runners.graph_classification import train_model_graph
+# Added by Claude: Use new generic unified runner (layer-level AWB refactor)
+from cl.runners import train_model
 from cl.core.recording import RecordingMixin
 
 # Added by Claude: Import plotting module for post-training visualization
@@ -65,10 +64,12 @@ Examples:
     print(f"AWB enabled: {config.get('awb_enabled', False)}")
     print()
 
-    # Route to appropriate training function based on problem type
-    prob_type = config.get('prob', 'regression')
-    problem = config.get('problem', 'vectors')
+    # Added by Claude: Construct base path with AWB suffix if enabled and not already present
+    base_model_path = config.get('model_path', 'outputs/model')
+    if config.get('awb_enabled', False) and '_awb' not in base_model_path:
+        base_model_path = f"{base_model_path}_awb"
 
+    # Added by Claude: Generic runner handles all problem types via config dispatch
     all_records = {}
 
     for run_id in range(args.runs):
@@ -76,26 +77,24 @@ Examples:
         print(f"# Run {run_id + 1} / {args.runs}")
         print(f"{'#'*60}")
 
-        # Added by Claude: Check problem field for graph classification
-        if problem == 'graph':
-            record_dict = train_model_graph(config, run_id=run_id)
-        elif prob_type == 'regression':
-            record_dict = train_model_reg(config, run_id=run_id)
-        elif prob_type == 'classification':
-            record_dict = train_model_class(config, run_id=run_id)
-        else:
-            print(f"Unknown problem type: {prob_type}, problem: {problem}")
-            sys.exit(1)
+        # Generic unified runner works for all problem types
+        record_dict = train_model(config, run_id=run_id)
 
         all_records[f'run_{run_id}'] = record_dict
 
         # Added by Claude: Generate plots for each run (unless --no-plots)
+        # Use AWB-aware figures directory
         if not args.no_plots:
-            generate_plots(record_dict, output_dir=args.figures_dir, run_id=str(run_id))
+            figures_dir = args.figures_dir
+            # If using default figures dir, add AWB suffix
+            if figures_dir == 'figures' and config.get('awb_enabled', False):
+                dataset_name = config.get('data', 'unknown')
+                figures_dir = f'figures/{dataset_name}_awb'
+            generate_plots(record_dict, output_dir=figures_dir, run_id=str(run_id))
 
     # Save all runs if multiple
     if args.runs > 1:
-        RecordingMixin.save_all_runs(all_records, config.get('model_path', 'outputs/model'), config)
+        RecordingMixin.save_all_runs(all_records, base_model_path, config)
 
     print("\nTraining complete!")
 

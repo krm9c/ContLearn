@@ -166,15 +166,15 @@ def cnn_config():
     feed_sizes[0] must match the flattened output after conv + pool:
     - Input: 28x28
     - After conv(4): (28 - 4 + 1) = 25
-    - After eqx.nn.MaxPool2d(kernel_size=2): 25 - 2 + 1 = 24 (stride=1 by default)
-    - Flattened: channel_out * 24 * 24 = 3 * 576 = 1728
+    - After eqx.nn.MaxPool2d(kernel_size=2, stride=2): 25 // 2 = 12
+    - Flattened: channel_out * 12 * 12 = 3 * 144 = 432
     """
     return {
         "filter_size": 4,
         "channel_out": 3,
         "channel_in": 1,
         "input_size": 28,
-        "feed_sizes": [1728, 64, 10],  # 3 * 24 * 24 = 1728
+        "feed_sizes": [432, 64, 10],  # 3 * 12 * 12 = 432 (stride=2)
     }
 
 

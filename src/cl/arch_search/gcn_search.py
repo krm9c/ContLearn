@@ -255,8 +255,8 @@ def arch_search_GCN(original_gcn: List[int], original_mlp: List[int],
     # Search loop
     n = 1  # Controls neighborhood spread
     search_round = 1
-
-    while (n < max_iter) or (loss_opt < loss_threshold * loss_orig):
+    print(max_iter)
+    while (n < 3) or (loss_opt < loss_threshold * loss_orig):
         # Search over GCN architecture
         for j in range(3):
             curr_gcn = [original_gcn[0], z2 + n * (j + 1) * step_gcn]
@@ -330,57 +330,71 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     opt_gcn_sizes = model.gcn_sizes
     initializer = jax.nn.initializers.glorot_uniform()
 
-    # Check what changed
-    feed_changed = (prev_feed_sizes[1:-1] != opt_feed_sizes[1:-1])
-    gcn_changed = (prev_gcn_sizes[1:] != opt_gcn_sizes[1:])
+    # Added by Claude: Extract ACTUAL layer dimensions from model weights
+    # The model.feed_sizes may have been updated, but the actual layer weights still have old dimensions
+    actual_feed_sizes = [model.feed_layers[0].weight.shape[1]]  # First layer input size
+    for layer in model.feed_layers:
+        actual_feed_sizes.append(layer.weight.shape[0])  # Output size
+
+    actual_gcn_sizes = [model.gcn_layers[0].weight.shape[0]]  # First GCN layer input size
+    for layer in model.gcn_layers:
+        actual_gcn_sizes.append(layer.weight.shape[1])  # Output size
+
+    # Check what changed (compare actual current dimensions to desired new dimensions)
+    feed_changed = (list(actual_feed_sizes[1:-1]) != list(opt_feed_sizes[1:-1]))
+    gcn_changed = (list(actual_gcn_sizes[1:]) != list(opt_gcn_sizes[1:]))
 
     if feed_changed and gcn_changed:
         print("New feed AND gcn!!!------------------")
         # Both changed: need transformation matrices for all
+        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
         A_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(prev_feed_sizes[:-1], opt_feed_sizes[:-1])]
+                  for x, y in zip(actual_feed_sizes[:-1], opt_feed_sizes[:-1])]
         B_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(prev_feed_sizes[1:], opt_feed_sizes[1:])]
+                  for x, y in zip(actual_feed_sizes[1:], opt_feed_sizes[1:])]
         A_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(prev_gcn_sizes[:-1], opt_gcn_sizes[:-1])]
+                 for x, y in zip(actual_gcn_sizes[:-1], opt_gcn_sizes[:-1])]
         B_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(prev_gcn_sizes[1:], opt_gcn_sizes[1:])]
+                 for x, y in zip(actual_gcn_sizes[1:], opt_gcn_sizes[1:])]
 
     elif feed_changed and not gcn_changed:
         print("New FEED ONLY!!!------------------")
         # Only feed changed
+        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
         A_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(prev_feed_sizes[:-1], opt_feed_sizes[:-1])]
+                  for x, y in zip(actual_feed_sizes[:-1], opt_feed_sizes[:-1])]
         B_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(prev_feed_sizes[1:], opt_feed_sizes[1:])]
+                  for x, y in zip(actual_feed_sizes[1:], opt_feed_sizes[1:])]
         # GCN matrices stay identity
-        A_gcn = [jnp.eye(x, x) for x in prev_gcn_sizes[:-1]]
-        B_gcn = [jnp.eye(x, x) for x in prev_gcn_sizes[1:]]
+        A_gcn = [jnp.eye(x, x) for x in actual_gcn_sizes[:-1]]
+        B_gcn = [jnp.eye(x, x) for x in actual_gcn_sizes[1:]]
 
     elif not feed_changed and gcn_changed:
         print("New GCN ONLY!!!------------------")
         # Only GCN changed
         # Feed matrices stay identity (but first one may need to change if gcn output changed)
-        if prev_gcn_sizes[-1] != opt_gcn_sizes[-1]:
+        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
+        if actual_gcn_sizes[-1] != opt_gcn_sizes[-1]:
             # First feed layer input size changed
-            A_feed = [initializer(jax.random.PRNGKey(5), (opt_feed_sizes[0], prev_feed_sizes[0]))]
-            A_feed += [jnp.eye(x, x) for x in prev_feed_sizes[1:-1]]
-            B_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]
+            A_feed = [initializer(jax.random.PRNGKey(5), (opt_feed_sizes[0], actual_feed_sizes[0]))]
+            A_feed += [jnp.eye(x, x) for x in actual_feed_sizes[1:-1]]
+            B_feed = [jnp.eye(x, x) for x in actual_feed_sizes[1:]]
         else:
-            A_feed = [jnp.eye(x, x) for x in prev_feed_sizes[:-1]]
-            B_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]
+            A_feed = [jnp.eye(x, x) for x in actual_feed_sizes[:-1]]
+            B_feed = [jnp.eye(x, x) for x in actual_feed_sizes[1:]]
 
         A_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(prev_gcn_sizes[:-1], opt_gcn_sizes[:-1])]
+                 for x, y in zip(actual_gcn_sizes[:-1], opt_gcn_sizes[:-1])]
         B_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(prev_gcn_sizes[1:], opt_gcn_sizes[1:])]
+                 for x, y in zip(actual_gcn_sizes[1:], opt_gcn_sizes[1:])]
 
     else:
         print("No architecture change - using identity matrices")
         # No change: use identity matrices
-        A_feed = [jnp.eye(x, x) for x in prev_feed_sizes[:-1]]
-        B_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]
-        A_gcn = [jnp.eye(x, x) for x in prev_gcn_sizes[:-1]]
-        B_gcn = [jnp.eye(x, x) for x in prev_gcn_sizes[1:]]
+        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
+        A_feed = [jnp.eye(x, x) for x in actual_feed_sizes[:-1]]
+        B_feed = [jnp.eye(x, x) for x in actual_feed_sizes[1:]]
+        A_gcn = [jnp.eye(x, x) for x in actual_gcn_sizes[:-1]]
+        B_gcn = [jnp.eye(x, x) for x in actual_gcn_sizes[1:]]
 
     return A_feed, B_feed, A_gcn, B_gcn

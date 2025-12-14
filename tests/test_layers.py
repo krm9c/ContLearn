@@ -13,7 +13,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cl.models.layers import Linear, LinearGCN, Dropout
+from cl.models.layers import (
+    Linear, LinearGCN, Linear2, Dropout,
+    AWBLayerSpec, AWBShapeError,
+    compute_V_conv2d_single_channel,
+    compute_V_conv2d_multi_channel
+)
 
 
 class TestLinear:
@@ -204,6 +209,240 @@ class TestLayerGradients:
         assert grads.bias is not None
         assert not jnp.isnan(grads.weight).any()
         assert not jnp.isnan(grads.bias).any()
+
+
+# Added by Claude: AWB tests for layer transformations
+class TestLinearAWB:
+    """Tests for Linear layer AWB methods."""
+
+    def test_linear_compute_V_weight_identity(self, jax_key):
+        """Test V computation with identity A and B matrices."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+
+        # Identity matrices (no transformation)
+        A = jnp.eye(5, 5)
+        B = jnp.eye(10, 10)
+
+        V = layer.compute_V_weight(A, layer.weight, B)
+
+        # With identity matrices, V should equal W
+        assert jnp.allclose(V, layer.weight)
+
+    def test_linear_compute_V_weight_scaling(self, jax_key):
+        """Test V computation with scaling transformations."""
+        layer = Linear(in_size=4, out_size=3, key=jax_key)
+
+        # Scaling matrices
+        A = 2.0 * jnp.eye(3, 3)
+        B = 0.5 * jnp.eye(4, 4)
+
+        V = layer.compute_V_weight(A, layer.weight, B)
+
+        # V = A @ W @ B.T = 2 * W * 0.5 = W
+        assert jnp.allclose(V, layer.weight)
+
+    def test_linear_compute_V_weight_shape_error(self, jax_key):
+        """Test that shape mismatches raise AWBShapeError."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+
+        # Wrong A shape
+        A_wrong = jnp.eye(5, 4)  # Should be (5, 5) to match weight.shape[0]
+        B = jnp.eye(10, 10)
+
+        with pytest.raises(AWBShapeError, match="A.shape.*incompatible"):
+            layer.compute_V_weight(A_wrong, layer.weight, B)
+
+    def test_linear_compute_V_bias(self, jax_key):
+        """Test bias transformation for Linear layer."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+
+        # A matrix changes output dimension from 5 to 7
+        A = jnp.ones((7, 5))
+        B = jnp.eye(10, 10)
+
+        V_bias = layer.compute_V_bias(A, B, layer.bias)
+
+        # Linear: bias @ A.T, bias shape (1, 5) -> (1, 7)
+        assert V_bias.shape == (1, 7)
+        expected = layer.bias @ A.T
+        assert jnp.allclose(V_bias, expected)
+
+
+class TestLinear2AWB:
+    """Tests for Linear2 layer AWB methods."""
+
+    def test_linear2_compute_V_weight_identity(self, jax_key):
+        """Test V computation with identity matrices for Linear2."""
+        layer = Linear2(in_size=8, out_size=4, key=jax_key)
+
+        A = jnp.eye(4, 4)
+        B = jnp.eye(8, 8)
+
+        V = layer.compute_V_weight(A, layer.weight, B)
+
+        assert jnp.allclose(V, layer.weight)
+
+    def test_linear2_compute_V_bias(self, jax_key):
+        """Test bias transformation for Linear2 layer."""
+        layer = Linear2(in_size=8, out_size=4, key=jax_key)
+
+        # A changes output from 4 to 6
+        A = jnp.ones((6, 4))
+        B = jnp.eye(8, 8)
+
+        V_bias = layer.compute_V_bias(A, B, layer.bias)
+
+        # Linear2: A @ bias, bias shape (4, 1) -> (6, 1)
+        assert V_bias.shape == (6, 1)
+        expected = A @ layer.bias
+        assert jnp.allclose(V_bias, expected)
+
+
+class TestLinearGCNAWB:
+    """Tests for LinearGCN layer AWB methods."""
+
+    def test_linear_gcn_compute_V_weight_identity(self, jax_key):
+        """Test V computation with identity matrices for LinearGCN."""
+        layer = LinearGCN(in_size=6, out_size=3, key=jax_key)
+
+        A = jnp.eye(3, 3)
+        B = jnp.eye(6, 6)
+
+        V = layer.compute_V_weight(A, layer.weight, B)
+
+        assert jnp.allclose(V, layer.weight)
+
+    def test_linear_gcn_compute_V_bias(self, jax_key):
+        """Test bias transformation for LinearGCN layer."""
+        layer = LinearGCN(in_size=6, out_size=3, key=jax_key)
+
+        # For GCN, B should match output dimension for bias transformation
+        # bias shape is (3, 1), so B.T should allow (3, 1) @ B.T
+        # This means B.T should have first dim = 1
+        # So B should be (new_dim, 1) where new_dim is the target output
+        A = jnp.eye(3, 3)
+        B = jnp.ones((5, 1))  # B.T will be (1, 5), so (3, 1) @ (1, 5) = (3, 5)
+
+        V_bias = layer.compute_V_bias(A, B, layer.bias)
+
+        # Check computation is correct
+        expected = layer.bias @ B.T
+        assert jnp.allclose(V_bias, expected)
+        assert V_bias.shape == (3, 5)
+
+
+class TestAWBLayerSpec:
+    """Tests for AWBLayerSpec dataclass and validation."""
+
+    def test_awb_layer_spec_creation(self, jax_key):
+        """Test creating AWBLayerSpec."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+        A = jnp.eye(5, 5)
+        B = jnp.eye(10, 10)
+
+        spec = AWBLayerSpec(
+            layer=layer,
+            A=A,
+            B=B,
+            layer_type='linear',
+            layer_index=0
+        )
+
+        assert spec.layer is layer
+        assert spec.A is A
+        assert spec.B is B
+        assert spec.layer_type == 'linear'
+        assert spec.layer_index == 0
+
+    def test_awb_layer_spec_validate_correct(self, jax_key):
+        """Test validation passes for correct shapes."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+        A = jnp.eye(7, 5)  # (new_out, old_out)
+        B = jnp.eye(12, 10)  # (new_in, old_in)
+
+        spec = AWBLayerSpec(layer=layer, A=A, B=B, layer_type='linear', layer_index=0)
+
+        errors = spec.validate()
+        assert len(errors) == 0
+
+    def test_awb_layer_spec_validate_wrong_A(self, jax_key):
+        """Test validation catches wrong A shape."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+        A = jnp.eye(7, 4)  # Wrong: should be (7, 5) to match weight.shape[0]=5
+        B = jnp.eye(12, 10)
+
+        spec = AWBLayerSpec(layer=layer, A=A, B=B, layer_type='linear', layer_index=0)
+
+        errors = spec.validate()
+        assert len(errors) == 1
+        assert 'A.shape' in errors[0]
+
+    def test_awb_layer_spec_validate_wrong_B(self, jax_key):
+        """Test validation catches wrong B shape."""
+        layer = Linear(in_size=10, out_size=5, key=jax_key)
+        A = jnp.eye(7, 5)
+        B = jnp.eye(12, 8)  # Wrong: should be (12, 10) to match weight.shape[1]=10
+
+        spec = AWBLayerSpec(layer=layer, A=A, B=B, layer_type='linear', layer_index=0)
+
+        errors = spec.validate()
+        assert len(errors) == 1
+        assert 'B.shape' in errors[0]
+
+
+class TestConvAWBUtilities:
+    """Tests for Conv2d AWB utility functions."""
+
+    def test_compute_V_conv2d_single_channel(self, jax_key):
+        """Test single-channel conv AWB transformation."""
+        # Setup: 2 output channels, 1 input channel, 3x3 filters
+        channel_out = 2
+        channel_in = 1
+        filter_size = 3
+
+        # Create dummy conv weights [channel_out, channel_in, H, W]
+        W = jax.random.normal(jax_key, (channel_out, channel_in, filter_size, filter_size))
+
+        # Identity A and B (no transformation)
+        A_list = [jnp.eye(filter_size, filter_size) for _ in range(channel_out)]
+        B_list = [jnp.eye(filter_size, filter_size) for _ in range(channel_out)]
+
+        result = compute_V_conv2d_single_channel(A_list, W, B_list, channel_out)
+
+        # Should return list of lists [channel_out][1]
+        assert len(result) == channel_out
+        assert len(result[0]) == 1
+
+        # With identity matrices, transformed weights should equal original
+        for i in range(channel_out):
+            assert jnp.allclose(result[i][0], W[i][0])
+
+    def test_compute_V_conv2d_multi_channel(self, jax_key):
+        """Test multi-channel conv AWB transformation."""
+        # Setup: 2 output channels, 3 input channels, 3x3 filters
+        channel_out = 2
+        channel_in = 3
+        filter_size = 3
+
+        # Create dummy conv weights [channel_out, channel_in, H, W]
+        W = jax.random.normal(jax_key, (channel_out, channel_in, filter_size, filter_size))
+
+        # Identity A and B (no transformation)
+        A_list = [[jnp.eye(filter_size, filter_size) for _ in range(channel_in)]
+                  for _ in range(channel_out)]
+        B_list = [[jnp.eye(filter_size, filter_size) for _ in range(channel_in)]
+                  for _ in range(channel_out)]
+
+        result = compute_V_conv2d_multi_channel(A_list, W, B_list, channel_out, channel_in)
+
+        # Should return nested list [channel_out][channel_in]
+        assert len(result) == channel_out
+        assert len(result[0]) == channel_in
+
+        # With identity matrices, transformed weights should equal original
+        for i in range(channel_out):
+            for c in range(channel_in):
+                assert jnp.allclose(result[i][c], W[i][c])
 
 
 if __name__ == "__main__":

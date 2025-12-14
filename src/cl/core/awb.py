@@ -133,8 +133,90 @@ def compute_ab_threshold(trainWLoss, end_last, base_threshold=None):
     return threshold
 
 
+# Added by Claude: Generic AWB functions that delegate to model interface
+def apply_V_transformation(model):
+    """Generic V = A @ W @ B.T transformation using model's interface.
+
+    Works with any model implementing apply_V_transformation() method.
+    Falls back to model-specific logic for backward compatibility.
+
+    Args:
+        model: AWB-enabled model (MLP, CNN, CNN3D, or GCN)
+
+    Returns:
+        Model with transformed weights V = A @ W @ B.T
+    """
+    if hasattr(model, 'apply_V_transformation'):
+        return model.apply_V_transformation()
+    else:
+        # Backward compatibility: use old model-specific functions
+        from ..models.mlp import MLP
+        if isinstance(model, MLP):
+            return compute_V_from_AWB(model)
+        else:
+            return compute_V_from_AWB_gcn(model)
+
+
+def partition_model_for_AB_training(model):
+    """Generic partition for A/B training using model's interface.
+
+    Args:
+        model: AWB-enabled model
+
+    Returns:
+        Tuple of (diff_model, static_model)
+    """
+    if hasattr(model, 'partition_for_AB_training'):
+        return model.partition_for_AB_training()
+    else:
+        # Backward compatibility
+        return partition_for_AB_training(model)
+
+
+def partition_model_for_standard_training(model):
+    """Generic partition for standard training using model's interface.
+
+    Args:
+        model: AWB-enabled model
+
+    Returns:
+        Tuple of (params, static)
+    """
+    if hasattr(model, 'partition_for_standard_training'):
+        return model.partition_for_standard_training()
+    else:
+        # Backward compatibility
+        return partition_for_standard_training(model)
+
+
+def initialize_AB_matrices(model, original_arch, new_arch, seed=5):
+    """Generic A/B matrix initialization using model's interface.
+
+    Args:
+        model: AWB-enabled model
+        original_arch: Original architecture specification
+        new_arch: New architecture specification
+        seed: Random seed
+
+    Returns:
+        Model with initialized A/B matrices
+    """
+    if hasattr(model, 'with_new_AB_matrices'):
+        return model.with_new_AB_matrices(original_arch, new_arch, seed)
+    else:
+        # Backward compatibility
+        return set_new_AB_matrices(model, original_arch, new_arch, seed)
+
+
+# ============================================================================
+# DEPRECATED: Legacy model-specific functions (kept for backward compatibility)
+# New code should use the generic functions above or model interface methods
+# ============================================================================
+
 def set_new_AB_matrices(model, original_arch, new_arch, seed=5):
-    """Initialize A/B matrices for architecture transition.
+    """Initialize A/B matrices for architecture transition (MLP only).
+
+    DEPRECATED: Use initialize_AB_matrices() or model.with_new_AB_matrices() instead.
 
     When the architecture changes from original_arch to new_arch,
     we create transformation matrices A and B such that
@@ -172,7 +254,9 @@ def set_new_AB_matrices(model, original_arch, new_arch, seed=5):
 
 
 def compute_V_from_AWB(model):
-    """Compute new weights V = A @ W @ B.T for all layers.
+    """Compute new weights V = A @ W @ B.T for all layers (MLP only).
+
+    DEPRECATED: Use apply_V_transformation() or model.apply_V_transformation() instead.
 
     This is STEP 4 of the AWB algorithm: after training A and B matrices,
     we compute the effective weights V and update the model to use them.
@@ -197,7 +281,9 @@ def compute_V_from_AWB(model):
 
 
 def partition_for_AB_training(model):
-    """Partition model for A/B training (freeze W, train A/B).
+    """Partition model for A/B training (freeze W, train A/B) - MLP only.
+
+    DEPRECATED: Use partition_model_for_AB_training() or model.partition_for_AB_training() instead.
 
     This creates a filter spec where only A and B are trainable,
     used in STEP 3b of the AWB algorithm.
@@ -221,7 +307,9 @@ def partition_for_AB_training(model):
 
 
 def partition_for_standard_training(model):
-    """Partition model for standard training (freeze A/B, train W).
+    """Partition model for standard training (freeze A/B, train W) - MLP only.
+
+    DEPRECATED: Use partition_model_for_standard_training() or model.partition_for_standard_training() instead.
 
     This creates the standard partition where A and B are frozen
     and only the layer weights are trainable.

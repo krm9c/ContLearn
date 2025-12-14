@@ -1,36 +1,12 @@
 {
+    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
+
     "data": "cifar10",
-    "prob": "classification",
-    "problem": "vectors",
-    "network": "cnn",
+
     "n_task": 3,
     "epochs_per_task": 2,
-    "batch_size": 128,
-    "filter_size": 3,
-    "channel_out": 32,
-    "channel_in": 3,
-    "input_size": 32,
-    "feed_sizes": [2304, 512, 256, 10],
-    "flag": [1.0, 1.0],
-    "loss": "class",
-    "metric": "class",
-    "save_iter": 10,
+
     "model_path": "outputs/cifar10_model",
-    "len_exp_replay": 20000,
-    "n_class": 10,
-    "debug_mode": true,
-    "debug_limit": 100,
 
-    "__comment_awb": "AWB (Adaptive Weight Basis) settings - disabled by default",
-    "awb_enabled": false,
-
-    "__comment_optimizer": "Optimizer settings",
-    "optimizer": "adam",
-    "lr": 1e-4,
-
-    "__comment_lr_schedule": "LR schedule: constant, step, exponential, cosine, linear",
-    "lr_schedule": "constant",
-
-    "__comment_grad_weights": "Gradient combination: [alpha, beta, gamma] for [current_task, experience, hamiltonian]",
-    "grad_weights": [0.01, 0.98, 0.1]
+    "debug_mode": true
 }

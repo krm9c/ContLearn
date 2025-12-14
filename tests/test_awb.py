@@ -100,7 +100,8 @@ class TestShouldChangeArch:
         end_last0 = 0.5   # ratio = 0.2/0.5 = 0.4 <= 0.45
         end_last = 0.1
 
-        result = should_change_arch(trainWLoss, end_last0, end_last)
+        # Pass explicit threshold to test the logic regardless of default value
+        result = should_change_arch(trainWLoss, end_last0, end_last, threshold_high=0.45)
         assert result == False
 
     def test_should_change_arch_custom_thresholds(self):

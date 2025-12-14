@@ -1,36 +1,15 @@
 {
+    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
+
     "data": "synthetic",
-    "prob": "classification",
-    "problem": "graph",
-    "network": "gcn",
+
     "n_task": 2,
     "epochs_per_task": 2,
-    "batch_size": 20,
-    "n_class": 10,
-    "class_per_task": 2,
-    "gcn_sizes": [5, 128],
-    "feed_sizes": [128, 128, 128, 10],
-    "flag": [1.0, 1.0],
-    "loss": "class",
-    "metric": "class",
-    "save_iter": 10,
+
     "model_path": "outputs/synthetic_graph_model",
-    "len_exp_replay": 200000,
 
-    "__comment_synthetic_dataset": "Synthetic graph dataset settings",
-    "num_graphs": 1000,
-    "num_channels": 5,
-    "avg_num_nodes": 2,
-    "num_classes": 10,
-
-    "__comment_optimizer": "Optimizer settings",
+    "__comment_optimizer": "AdamW for graph problems",
     "optimizer": "adamw",
-    "lr": 1e-4,
-    "weight_decay": 1e-4,
 
-    "__comment_awb": "AWB disabled for standard continual learning",
-    "awb_enabled": false,
-
-    "debug_mode": true,
-    "debug_limit": 100
+    "debug_mode": true
 }

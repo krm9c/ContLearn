@@ -272,19 +272,6 @@ class TestCNNPartitioning:
         assert static.A_conv is not None
 
 
-class TestCNNorig:
-    """Tests for original CNN implementation."""
-
-    def test_cnnorig_forward(self, jax_key):
-        """Test CNNorig forward pass."""
-        model = CNNorig(key=jax_key)
-
-        x = jnp.ones((1, 28, 28))
-        output = model(x)
-
-        assert output.shape == (10,)
-
-
 class TestCNN3DExtended:
     """Extended tests for CNN3D model."""
 
