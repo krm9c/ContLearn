@@ -25,17 +25,25 @@ python scripts/run.py config/sine.json --figures-dir outputs/figures
 
 ### Testing
 ```bash
-# Run all tests
-pytest
+# Using run_tests.sh (recommended)
+./run_tests.sh --all              # Run all tests
+./run_tests.sh --fast             # Skip slow integration tests
+./run_tests.sh --models           # Run model tests only
+./run_tests.sh --datasets         # Run dataset tests only
+./run_tests.sh --layers           # Run layer tests only
+./run_tests.sh --losses           # Run loss function tests only
+./run_tests.sh --awb              # Run AWB utility tests only
+./run_tests.sh --recording        # Run recording tests only
+./run_tests.sh --integration      # Run integration tests only
+./run_tests.sh --verbose          # Verbose output
+./run_tests.sh -k regression      # Run tests matching pattern
+./run_tests.sh --all --cov        # Run with coverage report
 
-# Run specific test file
-pytest tests/test_models.py
-
-# Run with coverage
-pytest --cov=src/cl
-
-# Verbose output
-pytest -v --tb=short
+# Using pytest directly
+pytest                            # Run all tests
+pytest tests/test_models.py       # Run specific test file
+pytest --cov=src/cl               # Run with coverage
+pytest -v --tb=short              # Verbose output
 ```
 
 ### Development
@@ -101,8 +109,9 @@ params = eqx.tree_at(lambda x: (x.A, x.B), params, replace=(None, None))
 Problem-specific orchestration in `src/cl/runners/`:
 - `regression.py`: Sine wave regression (MLP)
 - `classification.py`: MNIST/CIFAR classification (CNN, CNN3D)
+- `graph_classification.py`: Synthetic graph classification (GCN)
 
-Both support AWB pipeline with architecture search.
+All runners support AWB pipeline with architecture search.
 
 ## Configuration
 
@@ -111,16 +120,20 @@ JSON config files in `config/` control all hyperparameters. Key fields:
 ```json
 {
     "prob": "regression|classification",
-    "data": "sine|mnist|permuted_mnist|cifar10|cifar100",
-    "network": "fcnn|cnn",
+    "problem": "vectors|graph",
+    "data": "sine|mnist|permuted_mnist|cifar10|cifar100|synthetic",
+    "network": "fcnn|cnn|gcn",
     "awb_enabled": false,
     "grad_weights": [0.01, 0.98, 0.1],
     "lr_schedule": "constant|step|exponential|cosine|linear",
-    "flag": [1.0, 1.0]
+    "optimizer": "adam|adamw|sgd|rmsprop",
+    "flag": [1.0, 1.0],
+    "debug_mode": false,
+    "debug_limit": 100
 }
 ```
 
-AWB-specific config fields prefixed with `awb_` (see `src/cl/config/constants.py` for defaults).
+AWB-specific config fields prefixed with `awb_` (see `src/cl/config/constants.py` and `config/0_config_readme.md` for full documentation).
 
 ## Code Patterns
 
@@ -141,3 +154,71 @@ params, static, opt_state, record_dict = trainer.train__CL(
 
 ### Test Fixtures
 `tests/conftest.py` provides fixtures for configs, dummy batches, and model sizes. Use `debug_mode: true` and `debug_limit: N` in configs for fast testing.
+
+## Plot Generation
+
+After training, the framework automatically generates four types of plots:
+
+1. **Losses** (`*_losses.png`): All loss components (H, V, dV, dV/dx, dV/dtheta, gradient norm)
+2. **Metrics** (`*_metrics.png`): Train and test metrics over time
+3. **Eigenvalues** (`*_eigenvalues.png`):
+   - Standard mode: Weight matrix eigenvalues
+   - AWB mode: A and B matrix eigenvalues
+4. **Overview** (`*_overview.png`): Combined visualization of all metrics
+
+Plots can also be generated manually:
+```bash
+python scripts/plot_results.py <records_file.pkl> --output-dir figures
+```
+
+## Key Implementation Details
+
+### AWB 5-Step Algorithm Details
+
+**Task 0**: Standard Hamiltonian CL training (no AWB)
+
+**Tasks 1+** (when `awb_enabled: true`):
+
+1. **STEP 1 - Preliminary Training** (`awb_preliminary_epochs`)
+   - Train on new task with current architecture
+   - Record preliminary loss for decision making
+
+2. **STEP 2 - Architecture Change Decision**
+   - Check if `loss_ratio > threshold` AND `loss increased`
+   - If YES: proceed to architecture search (Steps 3-5)
+   - If NO: continue standard training
+
+3. **STEP 3a - Architecture Search**
+   - Search for optimal hidden layer dimensions
+   - Uses `src/cl/arch_search/` modules (MLP, CNN, GCN)
+   - Evaluates candidate architectures on validation data
+
+4. **STEP 3b - A/B Matrix Training** (`awb_ab_training_epochs`)
+   - Initialize A/B matrices for new architecture
+   - Freeze W (old weights), train A/B with `notABTrain=False`
+   - A/B learn to transform old features to new architecture
+
+5. **STEP 4 - Weight Transformation**
+   - Compute `V = A @ W @ B.T`
+   - V becomes new weight matrix in expanded architecture
+
+6. **STEP 5 - Final Training** (remaining epochs)
+   - Freeze A/B matrices, train V with `notABTrain=True`
+   - V now trainable in new architecture space
+
+**Key AWB functions** (`src/cl/core/awb.py`):
+- `should_change_arch()`: Decision logic
+- `set_new_AB_matrices()`: Initialize A/B
+- `compute_V_from_AWB()`: V = A @ W @ B.T
+- `partition_for_AB_training()`: Freeze W, train A/B
+- `partition_for_standard_training()`: Freeze A/B, train V
+
+### Loss Components Explained
+
+During training, multiple loss values are recorded:
+- **H**: Total Hamiltonian = V + dV
+- **V**: Experience replay loss (loss on past data)
+- **dV**: Regularization term (change in loss due to perturbations)
+- **dV/dx**: Sensitivity to input perturbations
+- **dV/dtheta**: Sensitivity to parameter perturbations
+- **grad_norm**: L2 norm of total gradient

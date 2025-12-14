@@ -262,10 +262,13 @@ class TestGCNAWBCompute:
         # Compute V = AWB
         model_v = compute_V_from_AWB_gcn(model)
 
-        # Weights should be transformed (different from original)
-        # Note: They might be the same if A and B are identity-like
-        assert model_v.gcn_layers[0].weight.shape == orig_gcn_weight.shape
-        assert model_v.feed_layers[0].weight.shape == orig_feed_weight.shape
+        # After AWB: input/output dimensions preserved, hidden layers expanded
+        # GCN has no hidden layers: gcn_sizes=[5,64] -> awb_gcn_arch=[5,64]
+        assert model_v.gcn_layers[0].weight.shape == orig_gcn_weight.shape  # (5, 64) preserved
+
+        # Feed has 2 hidden layers: feed_sizes=[64,32,16,10] -> awb_fnn_arch=[64,100,140,10]
+        # feed_layers[0]: 64→32 expands to 64→100, so weight shape (32,64) -> (100,64)
+        assert model_v.feed_layers[0].weight.shape == (100, 64)  # Hidden layer expanded from 32 to 100
 
     def test_save_and_restore_gcn_weights(self, gcn_config):
         """Test saving and restoring GCN layer weights."""

@@ -19,7 +19,6 @@ from cl.datasets import SineDataset
 from cl.models import MLP, create_mlp
 from cl.runners import train_model_reg, load_regression_checkpoint
 from cl.core.trainer import Trainer
-from cl.config.constants import DEFAULT_SINE_TIME_STEP
 
 
 class TestTrainerMixins:
@@ -68,9 +67,9 @@ class TestSineRegressionPipeline:
 
         # Create model
         # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dynamic output_size based on sine time step constant
-        config['input_size'] = 3
-        config['output_size'] = len(np.arange(0, 1, DEFAULT_SINE_TIME_STEP))
+        # Use dataset properties to get correct dimensions from loaded data
+        config['input_size'] = dataset.input_size
+        config['output_size'] = dataset.output_size
         model = create_mlp(config)
 
         # Create trainer
@@ -122,11 +121,14 @@ class TestSineRegressionPipeline:
         config = test_sine_config.copy()
         model_path = str(tmp_path / "test_model.eqx")
 
+        # Create dataset to get correct dimensions
+        dataset = SineDataset(config)
+
         # Create and save model
         # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dynamic output_size based on sine time step constant
-        config['input_size'] = 3
-        config['output_size'] = len(np.arange(0, 1, DEFAULT_SINE_TIME_STEP))
+        # Use dataset properties to get correct dimensions from loaded data
+        config['input_size'] = dataset.input_size
+        config['output_size'] = dataset.output_size
         model = create_mlp(config)
         x = jnp.array(np.random.randn(3).astype(np.float32))
         output_before = model(x)
@@ -149,9 +151,9 @@ class TestSineRegressionPipeline:
 
         dataset = SineDataset(config)
         # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dynamic output_size based on sine time step constant
-        config['input_size'] = 3
-        config['output_size'] = len(np.arange(0, 1, DEFAULT_SINE_TIME_STEP))
+        # Use dataset properties to get correct dimensions from loaded data
+        config['input_size'] = dataset.input_size
+        config['output_size'] = dataset.output_size
         model = create_mlp(config)
         trainer = Trainer(loss='mse', problem='vectors', metric='mse')
 
@@ -232,9 +234,9 @@ class TestRecordDictIntegration:
 
         dataset = SineDataset(config)
         # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dynamic output_size based on sine time step constant
-        config['input_size'] = 3
-        config['output_size'] = len(np.arange(0, 1, DEFAULT_SINE_TIME_STEP))
+        # Use dataset properties to get correct dimensions from loaded data
+        config['input_size'] = dataset.input_size
+        config['output_size'] = dataset.output_size
         model = create_mlp(config)
         trainer = Trainer(loss='mse', problem='vectors', metric='mse')
 
