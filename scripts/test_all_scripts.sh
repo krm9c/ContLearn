@@ -35,6 +35,18 @@ if pytest scripts/test_scripts.py "$@"; then
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}✓ All script tests passed!${NC}"
     echo -e "${GREEN}========================================${NC}"
+    echo ""
+
+    # Check if markdown report was generated
+    if [ -f "SCRIPT_TEST_RESULTS.md" ]; then
+        echo -e "${GREEN}📝 Training outputs saved to:${NC} SCRIPT_TEST_RESULTS.md"
+        echo ""
+        echo "The markdown report contains:"
+        echo "  - Test configuration for each script"
+        echo "  - Final training metrics (losses, accuracy)"
+        echo "  - Categorized by problem type (Regression, Classification, etc.)"
+    fi
+
     exit 0
 else
     echo ""
@@ -43,5 +55,12 @@ else
     echo -e "${RED}========================================${NC}"
     echo ""
     echo "See TODO list above for failures to fix"
+
+    # Check if partial markdown report was generated
+    if [ -f "SCRIPT_TEST_RESULTS.md" ]; then
+        echo ""
+        echo -e "${YELLOW}📝 Partial results saved to:${NC} SCRIPT_TEST_RESULTS.md"
+    fi
+
     exit 1
 fi
