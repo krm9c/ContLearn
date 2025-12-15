@@ -5,12 +5,13 @@
     "data": "sine",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 2,
-    "epochs_per_task": 10,
+    "n_task": 5,
+    "epochs_per_task": 1000,
 
     "model_path": "outputs/sine_model",
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "lr_schedule": "cosine",
-    "debug_mode": true
+    "lr_schedule": "exponential",
+    "debug_mode": false
+
 }

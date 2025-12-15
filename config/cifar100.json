@@ -1,8 +1,10 @@
 {
     "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
 
+    "__comment_data": "Dataset selection - auto-sets prob, problem, network, loss, metric",
     "data": "cifar100",
 
+    "__comment_training": "Experimental parameters",
     "n_task": 10,
     "epochs_per_task": 100,
 
@@ -12,5 +14,7 @@
 
     "model_path": "outputs/cifar100_model",
 
+    "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
+    "lr_schedule": "exponential",
     "debug_mode": true
 }
