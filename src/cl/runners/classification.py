@@ -328,6 +328,22 @@ def set_new_AB_matrices_cnn(model, original_feed_sizes, new_feed_sizes, original
     Returns:
         Model with updated A/B matrices
     """
+    # Added by Claude: If filter size changed, must recreate CNN with new dimensions
+    # Cannot just update metadata - conv layer weights have fixed filter dimensions
+    if new_filter != original_filter:
+        print(f"  Filter size changed ({original_filter} → {new_filter}): Creating fresh CNN")
+        # Create new CNN with new filter size
+        new_model = CNN(
+            key=jax.random.PRNGKey(0),  # Will get fresh random weights
+            filter_size=new_filter,
+            feed_sizes=new_feed_sizes,
+            channel_in=model.channel_in,
+            channel_out=model.channel_out,
+            awb_enabled=True
+        )
+        model = new_model
+
+    # Generate A/B matrices based on current model dimensions
     A_feed, B_feed, A_conv, B_conv = prepABs(model, original_feed_sizes, original_filter)
 
     model = eqx.tree_at(lambda x: x.A_feed, model, A_feed)
@@ -354,6 +370,22 @@ def set_new_AB_matrices_cnn3d(model, original_feed_sizes, new_feed_sizes, origin
     Returns:
         Model with updated A/B matrices
     """
+    # Added by Claude: If filter size changed, must recreate CNN3D with new dimensions
+    # Cannot just update metadata - conv layer weights have fixed filter dimensions
+    if new_filter != original_filter:
+        print(f"  Filter size changed ({original_filter} → {new_filter}): Creating fresh CNN3D")
+        # Create new CNN3D with new filter size
+        new_model = CNN3D(
+            key=jax.random.PRNGKey(0),  # Will get fresh random weights
+            filter_size=new_filter,
+            feed_sizes=new_feed_sizes,
+            channel_in=model.channel_in,
+            channel_out=model.channel_out,
+            awb_enabled=True
+        )
+        model = new_model
+
+    # Generate A/B matrices based on current model dimensions
     A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2 = prepABs_CNN3D(model, original_feed_sizes, original_filter)
 
     model = eqx.tree_at(lambda x: x.A_feed, model, A_feed)
