@@ -40,12 +40,12 @@ ENV/
 *.ipynb_checkpoints
 
 # Data directories
-data/
-Data/
-datasets/
-dataset/
-raw_data/
-processed_data/
+/data/
+/Data/
+/datasets/
+/dataset/
+/raw_data/
+/processed_data/
 
 # Output directories
 outputs/
@@ -57,6 +57,14 @@ checkpoints/
 saved_models/
 # Added by Claude: Use /models/ to only ignore root-level models directory, not src/cl/models/
 /models/
+
+# Generated test results
+*_TEST_RESULTS.md
+SCRIPT_TEST_RESULTS.md
+
+# Example outputs (keep in repo but ignore changes)
+!/outputs/examples/
+outputs/examples/*_modified.pkl
 
 # Logs
 *.log
@@ -75,6 +83,7 @@ temp/
 *.eqx
 *.pkl
 *.pickle
+*.p
 *.pt
 *.pth
 *.h5
@@ -124,3 +133,7 @@ tensorboard/
 # Cache
 .cache/
 *.cache
+
+# Claude Code local settings
+scripts/.claude/
+.claude/settings.local.json
