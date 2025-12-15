@@ -350,10 +350,8 @@ class MLP(eqx.Module):
                 else:
                     # Preserve additional layers
                     candidate = [input_size, h1_candidate, h2_candidate] + current_best[3:]
-
-                # Skip if same as current best (already evaluated)
-                if candidate != current_best:
-                    candidates.append(candidate)
+                    
+                candidates.append(candidate)
 
         return candidates
 

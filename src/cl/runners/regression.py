@@ -48,6 +48,9 @@ from ..config.constants import (
     DEFAULT_AWB_AB_WARMUP_EPOCHS,
     DEFAULT_AWB_AVERAGING_WINDOW,
     DEFAULT_AWB_AB_MAX_ITERATIONS,
+    DEFAULT_AWB_V_LR_FACTOR,
+    DEFAULT_AWB_V_WARMUP_EPOCHS,
+    DEFAULT_LR,
 )
 
 
@@ -201,7 +204,7 @@ def load_regression_checkpoint(config: Dict[str, Any]):
         'input_size': dataset.input_size,
         'output_size': dataset.output_size,
         'n_layers': config.get('n_layers', 4),
-        'hln': config.get('hln', 256),
+        'hln': config.get('hln', 75),
         'awb_enabled': config.get('awb_enabled', DEFAULT_AWB_ENABLED),
     }
     model = create_mlp(model_config)
@@ -276,7 +279,7 @@ def train_model_reg(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     }
 
     # Track baseline losses for AWB decision logic
-    end_last0 = None
+    # Added by Claude: Removed end_last0, now just track end_last (previous task loss)
     end_last = None
     mlp_arch_list = []
 
@@ -303,10 +306,10 @@ def train_model_reg(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 task_id=i, config=train_config, record_dict=record_dict,
                 problem_type='vectors', loss_type='regression'
             )
-            end_last0 = compute_avg_loss(record_dict['iterations'], i,
+            # Added by Claude: Set end_last for task 0 (used as baseline for task 1 comparison)
+            end_last = compute_avg_loss(record_dict['iterations'], i,
                                          config['epochs_per_task'], averaging_window)
-            end_last = end_last0
-            print(f"Task 0 baseline loss: {end_last0:.6f}")
+            print(f"Task 0 baseline loss: {end_last:.6f}")
 
         elif awb_enabled:
             # AWB PIPELINE FOR TASKS 1+
@@ -326,8 +329,9 @@ def train_model_reg(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                                           preliminary_epochs, averaging_window)
 
             # STEP 2: Decide if architecture change is needed
-            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f})")
-            change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+            # Added by Claude: Compare current preliminary loss to previous task's final loss
+            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f}, prev={end_last:.6f})")
+            change_arch = should_change_arch(trainWLoss, end_last)
             original_arch = model.sizes
             mlp_weight_layer, mlp_bias_layer = save_layer_weights(model)
 
@@ -394,7 +398,8 @@ def train_model_reg(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
                     # STEP 5: Train V with A/B frozen
                     print(f"STEP 5: Training with new weights V")
-                    optim = optax.adam(1e-3)
+                    # Added by Claude: Use create_optimizer for consistent optimizer configuration
+                    optim = create_optimizer(config)
                     opt_state = optim.init(params)
 
                     params, static, opt_state, record_dict = trainer.train__CL(

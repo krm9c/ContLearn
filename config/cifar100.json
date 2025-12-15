@@ -14,6 +14,9 @@
 
     "model_path": "outputs/cifar100_model",
 
+    "__comment_awb": "AWB architecture morphing disabled",
+    "awb_enabled": false,
+
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
     "lr_schedule": "exponential",
     "debug_mode": true

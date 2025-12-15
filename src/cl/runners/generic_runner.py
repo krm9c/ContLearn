@@ -7,11 +7,11 @@ into a single generic runner using config-based dispatch.
 Added by Claude: Layer-level AWB abstraction refactor.
 """
 
+import os
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 import optax
-import pickle
 from typing import Dict, Any, Tuple
 
 from ..core import Trainer
@@ -24,6 +24,10 @@ from ..core.awb import (
     partition_model_for_standard_training,
 )
 
+from ..config.constants import (
+    DEFAULT_OPTIMIZER, 
+    DEFAULT_LR, 
+    DEFAULT_WEIGHT_DECAY)
 
 # ============================================================================
 # Model Architecture Utilities (Added by Claude)
@@ -185,15 +189,14 @@ def create_optimizer(config: Dict[str, Any]) -> optax.GradientTransformationExtr
     Returns:
         Optax optimizer with injectable hyperparameters
     """
-    optimizer_name = config.get('optimizer', 'adam').lower()
-    lr = config.get('lr', 1e-4)
-    weight_decay = config.get('weight_decay', 1e-4)
-    momentum = config.get('momentum', 0.9)
-
+    optimizer_name = config.get('optimizer', DEFAULT_OPTIMIZER).lower()
+    lr = config.get('lr', DEFAULT_LR )
+    weight_decay = config.get('weight_decay', DEFAULT_WEIGHT_DECAY)
+    momentum = config.get('momentum', 0.99)
     # Added by Claude: Use inject_hyperparams to allow dynamic LR changes
     if optimizer_name == 'adam':
-        base_optimizer = optax.inject_hyperparams(optax.adamw)
-        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
+        base_optimizer = optax.inject_hyperparams(optax.adam)
+        return base_optimizer(learning_rate=lr)
     elif optimizer_name == 'adamw':
         base_optimizer = optax.inject_hyperparams(optax.adamw)
         return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
@@ -236,6 +239,39 @@ def update_learning_rate(opt_state, new_lr: float):
     return opt_state
 
 
+def create_optimizer_with_lr(config: dict, lr: float):
+    """Create optimizer with a specific learning rate.
+
+    Added by Claude: Used for AWB Step 5 warmup where we want to start with
+    a lower learning rate to reduce the loss spike after V transformation.
+
+    Args:
+        config: Configuration dict with optimizer settings
+        lr: Specific learning rate to use (overrides config['lr'])
+
+    Returns:
+        Optax optimizer with injectable hyperparameters
+    """
+    optimizer_name = config.get('optimizer', DEFAULT_OPTIMIZER).lower()
+    weight_decay = config.get('weight_decay', DEFAULT_WEIGHT_DECAY)
+    momentum = config.get('momentum', 0.99)
+
+    if optimizer_name == 'adam':
+        base_optimizer = optax.inject_hyperparams(optax.adam)
+        return base_optimizer(learning_rate=lr)
+    elif optimizer_name == 'adamw':
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
+    elif optimizer_name == 'sgd':
+        base_optimizer = optax.inject_hyperparams(optax.sgd)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
+    elif optimizer_name == 'rmsprop':
+        base_optimizer = optax.inject_hyperparams(optax.rmsprop)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
+    else:
+        raise ValueError(f"Unknown optimizer: {optimizer_name}")
+
+
 def compute_task_lr(config: Dict[str, Any], task_id: int) -> float:
     """Compute learning rate for current task based on schedule.
 
@@ -246,13 +282,13 @@ def compute_task_lr(config: Dict[str, Any], task_id: int) -> float:
     Returns:
         Learning rate for this task
     """
-    base_lr = config.get('lr', 1e-4)
+    base_lr = config.get('lr',DEFAULT_LR)
     schedule = config.get('lr_schedule', 'constant')
 
     if schedule == 'constant':
         return base_lr
     elif schedule == 'step':
-        decay_factor = config.get('lr_decay_factor', 0.9)
+        decay_factor = config.get('lr_decay_factor', 0.99)
         return base_lr * (decay_factor ** task_id)
     elif schedule == 'exponential':
         decay_factor = config.get('lr_decay_factor', 0.95)
@@ -579,7 +615,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             print(f"AWB pipeline (lr={task_lr:.6f})")
 
             # STEP 1: Preliminary training
-            awb_prelim_epochs = config.get('awb_preliminary_epochs', 10)
+            awb_prelim_epochs = config.get('awb_preliminary_epochs', 50)
             print(f"  Step 1: Preliminary training ({awb_prelim_epochs} epochs)")
 
             model = eqx.combine(params, static)
@@ -600,12 +636,12 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
             # STEP 2: Decide if architecture change needed
             trainWLoss = compute_avg_loss(record_dict['iterations'], task_id, awb_prelim_epochs)
-            end_last0 = record_dict['architecture_history'][0]['optimal_loss']
+            # Added by Claude: Get previous task's optimal loss (for task 1, this is task 0)
             end_last = record_dict['architecture_history'][task_id - 1]['optimal_loss']
 
-            change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+            change_arch = should_change_arch(trainWLoss, end_last)
             print(f"  Step 2: Architecture change decision: {change_arch}")
-            print(f"    trainWLoss={trainWLoss:.6f}, baseline={end_last0:.6f}, prev={end_last:.6f}")
+            print(f"    trainWLoss={trainWLoss:.6f}, prev_task_loss={end_last:.6f}, ratio={trainWLoss/end_last:.3f}")
 
             # Initialize history entry for this task
             model_temp = eqx.combine(params, static)
@@ -702,9 +738,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     print(f"  Step 3b: Train A/B matrices ({awb_ab_epochs} epochs)")
 
                     diff_model, static_model = partition_model_for_AB_training(model)
-                    ab_optim = optax.adam(config.get('lr', 1e-4))
+                    # Added by Claude: Use inject_hyperparams for LR scheduling support
+                    ab_optim = create_optimizer(config)
                     ab_opt_state = ab_optim.init(diff_model)
-
                     diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
                         train__=(trainloader, exploader, valloader, testloader),
                         params=diff_model,
@@ -752,10 +788,11 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                         raise ValueError(f"Unknown network type for AWB V transformation: {network}")
 
                     # STEP 5: Train V with A/B frozen
-                    remaining_epochs = epochs_per_task - awb_prelim_epochs - awb_ab_epochs
+                    remaining_epochs = epochs_per_task 
                     print(f"  Step 5: Train V with A/B frozen ({remaining_epochs} epochs)")
 
                     params, static = partition_model_for_standard_training(model)
+                    optim = create_optimizer(config)
                     opt_state = optim.init(params)
 
                     params, static, opt_state, record_dict = trainer.train__CL(
@@ -819,7 +856,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 history_entry['change_reason'] = 'should_change_arch=False'
                 print(f"    No architecture change needed")
 
-                remaining_epochs = epochs_per_task - awb_prelim_epochs
+                remaining_epochs = epochs_per_task
 
                 # Added by Claude: Handle case where all epochs were used in preliminary training
                 if remaining_epochs > 0:
@@ -898,10 +935,15 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             base_path = f"{base_path}_awb"
         model_path = f"{base_path}_run{run_id}"
 
+        # Create output directory if needed
+        os.makedirs(os.path.dirname(model_path) if os.path.dirname(model_path) else '.', exist_ok=True)
+
         # Use equinox serialization for models (handles JAX pytrees correctly)
         eqx.tree_serialise_leaves(f"{model_path}.eqx", model)
-        # Use pickle for record dictionary
-        with open(f"{model_path}_records.pkl", 'wb') as f:
-            pickle.dump(record_dict, f)
+
+        # Added by Claude: Use RecordingMixin's save_record_dict for consistent naming
+        # This creates files like: regression_sine_fcnn_run0_records.pkl (non-AWB)
+        #                          regression_sine_fcnn_awb_run0_records.pkl (AWB)
+        trainer.save_record_dict(record_dict, model_path)
 
     return record_dict

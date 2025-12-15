@@ -68,7 +68,7 @@ def compute_avg_loss(record_dict, task_id, epochs, window=None):
     return np.mean(losses)
 
 
-def should_change_arch(trainWLoss, end_last0, end_last,
+def should_change_arch(trainWLoss, end_last,
                        threshold_high=None, min_delta=None):
     """Decide if architecture change is needed based on loss ratio thresholds.
 
@@ -79,8 +79,7 @@ def should_change_arch(trainWLoss, end_last0, end_last,
 
     Args:
         trainWLoss: Current training loss after preliminary training
-        end_last0: Loss at end of task 0 (baseline)
-        end_last: Loss at end of previous task
+        end_last: Loss at end of previous task (for task 1, this is task 0's optimal loss)
         threshold_high: High threshold for loss ratio (default: 0.45)
         min_delta: Minimum loss increase to trigger change (default: 0.01)
 
@@ -92,7 +91,8 @@ def should_change_arch(trainWLoss, end_last0, end_last,
     if min_delta is None:
         min_delta = DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA
 
-    ratio = trainWLoss / end_last0
+    # Added by Claude: Compare current preliminary loss to previous task's final loss
+    ratio = trainWLoss / end_last
 
     if (ratio > threshold_high) and (end_last + min_delta <= trainWLoss):
         return True
