@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Author", email = "author@example.com"}
+    {name = "Allyson Hahn", email = "ahahn2183@gmail.com"},
+    {name = "Krishnan Raghavan", email = "krm9c@outlook.com"},
+    {name = "Prasanna Balaprakash"}
 ]
 keywords = ["continual-learning", "jax", "equinox", "deep-learning"]
 classifiers = [
@@ -58,9 +60,9 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/author/cl-framework"
-Documentation = "https://github.com/author/cl-framework#readme"
-Repository = "https://github.com/author/cl-framework.git"
+Homepage = "https://github.com/krm9c/ContLearn"
+Documentation = "https://github.com/krm9c/ContLearn#readme"
+Repository = "https://github.com/krm9c/ContLearn.git"
 
 [tool.setuptools.packages.find]
 where = ["src"]
