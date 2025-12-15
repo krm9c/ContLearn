@@ -81,41 +81,41 @@ class TestShouldChangeArch:
 
     def test_should_change_arch_high_ratio_loss_increased(self):
         """Test: high ratio AND loss increased -> should change."""
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 1.0
-        end_last0 = 0.5   # ratio = 1.0/0.5 = 2.0 > 0.45
-        end_last = 0.8    # end_last + 0.01 = 0.81 <= 1.0
+        end_last = 0.8    # ratio = 1.0/0.8 = 1.25 > 0.45, and end_last + 0.01 = 0.81 <= 1.0
 
-        result = should_change_arch(trainWLoss, end_last0, end_last)
+        result = should_change_arch(trainWLoss, end_last)
         assert result == True
 
     def test_should_change_arch_high_ratio_loss_not_increased(self):
         """Test: high ratio but loss didn't increase significantly -> no change."""
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 0.82
-        end_last0 = 0.5   # ratio = 0.82/0.5 = 1.64 > 0.45
-        end_last = 0.82   # end_last + 0.01 = 0.83 > 0.82
+        end_last = 0.82   # ratio = 0.82/0.82 = 1.0 > 0.45, but end_last + 0.01 = 0.83 > 0.82
 
-        result = should_change_arch(trainWLoss, end_last0, end_last)
+        result = should_change_arch(trainWLoss, end_last)
         assert result == False
 
     def test_should_change_arch_low_ratio(self):
         """Test: low ratio -> no change regardless of other conditions."""
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 0.2
-        end_last0 = 0.5   # ratio = 0.2/0.5 = 0.4 <= 0.45
-        end_last = 0.1
+        end_last = 0.5   # ratio = 0.2/0.5 = 0.4 <= 0.45
 
         # Pass explicit threshold to test the logic regardless of default value
-        result = should_change_arch(trainWLoss, end_last0, end_last, threshold_high=0.45)
+        result = should_change_arch(trainWLoss, end_last, threshold_high=0.45)
         assert result == False
 
     def test_should_change_arch_custom_thresholds(self):
         """Test with custom threshold values."""
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 0.6
-        end_last0 = 1.0   # ratio = 0.6
-        end_last = 0.5
+        end_last = 0.5   # ratio = 0.6/0.5 = 1.2 > 0.5, and end_last + 0.01 = 0.51 < 0.6
 
-        # With threshold_high=0.5, ratio (0.6) > 0.5
+        # With threshold_high=0.5, ratio (1.2) > 0.5
         # And end_last + 0.01 = 0.51 < 0.6
-        result = should_change_arch(trainWLoss, end_last0, end_last,
+        result = should_change_arch(trainWLoss, end_last,
                                     threshold_high=0.5, min_delta=0.01)
         assert result == True
 
@@ -333,10 +333,10 @@ class TestAWBIntegration:
         model = MLP(sizes=original_arch, key=jax_key, awb_enabled=True)
 
         # 2. Simulate architecture change decision
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 1.0
-        end_last0 = 0.5
-        end_last = 0.8
-        change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+        end_last = 0.8  # ratio = 1.0/0.8 = 1.25 > 0.45, and end_last + 0.01 = 0.81 <= 1.0
+        change_arch = should_change_arch(trainWLoss, end_last)
         assert change_arch == True
 
         # 3. Save original weights
@@ -371,11 +371,11 @@ class TestAWBIntegration:
 
     def test_awb_disabled_path(self):
         """Test that AWB disabled path works correctly."""
+        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
         trainWLoss = 0.2
-        end_last0 = 0.5  # ratio = 0.4 < 0.45
-        end_last = 0.3
+        end_last = 0.5  # ratio = 0.2/0.5 = 0.4 < 0.45
 
-        change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+        change_arch = should_change_arch(trainWLoss, end_last)
         assert change_arch == False
 
 

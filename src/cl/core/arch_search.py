@@ -38,8 +38,9 @@ from ..config.constants import (
     DEFAULT_CNN3D_ARCH_SEARCH_EPOCHS,
     DEFAULT_ARCH_SEARCH_BATCH_SIZE,
     DEFAULT_ARCH_SEARCH_EXP_REPLAY,
-)
-
+    DEFAULT_OPTIMIZER, 
+    DEFAULT_LR, 
+    DEFAULT_WEIGHT_DECAY)
 
 def load_search_config(config: Dict[str, Any], model_type: Optional[str] = None) -> Dict[str, Any]:
     """Load architecture search hyperparameters with defaults from constants.py.
@@ -413,7 +414,14 @@ def search_architecture(
     threshold = search_cfg['threshold']
     search_epochs = search_cfg['search_epochs']
     averaging_window = search_cfg['averaging_window']
-    search_lr = search_cfg['search_lr']
+
+    # Added by Claude: Use task's optimizer and LR by default, with search_lr as override
+    # This ensures architecture search uses same optimization settings as main training
+    optimizer_name = config.get('optimizer', DEFAULT_OPTIMIZER).lower()
+    task_lr = config.get('lr', DEFAULT_LR)
+    search_lr = search_cfg.get('search_lr', DEFAULT_LR)  # Default to task LR
+    weight_decay = config.get('weight_decay', DEFAULT_WEIGHT_DECAY)
+    momentum = config.get('momentum', 0.9)
 
     # Main search loop
     iteration = 0
@@ -428,11 +436,7 @@ def search_architecture(
             print(f"    No candidates generated, stopping search")
             break
 
-        for candidate_spec in candidates:
-            # Skip if same as baseline (already tested)
-            if candidate_spec == baseline_arch:
-                continue
-
+        for (cand_id, candidate_spec) in enumerate(candidates):
             # MODEL-SPECIFIC: Create model with candidate architecture
             candidate_model = model.create_with_architecture(
                 candidate_spec,
@@ -449,8 +453,25 @@ def search_architecture(
             # GENERIC: Partition for training
             params, static = partition_for_search(candidate_model)
 
-            # Create optimizer
-            optim = optax.adam(search_lr)
+            # Added by Claude: Create optimizer using task's settings by default
+            # Use optax.inject_hyperparams for consistency with main training
+            if optimizer_name == 'adam':
+                base_optimizer = optax.inject_hyperparams(optax.adam)
+                optim = base_optimizer(learning_rate=search_lr)
+            elif optimizer_name == 'adamw':
+                base_optimizer = optax.inject_hyperparams(optax.adamw)
+                optim = base_optimizer(learning_rate=search_lr, weight_decay=weight_decay)
+            elif optimizer_name == 'sgd':
+                base_optimizer = optax.inject_hyperparams(optax.sgd)
+                optim = base_optimizer(learning_rate=search_lr, momentum=momentum)
+            elif optimizer_name == 'rmsprop':
+                base_optimizer = optax.inject_hyperparams(optax.rmsprop)
+                optim = base_optimizer(learning_rate=search_lr, momentum=momentum)
+            else:
+                # Fallback to adamw if unknown optimizer
+                base_optimizer = optax.inject_hyperparams(optax.adamw)
+                optim = base_optimizer(learning_rate=search_lr, weight_decay=weight_decay)
+
             opt_state = optim.init(params)
 
             # Initialize record dict
@@ -480,8 +501,12 @@ def search_architecture(
                 window=averaging_window
             )
 
+            # Skip if same as baseline (already tested)
+            if candidate_spec == baseline_arch:
+                best_loss = candidate_loss
+                # print("I found my baseline")
             # Track best architecture
-            if candidate_loss < best_loss:
+            elif candidate_loss < best_loss:
                 best_loss = candidate_loss
                 best_arch = candidate_spec
                 found_improvement = True

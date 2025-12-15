@@ -36,6 +36,8 @@ from ..core.awb import (
     partition_for_AB_training_cnn3d,
     partition_for_standard_training_cnn3d,
 )
+# Added by Claude: Import create_optimizer for consistent optimizer configuration
+from .generic_runner import create_optimizer
 from ..models.cnn import CNN, CNN3D
 from ..models.layers import Linear2
 from ..datasets.mnist import MNISTDataset, PermutedMNISTDataset
@@ -62,27 +64,34 @@ from ..config.constants import (
 def create_classification_optimizer(config: Dict[str, Any]) -> optax.GradientTransformationExtraArgs:
     """Create optimizer from configuration for classification tasks.
 
+    Added by Claude: Now uses inject_hyperparams to enable dynamic LR scheduling.
+
     Args:
         config: Configuration dictionary with:
             - optimizer: Optimizer type (default: 'adam')
             - lr: Learning rate (default: 1e-3)
 
     Returns:
-        Configured optimizer
+        Configured optimizer with injectable hyperparameters
     """
     lr = config.get('lr', 1e-3)
+    weight_decay = config.get('weight_decay', 1e-4)
+    momentum = config.get('momentum', 0.9)
     optimizer_name = config.get('optimizer', 'adam').lower()
 
+    # Added by Claude: Use inject_hyperparams for dynamic LR adjustment
     if optimizer_name == 'adam':
-        return optax.adam(lr)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
     elif optimizer_name == 'adamw':
-        weight_decay = config.get('weight_decay', 1e-4)
-        return optax.adamw(lr, weight_decay=weight_decay)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
     elif optimizer_name == 'sgd':
-        momentum = config.get('momentum', 0.9)
-        return optax.sgd(lr, momentum=momentum)
+        base_optimizer = optax.inject_hyperparams(optax.sgd)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
     else:
-        return optax.adam(lr)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
 
 
 def load_classification_checkpoint(config: Dict[str, Any]):
@@ -339,7 +348,9 @@ def set_new_AB_matrices_cnn(model, original_feed_sizes, new_feed_sizes, original
             feed_sizes=new_feed_sizes,
             channel_in=model.channel_in,
             channel_out=model.channel_out,
-            awb_enabled=True
+            input_size=model.input_size,
+            padding=model.padding,
+            stride=model.stride
         )
         model = new_model
 
@@ -375,13 +386,16 @@ def set_new_AB_matrices_cnn3d(model, original_feed_sizes, new_feed_sizes, origin
     if new_filter != original_filter:
         print(f"  Filter size changed ({original_filter} → {new_filter}): Creating fresh CNN3D")
         # Create new CNN3D with new filter size
+        # Get num_classes from feed_sizes (last dimension)
+        num_classes = new_feed_sizes[-1] if new_feed_sizes else 10
         new_model = CNN3D(
             key=jax.random.PRNGKey(0),  # Will get fresh random weights
             filter_size=new_filter,
             feed_sizes=new_feed_sizes,
             channel_in=model.channel_in,
             channel_out=model.channel_out,
-            awb_enabled=True
+            input_size=model.input_size,
+            num_classes=num_classes
         )
         model = new_model
 
@@ -479,7 +493,7 @@ def train_model_class(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
     }
 
     # Track baseline losses for AWB decision logic
-    end_last0 = None
+    # Added by Claude: Removed end_last0, now just track end_last (previous task loss)
     end_last = None
     arch_history = []
 
@@ -512,10 +526,10 @@ def train_model_class(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
                 task_id=i, config=train_config, record_dict=record_dict,
                 problem_type='vectors', loss_type='classification'
             )
-            end_last0 = compute_avg_loss(record_dict.get('iterations', {}), i,
+            # Added by Claude: Set end_last for task 0 (used as baseline for task 1 comparison)
+            end_last = compute_avg_loss(record_dict.get('iterations', {}), i,
                                          config['epochs_per_task'], averaging_window)
-            end_last = end_last0
-            print(f"Task 0 baseline loss: {end_last0:.6f}")
+            print(f"Task 0 baseline loss: {end_last:.6f}")
 
         elif awb_enabled:
             # AWB PIPELINE FOR TASKS 1+
@@ -535,8 +549,9 @@ def train_model_class(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
                                           preliminary_epochs, averaging_window)
 
             # STEP 2: Decide if architecture change is needed
-            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f})")
-            change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+            # Added by Claude: Compare current preliminary loss to previous task's final loss
+            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f}, prev={end_last:.6f})")
+            change_arch = should_change_arch(trainWLoss, end_last)
             original_feed_sizes = list(model.feed_sizes)
             original_filter = model.filter_size
             conv_weights, feed_weights, feed_biases = save_cnn_layer_weights(model)
@@ -620,7 +635,8 @@ def train_model_class(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
 
                     # STEP 5: Train V with A/B frozen
                     print(f"STEP 5: Training with new weights V")
-                    optim = optax.adam(1e-3)
+                    # Added by Claude: Use create_optimizer for consistent optimizer configuration
+                    optim = create_optimizer(config)
                     opt_state = optim.init(params)
 
                     params, static, opt_state, record_dict = trainer.train__CL(

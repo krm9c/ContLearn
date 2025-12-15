@@ -97,11 +97,11 @@ DEFAULT_TRAIN_TEST_SPLIT = 0.8
 # ============================================================================
 # OPTIMIZER DEFAULTS
 # ============================================================================
-DEFAULT_OPTIMIZER = "adamw"  # Options: "adam", "adamw", "sgd", "rmsprop"
-DEFAULT_LR = 1e-3  # General default learning rate
-DEFAULT_LR_REGRESSION = 1e-3
-DEFAULT_LR_CLASSIFICATION = 1e-3
-DEFAULT_LR_GRAPH = 1e-3
+DEFAULT_OPTIMIZER = "adam"  # Options: "adam", "adamw", "sgd", "rmsprop"
+DEFAULT_LR = 1e-4  # General default learning rate
+DEFAULT_LR_REGRESSION = 1e-4
+DEFAULT_LR_CLASSIFICATION = 1e-4
+DEFAULT_LR_GRAPH = 1e-4
 DEFAULT_WEIGHT_DECAY = 1e-4
 DEFAULT_MOMENTUM = 0.9  # For SGD/RMSprop
 
@@ -117,7 +117,7 @@ DEFAULT_LR_MIN = 1e-6  # Minimum learning rate
 # HAMILTONIAN GRADIENT COMPUTATION DEFAULTS
 # ============================================================================
 DEFAULT_FLAG = [1.0, 1.0]  # Regularization weights for dV/dx and dV/dtheta
-DEFAULT_GRAD_WEIGHTS = [0.01, 0.98, 0.1]  # [alpha, beta, gamma] for [current_task, experience, hamiltonian]
+DEFAULT_GRAD_WEIGHTS = [0.0001, 1, 1]  # [alpha, beta, gamma] for [current_task, experience, hamiltonian]
 
 # Added by Claude: dV normalization and gradient clipping (Priority 1 improvements)
 # Reference: Glorot & Bengio (2010), Pascanu et al. (2013)
@@ -197,7 +197,7 @@ DEFAULT_SYNTHETIC_NUM_CLASSES = 10
 # Master switch
 DEFAULT_AWB_ENABLED = False
 # AWB 5-Step Pipeline
-DEFAULT_AWB_PRELIMINARY_EPOCHS = 1000  # STEP 1: Preliminary training epochs
+DEFAULT_AWB_PRELIMINARY_EPOCHS = 100  # STEP 1: Preliminary training epochs
 DEFAULT_AWB_AB_TRAINING_EPOCHS = 50  # STEP 3b: A/B matrix training epochs
 DEFAULT_AWB_AB_WARMUP_EPOCHS   = 2  # STEP 5: Warmup epochs after V computation
 DEFAULT_AWB_AB_MAX_ITERATIONS  = 2  # Max iterations for A/B training loop
@@ -206,6 +206,11 @@ DEFAULT_AWB_AVERAGING_WINDOW   = 10  # Epochs to average for loss computation
 DEFAULT_AWB_CHANGE_THRESHOLD_HIGH = 0.9  # Loss ratio threshold to trigger arch change
 DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA = 0.01  # Minimum loss increase to trigger change
 DEFAULT_AWB_AB_THRESHOLD_BASE = 0.6  # Base threshold for AB training convergence
+
+# Added by Claude: AWB V Training (Step 5) - Warmup and LR settings
+# These help reduce the loss spike after A/B training by starting with lower LR
+DEFAULT_AWB_V_LR_FACTOR = 0.1  # Start V training at 10% of normal LR
+DEFAULT_AWB_V_WARMUP_EPOCHS = 10  # Epochs to warm up before using full LR
 
 
 # AWB Architecture Defaults (target architectures)
@@ -224,14 +229,14 @@ DEFAULT_ARCH_SEARCH_ENABLED = False
 DEFAULT_ARCH_SEARCH_START_TASK = 999  # 999 = never
 DEFAULT_ARCH_SEARCH_EPOCHS = 10  # General default
 DEFAULT_ARCH_SEARCH_LR = 1e-4
-DEFAULT_ARCH_SEARCH_BATCH_SIZE = 20
+DEFAULT_ARCH_SEARCH_BATCH_SIZE = DEFAULT_BATCH_SIZE_REGRESSION 
 DEFAULT_ARCH_SEARCH_EXP_REPLAY = 20000
 DEFAULT_ARCH_SEARCH_MAX_ITER = DEFAULT_AWB_AB_MAX_ITERATIONS 
 DEFAULT_ARCH_SEARCH_THRESHOLD = 0.95
 
 # CNN Architecture Search
-DEFAULT_CNN_ARCH_SEARCH_EPOCHS = 2  # Per search iteration for CNN
-DEFAULT_CNN3D_ARCH_SEARCH_EPOCHS = 2  # Per search iteration for CNN3D
+DEFAULT_CNN_ARCH_SEARCH_EPOCHS = 1  # Per search iteration for CNN
+DEFAULT_CNN3D_ARCH_SEARCH_EPOCHS = 1  # Per search iteration for CNN3D
 DEFAULT_ARCH_SEARCH_LOSS_THRESHOLD = 0.9  # Loss ratio threshold for arch change
 DEFAULT_ARCH_SEARCH_HIDDEN_RANGE = 3  # Range for hidden layer search (0 to N-1)
 DEFAULT_ARCH_SEARCH_FILTER_MIN = 2  # Minimum filter size
@@ -239,9 +244,9 @@ DEFAULT_ARCH_SEARCH_FILTER_MAX = 5  # Maximum filter size (exclusive)
 DEFAULT_ARCH_SEARCH_FILTER_RANGE = (2, 5)  # Min, max filter sizes
 
 # MLP/GCN Architecture Search
-DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP = 2  # Step size for MLP layer search
-DEFAULT_ARCH_SEARCH_STEP_SIZE_GCN = 2  # Step size for GCN layer search
-DEFAULT_ARCH_SEARCH_RANGE = 5  # Range for layer size search
+DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP = 20  # Step size for MLP layer search
+DEFAULT_ARCH_SEARCH_STEP_SIZE_GCN = 10  # Step size for GCN layer search
+DEFAULT_ARCH_SEARCH_RANGE = 2  # Range for layer size search
 DEFAULT_ARCH_SEARCH_MLP_INCREMENT = 15  # Increment for MLP layer expansion
 DEFAULT_ARCH_SEARCH_LARGE_INCREMENT = 250  # Large increment for layer expansion
 

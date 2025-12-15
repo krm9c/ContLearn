@@ -71,7 +71,7 @@ class HamiltonianMixin:
 
         # Normalize by sqrt of parameter count (following weight initialization theory)
         param_count = self._count_parameters(params)
-        dV_normalized = dV / jnp.sqrt(param_count)
+        dV_normalized = dV  / jnp.sqrt(param_count)
 
         # Apply additional scaling if specified
         dV_normalized = dV_normalized * scale_factor

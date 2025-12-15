@@ -39,6 +39,8 @@ from ..core.awb import (
     save_gcn_layer_weights,
     restore_gcn_layer_weights,
 )
+# Added by Claude: Import create_optimizer for consistent optimizer configuration
+from .generic_runner import create_optimizer
 from ..models.gcn import GCN
 from ..datasets.synthetic_graph import load_graph_dataset
 from ..arch_search.gcn_search import arch_search_GCN, prepABs_GCN
@@ -237,7 +239,7 @@ def train_model_graph(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
     }
 
     # Track baseline losses for AWB decision logic
-    end_last0 = None
+    # Added by Claude: Removed end_last0, now just track end_last (previous task loss)
     end_last = None
     gcn_arch_history = []
     mlp_arch_history = []
@@ -266,10 +268,10 @@ def train_model_graph(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
                 task_id=i, config=train_config, record_dict=record_dict,
                 problem_type='graph', loss_type='classification'
             )
-            end_last0 = compute_avg_loss(record_dict.get('iterations', {}), i,
+            # Added by Claude: Set end_last for task 0 (used as baseline for task 1 comparison)
+            end_last = compute_avg_loss(record_dict.get('iterations', {}), i,
                                          config['epochs_per_task'], averaging_window)
-            end_last = end_last0
-            print(f"Task 0 baseline loss: {end_last0:.6f}")
+            print(f"Task 0 baseline loss: {end_last:.6f}")
 
         elif awb_enabled:
             # AWB PIPELINE FOR TASKS 1+
@@ -289,8 +291,9 @@ def train_model_graph(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
                                           preliminary_epochs, averaging_window)
 
             # STEP 2: Decide if architecture change is needed
-            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f}, end_last={end_last:.6f})")
-            change_arch = should_change_arch(trainWLoss, end_last0, end_last)
+            # Added by Claude: Compare current preliminary loss to previous task's final loss
+            print(f"STEP 2: Checking architecture change (loss={trainWLoss:.6f}, prev={end_last:.6f})")
+            change_arch = should_change_arch(trainWLoss, end_last)
 
             prev_gcn_sizes = list(model.gcn_sizes)
             prev_feed_sizes = list(model.feed_sizes)
@@ -383,7 +386,8 @@ def train_model_graph(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]
 
                     # STEP 5: Train V with A/B frozen
                     print(f"STEP 5: Training with new weights V")
-                    optim = optax.adamw(1e-4)
+                    # Added by Claude: Use create_optimizer for consistent optimizer configuration
+                    optim = create_optimizer(config)
                     opt_state = optim.init(params)
 
                     params, static, opt_state, record_dict = trainer.train__CL(

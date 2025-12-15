@@ -221,9 +221,10 @@ class RecordingMixin:
         """
         metadata = record_dict['metadata']
 
-        # Create filename: problem_dataset_network_run{run_id}.pkl
+        # Create filename: problem_dataset_network[_awb]_run{run_id}_records.pkl
         run_id = metadata.get('run_id', 0)
-        filename = f"{metadata['prob']}_{metadata['dataset']}_{metadata['network']}_run{run_id}_records.pkl"
+        awb_suffix = "_awb" if metadata.get('awb_enabled', False) else ""
+        filename = f"{metadata['prob']}_{metadata['dataset']}_{metadata['network']}{awb_suffix}_run{run_id}_records.pkl"
 
         # Use the base_path directory
         if base_path:
@@ -259,11 +260,13 @@ class RecordingMixin:
                 'prob': config.get('prob', 'unknown'),
                 'dataset': config.get('data', 'unknown'),
                 'network': config.get('network', 'unknown'),
+                'awb_enabled': config.get('awb_enabled', False),
             }
         }
 
-        # Create filename
-        filename = f"{config.get('prob', 'unknown')}_{config.get('data', 'unknown')}_{config.get('network', 'unknown')}_allruns.pkl"
+        # Create filename with AWB suffix if enabled
+        awb_suffix = "_awb" if config.get('awb_enabled', False) else ""
+        filename = f"{config.get('prob', 'unknown')}_{config.get('data', 'unknown')}_{config.get('network', 'unknown')}{awb_suffix}_allruns.pkl"
 
         # Use the base_path directory
         if base_path:
