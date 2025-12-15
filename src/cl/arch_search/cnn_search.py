@@ -41,186 +41,76 @@ from ..config.constants import (
 def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs, config,
                           dataloader_curr, dataloader_exp, test_loader_curr, test_loader_exp,
                           trainer=None):
+    """Architecture search for CNN (BACKWARD COMPATIBLE).
+
+    # Added by Claude: Now delegates to core.arch_search.search_architecture()
+    This is a backward-compatible wrapper that uses the new generic search algorithm.
+
+    Args:
+        filter_size: Current filter size
+        feed_sizes: Current feed layer sizes [feed_input, h1, h2, n_class]
+        task: Current task ID
+        trainW_loss: Training loss from preliminary training
+        og_epochs: Base epochs (overridden by config)
+        config: Configuration dictionary
+        dataloader_curr: Current task training data
+        dataloader_exp: Experience replay data
+        test_loader_curr: Current task test data
+        test_loader_exp: Experience replay test data
+        trainer: Trainer instance (optional)
+
+    Returns:
+        Tuple of (opt_feed_sizes, opt_filter_size)
     """
-    Architecture search for CNN that creates FRESH models for each candidate architecture.
+    # Added by Claude: Use generic search_architecture from core module
+    from ..core.arch_search import search_architecture
 
-    This avoids the Equinox limitation where eqx.tree_at cannot change array shapes.
-    Instead of updating existing model layers, we create new CNN instances with the
-    correct architecture for each candidate.
-
-    RETURNS:
-        opt_mlp: (list) contains the best MLP architecture for the current (and prev) tasks
-        opt_filter: (int) optimal filter size
-    """
-    from ..core.trainer import Trainer
-
-    if trainer is None:
-        trainer = Trainer(loss='class', metric='class', problem='vectors')
-
-    # Get model configuration from config
+    # Get model configuration for creating reference model
     channel_out = config.get('channel_out', 3)
     input_size = config.get('input_size', 28)
     channel_in = config.get('channel_in', 1)
 
-    # Added by Claude: Get arch search parameters from config with fallback to defaults
-    search_epochs = config.get('arch_search_epochs', DEFAULT_CNN_ARCH_SEARCH_EPOCHS)
-    search_lr = config.get('arch_search_lr', DEFAULT_ARCH_SEARCH_LR)
-    search_batch_size = config.get('arch_search_batch_size', DEFAULT_ARCH_SEARCH_BATCH_SIZE)
-    search_exp_replay = config.get('arch_search_exp_replay', DEFAULT_ARCH_SEARCH_EXP_REPLAY)
-    search_loss_threshold = config.get('arch_search_loss_threshold', DEFAULT_ARCH_SEARCH_LOSS_THRESHOLD)
-    search_hidden_range = config.get('arch_search_hidden_range', DEFAULT_ARCH_SEARCH_HIDDEN_RANGE)
-    search_filter_min = config.get('arch_search_filter_min', DEFAULT_ARCH_SEARCH_FILTER_MIN)
-    search_filter_max = config.get('arch_search_filter_max', DEFAULT_ARCH_SEARCH_FILTER_MAX)
-    search_loss_window_init = config.get('arch_search_loss_window_init', DEFAULT_ARCH_SEARCH_LOSS_WINDOW_INIT)
-    search_loss_window_poll = config.get('arch_search_loss_window_poll', DEFAULT_ARCH_SEARCH_LOSS_WINDOW_POLL)
-    search_step_mlp = config.get('arch_search_step_size_mlp', DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP)
-    search_max_iter = config.get('arch_search_max_iter', DEFAULT_ARCH_SEARCH_MAX_ITER)
-    search_iter_increment = config.get('arch_search_iter_increment', DEFAULT_ARCH_SEARCH_ITER_INCREMENT)
-    num_classes = config.get('n_class', DEFAULT_NUM_CLASSES)
+    # Calculate feed input size for current filter
+    conv_output = input_size - filter_size + 1
+    pool_output = conv_output // 2
+    feed_input_size = channel_out * pool_output * pool_output
 
-    i = task
-    original_arch = list(feed_sizes)
-    x = original_arch[1]  # first hidden layer size
-    y = original_arch[2]  # second hidden layer size
-    og_epochs = search_epochs
+    # Adjust feed_sizes to have correct input dimension
+    adjusted_feed_sizes = list(feed_sizes)
+    adjusted_feed_sizes[0] = feed_input_size
 
-    # Calculate initial architecture input size
-    def calc_feed_input_size(fil_size, img_size, ch_out):
-        """Calculate feed layer input size for given filter."""
-        conv_output = img_size - fil_size + 1
-        pool_output = conv_output // 2  # MaxPool2d(kernel_size=2, stride=2)
-        return ch_out * pool_output * pool_output
-
-    # Train initial model with original architecture
-    initial_feed_sizes = list(original_arch)
-    initial_feed_sizes[0] = calc_feed_input_size(filter_size, input_size, channel_out)
-
-    # Create fresh model for initial architecture
-    initial_model = CNN(
+    # Create reference CNN model for search interface
+    current_model = CNN(
         key=jax.random.PRNGKey(0),
         filter_size=filter_size,
-        feed_sizes=initial_feed_sizes,
+        feed_sizes=adjusted_feed_sizes,
         input_size=input_size,
         channel_in=channel_in,
         channel_out=channel_out,
     )
 
-    arch_params, arch_static = eqx.partition(initial_model, eqx.is_array)
-    arch_static = eqx.tree_at(lambda m: m.A_conv, arch_static, replace=initial_model.A_conv)
-    arch_static = eqx.tree_at(lambda m: m.B_conv, arch_static, replace=initial_model.B_conv)
-    arch_static = eqx.tree_at(lambda m: m.A_feed, arch_static, replace=initial_model.A_feed)
-    arch_static = eqx.tree_at(lambda m: m.B_feed, arch_static, replace=initial_model.B_feed)
-    arch_params = eqx.tree_at(
-        lambda m: (m.A_conv, m.B_conv, m.A_feed, m.B_feed),
-        arch_params,
-        replace=(None, None, None, None)
+    # Baseline architecture: (filter_size, feed_sizes) tuple
+    baseline_arch = (filter_size, adjusted_feed_sizes)
+
+    # Delegate to generic core search function
+    opt_arch = search_architecture(
+        model=current_model,
+        baseline_arch=baseline_arch,
+        task_id=task,
+        baseline_loss=trainW_loss,
+        dataloader_curr=dataloader_curr,
+        dataloader_exp=dataloader_exp,
+        test_loader_curr=test_loader_curr,
+        test_loader_exp=test_loader_exp,
+        config=config,
+        trainer=trainer,
+        model_type='cnn'
     )
 
-    poll_dict = trainer.initialize_record_dict(config, run_id=0)
-    optim = optax.adam(search_lr)
-    opt_state = optim.init(arch_params)
+    # Unpack result: (filter_size, feed_sizes)
+    opt_filter, opt_feed_sizes = opt_arch
 
-    train_config = {
-        'batch_size': search_batch_size,
-        'problem': config.get('prob', 'classification'),
-        'data_id': config.get('data', 'mnist'),
-        'len_exp_replay': search_exp_replay,
-        'flag': config.get('flag', [1.0, 1.0]),
-        'network': config.get('network', 'cnn'),
-    }
-
-    # Train initial architecture
-    arch_params, arch_static, opt_state, poll_dict = trainer.train__CL(
-        (dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),
-         (test_loader_curr, test_loader_exp)), arch_params, arch_static, opt_state, optim,
-        n_iter=og_epochs, save_iter=config['save_iter'],
-        task_id=i, config=train_config, record_dict=poll_dict,
-        problem_type='vectors', loss_type='classification'
-    )
-
-    # Get loss from initial training
-    iterations = poll_dict.get('iterations', {})
-    if iterations:
-        recent_losses = [iterations[iter_key]['losses'].get('V', 0) for iter_key in sorted(iterations.keys())[-search_loss_window_init:]]
-        loss_orig = np.mean(recent_losses) if recent_losses else trainW_loss
-    else:
-        loss_orig = trainW_loss
-
-    threshold = search_loss_threshold
-    opt_loss = loss_orig
-    opt_mlp = list(initial_feed_sizes)
-    opt_filter = filter_size
-    current_iter = 1
-    step_mlp = search_step_mlp
-
-    # Architecture search loop
-    while (opt_loss >= loss_orig * threshold) and (current_iter < search_max_iter):
-        for p in range(search_filter_min, search_filter_max):
-            for n in range(0, search_hidden_range):
-                for j in range(0, search_hidden_range):
-                    curr_filter = p
-                    # Calculate new architecture
-                    curr_mlp = [
-                        calc_feed_input_size(curr_filter, input_size, channel_out),
-                        x + current_iter * (j + 1) * step_mlp,
-                        y + current_iter * (n + 1) * step_mlp,
-                        num_classes
-                    ]
-
-                    # Create FRESH model with new architecture
-                    candidate_model = CNN(
-                        key=jax.random.PRNGKey(current_iter * 100 + p * 10 + n + j),
-                        filter_size=curr_filter,
-                        feed_sizes=curr_mlp,
-                        input_size=input_size,
-                        channel_in=channel_in,
-                        channel_out=channel_out,
-                    )
-
-                    # Partition for training
-                    cand_params, cand_static = eqx.partition(candidate_model, eqx.is_array)
-                    cand_static = eqx.tree_at(lambda m: m.A_conv, cand_static, replace=candidate_model.A_conv)
-                    cand_static = eqx.tree_at(lambda m: m.B_conv, cand_static, replace=candidate_model.B_conv)
-                    cand_static = eqx.tree_at(lambda m: m.A_feed, cand_static, replace=candidate_model.A_feed)
-                    cand_static = eqx.tree_at(lambda m: m.B_feed, cand_static, replace=candidate_model.B_feed)
-                    cand_params = eqx.tree_at(
-                        lambda m: (m.A_conv, m.B_conv, m.A_feed, m.B_feed),
-                        cand_params,
-                        replace=(None, None, None, None)
-                    )
-
-                    record_dict_arch = trainer.initialize_record_dict(config, run_id=0)
-                    optim2 = optax.adam(search_lr)
-                    opt_state2 = optim2.init(cand_params)
-
-                    # Train candidate architecture
-                    cand_params, cand_static, opt_state2, record_dict_arch = trainer.train__CL(
-                        (dataloader_curr, dataloader_exp, (test_loader_curr, test_loader_exp),
-                         (test_loader_curr, test_loader_exp)), cand_params, cand_static, opt_state2, optim2,
-                        n_iter=og_epochs, save_iter=config['save_iter'],
-                        task_id=i, config=train_config, record_dict=record_dict_arch,
-                        problem_type='vectors', loss_type='classification'
-                    )
-
-                    # Get loss from candidate training
-                    iterations = record_dict_arch.get('iterations', {})
-                    if iterations:
-                        recent_losses = [iterations[iter_key]['losses'].get('V', 0) for iter_key in sorted(iterations.keys())[-search_loss_window_poll:]]
-                        poll_loss = np.mean(recent_losses) if recent_losses else opt_loss
-                    else:
-                        poll_loss = opt_loss
-
-                    print(f"curr_mlp: {curr_mlp}, curr_filter: {curr_filter}, curr_loss: {poll_loss:.4f}, opt_loss: {opt_loss:.4f}")
-
-                    if poll_loss < opt_loss:
-                        opt_loss = poll_loss
-                        opt_mlp = curr_mlp[:]
-                        opt_filter = curr_filter
-                    print(f"opt_mlp: {opt_mlp}, opt_filter: {opt_filter}")
-
-        current_iter += search_iter_increment
-
-    return opt_mlp, opt_filter
+    return opt_feed_sizes, opt_filter
 
 
 # NOTE: Legacy functions arch_search_CNN and arch_search_CNN3D have been moved to
@@ -238,6 +128,14 @@ def prepABs(model, prev_feed_sizes, prev_filter_size):
     1. Both feed hidden layers AND conv filter change
     2. Only feed hidden layers change (filter stays same)
     3. Only conv filter changes (feed hidden layers stay same, but feed_sizes[0] changes)
+
+    Args:
+        model: Current CNN model with new architecture
+        prev_feed_sizes: Previous feed layer sizes
+        prev_filter_size: Previous filter size
+
+    Returns:
+        Tuple of (A_feed, B_feed, A_conv, B_conv) transformation matrices
     """
     opt_MLParch = list(model.feed_sizes)  # Added by Claude: Convert to list for comparison
     opt_filter = model.filter_size
@@ -251,17 +149,12 @@ def prepABs(model, prev_feed_sizes, prev_filter_size):
 
     if hidden_changed and filter_changed:
         print("New feed AND conv!!!------------------")
-        # Both changed: need transformation matrices for all feed layers
+        # Both changed: need transformation matrices for feed layers
         A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
         B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        B_conv = [
-            jax.random.normal(jax.random.PRNGKey(j), shape=(opt_filter, prev_filter_size))
-            for j in range(0, model.channel_out)
-        ]
-        A_conv = [
-            jax.random.normal(jax.random.PRNGKey(j), shape=(opt_filter, prev_filter_size))
-            for j in range(0, model.channel_out)
-        ]
+        # Added by Claude: When filter size changes, model recreated with new size - use identity
+        B_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
+        A_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
     elif hidden_changed and not filter_changed:
         print("New FEED ONLY!!!------------------")
         # Only hidden layers changed: need transformation for feed layers, identity for conv
@@ -274,14 +167,11 @@ def prepABs(model, prev_feed_sizes, prev_filter_size):
         # Added by Claude: Only filter changed - hidden layers stay same but feed_sizes[0] changes
         # because the flattened conv output size depends on filter size
         print("New CONV ONLY!!!------------------")
-        B_conv = [
-            jax.random.normal(jax.random.PRNGKey(j), shape=(opt_filter, prev_filter_size))
-            for j in range(0, model.channel_out)
-        ]
-        A_conv = [
-            jax.random.normal(jax.random.PRNGKey(j), shape=(opt_filter, prev_filter_size))
-            for j in range(0, model.channel_out)
-        ]
+        # Added by Claude: When filter size changes, model has been recreated with NEW filter size
+        # Conv weights are already at new size, so use identity matrices (no transformation needed)
+        # A/B training will then learn to transform these fresh weights to perform better
+        B_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
+        A_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
         # Added by Claude: For feed layers, hidden layers are unchanged so use identity,
         # BUT B_feed[0] maps from prev_feed_sizes[0] (old flattened size) to opt_MLParch[0] (new flattened size)
         # A_feed maps output dimensions, B_feed maps input dimensions
@@ -308,6 +198,14 @@ def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size):
     1. Both feed hidden layers AND conv filter change
     2. Only feed hidden layers change (filter stays same)
     3. Only conv filter changes (feed hidden layers stay same, but feed_sizes[0] changes)
+
+    Args:
+        model: Current CNN3D model with new architecture
+        prev_feed_sizes: Previous feed layer sizes
+        prev_filter_size: Previous filter size
+
+    Returns:
+        Tuple of (A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2) transformation matrices
     """
     opt_MLParch = list(model.feed_sizes)  # Added by Claude: Convert to list for comparison
     opt_filter = model.filter_size
@@ -322,24 +220,11 @@ def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size):
         print("CNN3D: New feed AND conv!!!------------------")
         A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
         B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        # Conv1 AWB matrices (channel_in input channels)
-        A_conv1 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_in + c), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_in)] for j in range(model.channel_out)
-        ]
-        B_conv1 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_in + c + DEFAULT_RANDOM_KEY_OFFSET_CONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_in)] for j in range(model.channel_out)
-        ]
-        # Conv2 AWB matrices (channel_out input channels)
-        A_conv2 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_out + c + DEFAULT_RANDOM_KEY_OFFSET_ACONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_out)] for j in range(model.channel_out * 2)
-        ]
-        B_conv2 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_out + c + DEFAULT_RANDOM_KEY_OFFSET_BCONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_out)] for j in range(model.channel_out * 2)
-        ]
+        # Added by Claude: When filter size changes, model recreated with new size - use identity
+        A_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        B_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        A_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        B_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
 
     elif hidden_changed and not filter_changed:
         print("CNN3D: New FEED ONLY!!!------------------")
@@ -354,23 +239,13 @@ def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size):
     else:
         # Added by Claude: Only filter changed - hidden layers stay same but feed_sizes[0] changes
         print("CNN3D: New CONV ONLY!!!------------------")
-        # Conv AWB matrices
-        A_conv1 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_in + c), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_in)] for j in range(model.channel_out)
-        ]
-        B_conv1 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_in + c + DEFAULT_RANDOM_KEY_OFFSET_CONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_in)] for j in range(model.channel_out)
-        ]
-        A_conv2 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_out + c + DEFAULT_RANDOM_KEY_OFFSET_ACONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_out)] for j in range(model.channel_out * 2)
-        ]
-        B_conv2 = [
-            [jax.random.normal(jax.random.PRNGKey(j * model.channel_out + c + DEFAULT_RANDOM_KEY_OFFSET_BCONV2), shape=(opt_filter, prev_filter_size))
-             for c in range(model.channel_out)] for j in range(model.channel_out * 2)
-        ]
+        # Added by Claude: When filter size changes, model has been recreated with NEW filter size
+        # Conv weights are already at new size, so use identity matrices (no transformation needed)
+        # A/B training will then learn to transform these fresh weights to perform better
+        A_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        B_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        A_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        B_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
         # Added by Claude: For feed layers, hidden layers are unchanged so use identity,
         # BUT B_feed[0] maps from prev_feed_sizes[0] (old flattened size) to opt_MLParch[0] (new flattened size)
         A_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]  # Output dims unchanged

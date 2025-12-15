@@ -16,6 +16,9 @@ import numpy as np
 import equinox as eqx
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.models.gcn import GCN, GCNLayer, Linear3, Pool, GraphPooling
 from cl.datasets.synthetic_graph import (
     SyntheticGraphDataset,

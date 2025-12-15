@@ -74,6 +74,11 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+markers = [
+    "unit: Fast unit tests for individual components",
+    "training: Slow integration tests that run full training pipelines",
+    "scripts: Legacy marker for training tests (backwards compatibility)",
+]
 
 [tool.black]
 line-length = 100

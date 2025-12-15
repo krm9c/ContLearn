@@ -200,9 +200,12 @@ def arch_search_MLP(
     dataloader_exp,
     test_loader_curr,
     test_loader_exp,
-    current_model: MLP = None,
+    current_model: Optional[MLP] = None,
 ) -> List[int]:
     """Architecture search for MLP regression models.
+
+    # Added by Claude: Now delegates to core.arch_search.search_architecture()
+    This is a backward-compatible wrapper that uses the new generic search algorithm.
 
     Searches for an optimal architecture by training candidate architectures
     with different hidden layer sizes and selecting the one with lowest loss.
@@ -234,100 +237,33 @@ def arch_search_MLP(
     Returns:
         Optimal architecture sizes list [input, h1', h2', ..., output]
     """
-    print(f"  Starting MLP architecture search for task {task_id}")
-    print(f"  Original architecture: {original_arch}")
-    print(f"  Baseline loss (from current model): {trainW_loss:.6f}")
+    # Added by Claude: Use generic search_architecture from core module
+    from ..core.arch_search import search_architecture
 
-    # Get search hyperparameters from config
-    search_epochs = config.get('arch_search_epochs', DEFAULT_ARCH_SEARCH_EPOCHS)
-    threshold = config.get('arch_search_threshold', DEFAULT_ARCH_SEARCH_THRESHOLD)
-    max_iter = config.get('arch_search_max_iter', DEFAULT_ARCH_SEARCH_MAX_ITER)
-    mlp_increment = config.get('arch_search_mlp_increment', DEFAULT_ARCH_SEARCH_MLP_INCREMENT)
-    large_increment = config.get('arch_search_large_increment', DEFAULT_ARCH_SEARCH_LARGE_INCREMENT)
-    search_range = config.get('arch_search_range', DEFAULT_ARCH_SEARCH_RANGE)
-    averaging_window = config.get('arch_search_averaging_window', DEFAULT_ARCH_SEARCH_AVERAGING_WINDOW)
-
-    # Create trainer for search
-    trainer = Trainer(
-        loss=config.get('loss', 'mse'),
-        metric=config.get('metric', 'mse'),
-        problem=config.get('problem', 'vectors'),
-    )
-
-    # Use current model's loss (trainW_loss) as baseline for comparison
-    # This is the loss from preliminary training on the current model
-    loss_orig = trainW_loss
-
-    # Initialize search state
-    # For a 4-layer MLP [input, h1, h2, output], we search over h1 and h2
-    # Assumes at least 2 hidden layers
+    # Architecture too small for search
     if len(original_arch) < 4:
         print(f"  Architecture too small for search, returning original")
         return original_arch
 
-    input_size = original_arch[0]
-    output_size = original_arch[-1]
-    x = original_arch[1]  # First hidden layer size
-    y = original_arch[2]  # Second hidden layer size
+    # Create a reference model for the search interface
+    # The generic search will use this model's interface methods
+    if current_model is None:
+        awb_enabled = config.get('awb_enabled', False)
+        current_model = _create_search_model(original_arch, seed=0, awb_enabled=awb_enabled)
 
-    opt_loss = loss_orig
-    opt_arch = list(original_arch)
-    k = 0
-
-    # Iterative grid search for better architectures
-    while (opt_loss >= loss_orig * threshold) and (k < max_iter):
-        print(f"  Search iteration {k + 1}/{max_iter}")
-        found_improvement = False
-
-        for n in range(search_range):
-            for m in range(search_range):
-                # Candidate architecture with incremented hidden sizes
-                h1_candidate = x + mlp_increment * n
-                h2_candidate = y + mlp_increment * m
-
-                # Build candidate architecture
-                # Preserve original structure but with new hidden sizes
-                if len(original_arch) == 4:
-                    # [input, h1, h2, output]
-                    curr_arch = [input_size, h1_candidate, h2_candidate, output_size]
-                else:
-                    # More layers: keep middle layers same, adjust first two hidden
-                    curr_arch = [input_size, h1_candidate, h2_candidate] + original_arch[3:]
-
-                # Skip if same as original (already tested via trainW_loss)
-                if curr_arch == list(original_arch):
-                    continue
-
-                # Create and train candidate model
-                candidate_model = _create_search_model(curr_arch, seed=task_id + n * 100 + m)
-                candidate_model = _reinitialize_weights(candidate_model, seed=task_id + n * 100 + m)
-
-                _, poll_loss = _train_candidate_architecture(
-                    candidate_model, trainer, task_id, search_epochs, config,
-                    dataloader_curr, dataloader_exp, test_loader_curr, test_loader_exp,
-                    averaging_window=averaging_window
-                )
-
-                # Track best architecture
-                if poll_loss < opt_loss:
-                    opt_loss = poll_loss
-                    opt_arch = curr_arch
-                    found_improvement = True
-                    print(f"    Found better architecture: {curr_arch} with loss {poll_loss:.6f}")
-
-        # If no improvement found in this iteration, try larger increment
-        if opt_arch[1] == original_arch[1] and opt_arch[2] == original_arch[2]:
-            x = x + large_increment
-            y = y + large_increment
-            print(f"    No improvement, expanding search to h1={x}, h2={y}")
-        else:
-            # Continue from best found architecture
-            x = opt_arch[1]
-            y = opt_arch[2]
-
-        k += 1
-
-    print(f"  Architecture search complete.")
-    print(f"  Best architecture: {opt_arch} with loss {opt_loss:.6f}")
+    # Delegate to generic core search function
+    opt_arch = search_architecture(
+        model=current_model,
+        baseline_arch=original_arch,
+        task_id=task_id,
+        baseline_loss=trainW_loss,
+        dataloader_curr=dataloader_curr,
+        dataloader_exp=dataloader_exp,
+        test_loader_curr=test_loader_curr,
+        test_loader_exp=test_loader_exp,
+        config=config,
+        trainer=None,  # Will be created by search_architecture
+        model_type='mlp'
+    )
 
     return opt_arch

@@ -15,6 +15,9 @@ import equinox as eqx
 import pickle
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.datasets import SineDataset
 from cl.models import MLP, create_mlp
 from cl.runners import train_model_reg, load_regression_checkpoint

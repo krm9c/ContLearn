@@ -40,7 +40,9 @@ Usage: ./run_tests.sh [OPTIONS]
 OPTIONS:
     -h, --help              Show this help message
     -a, --all               Run all tests (default)
-    -f, --fast              Run only fast tests (skip integration tests)
+    -u, --unit              Run unit tests only (fast, ~30 sec)
+    -t, --training          Run training tests only (slow, ~5 min)
+    -f, --fast              Run only fast tests (alias for --unit)
     -l, --layers            Run layer tests only
     -m, --models            Run model tests only
     -d, --datasets          Run dataset tests only
@@ -54,9 +56,11 @@ OPTIONS:
     --cov                   Run with coverage report
 
 EXAMPLES:
-    ./run_tests.sh --all                    # Run all tests
-    ./run_tests.sh --fast                   # Skip slow integration tests
-    ./run_tests.sh --models --verbose       # Run model tests with verbose output
+    ./run_tests.sh --all                    # All tests (206 tests, ~5-10 min)
+    ./run_tests.sh --unit                   # Unit tests only (195 tests, ~30 sec)
+    ./run_tests.sh --training               # Training tests only (11 tests, ~5 min)
+    ./run_tests.sh --fast                   # Same as --unit
+    ./run_tests.sh --models --verbose       # Model tests with verbose output
     ./run_tests.sh -k regression            # Run tests with 'regression' in name
 
 EOF
@@ -85,6 +89,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -a|--all)
             MODE="all"
+            shift
+            ;;
+        -u|--unit)
+            MODE="unit"
+            shift
+            ;;
+        -t|--training)
+            MODE="training"
             shift
             ;;
         -f|--fast)
@@ -155,9 +167,17 @@ case $MODE in
         print_header "Running All Tests"
         pytest tests/ $VERBOSE $STDOUT $COVERAGE $KEYWORD
         ;;
+    unit)
+        print_header "Running Unit Tests Only (Fast)"
+        pytest tests/ -m unit $VERBOSE $STDOUT $COVERAGE $KEYWORD
+        ;;
+    training)
+        print_header "Running Training Tests Only (Slow)"
+        pytest tests/ -m scripts $VERBOSE $STDOUT $COVERAGE $KEYWORD
+        ;;
     fast)
-        print_header "Running Fast Tests (Skipping Integration Tests)"
-        pytest tests/ -k "not Integration" $VERBOSE $STDOUT $COVERAGE
+        print_header "Running Fast Tests (Unit tests only)"
+        pytest tests/ -m unit $VERBOSE $STDOUT $COVERAGE $KEYWORD
         ;;
     layers)
         print_header "Running Layer Tests"

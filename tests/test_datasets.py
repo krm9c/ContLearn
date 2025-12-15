@@ -13,6 +13,9 @@ import numpy as np
 import torch
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.datasets import BaseDataset, SineDataset, generate_sine_data
 
 

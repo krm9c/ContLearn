@@ -14,6 +14,9 @@ import numpy as np
 import equinox as eqx
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.models import CNN, CNN3D, CNNorig, Linear2
 from cl.core.awb import (
     partition_for_AB_training_cnn,
@@ -495,9 +498,12 @@ class TestPrepABs:
 
         A_feed, B_feed, A_conv, B_conv = prepABs(model, prev_feed_sizes, prev_filter_size)
 
-        # Conv A/B should be transformation matrices
+        # Added by Claude: Conv A/B should be IDENTITY when filter changes
+        # Because model is recreated with new filter size (fresh weights)
         assert len(A_conv) == model.channel_out
-        assert A_conv[0].shape == (new_filter, prev_filter_size)
+        assert A_conv[0].shape == (new_filter, new_filter)  # Identity matrix
+        assert jnp.allclose(A_conv[0], jnp.eye(new_filter, new_filter))
+        assert jnp.allclose(B_conv[0], jnp.eye(new_filter, new_filter))
 
         # B_feed[0] should be transformation matrix (not identity) due to flattened size change
         # The rest should be identity
@@ -544,13 +550,19 @@ class TestPrepABs:
             model, prev_feed_sizes, prev_filter_size
         )
 
-        # Conv matrices should be transformation matrices
+        # Added by Claude: Conv matrices should be IDENTITY when filter changes
+        # Because model is recreated with new filter size (fresh weights)
+        new_filter = model.filter_size
         assert len(A_conv1) == model.channel_out
         assert len(A_conv1[0]) == model.channel_in
-        assert A_conv1[0][0].shape == (4, 3)  # (new_filter, old_filter)
+        assert A_conv1[0][0].shape == (new_filter, new_filter)  # Identity matrix
+        assert jnp.allclose(A_conv1[0][0], jnp.eye(new_filter, new_filter))
+        assert jnp.allclose(B_conv1[0][0], jnp.eye(new_filter, new_filter))
 
         assert len(A_conv2) == model.channel_out * 2
         assert len(A_conv2[0]) == model.channel_out
+        assert jnp.allclose(A_conv2[0][0], jnp.eye(new_filter, new_filter))
+        assert jnp.allclose(B_conv2[0][0], jnp.eye(new_filter, new_filter))
 
 
 class TestCNNAWBIntegration:

@@ -1,0 +1,20 @@
+{
+    "__comment": "Test config for MNIST classification with debug settings",
+
+    "data": "mnist",
+
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "save_iter": 1,
+
+    "debug_mode": true,
+    "debug_limit": 50,
+
+    "arch_search_enabled": true,
+    "arch_search_epochs": 1,
+    "arch_search_max_iter": 1,
+
+    "generate_plots": false,
+
+    "model_path": "outputs/test_mnist_model"
+}

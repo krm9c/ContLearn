@@ -14,6 +14,9 @@ import numpy as np
 import equinox as eqx
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.core.losses import LossMixin
 from cl.models import MLP
 

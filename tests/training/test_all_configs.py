@@ -1,14 +1,16 @@
 """
-Unit tests for all experimental scripts.
+Training tests for all experimental configurations.
 
-Tests all config files with minimal settings to ensure scripts run without errors.
-Uses debug mode with minimal epochs, iterations, and data points.
+Tests all 10 config files (sine, mnist, cifar10, cifar100, synthetic_graph + AWB)
+with minimal settings to ensure end-to-end training pipeline works.
+
+Config files in tests/training/configs/ have debug settings baked in for fast execution.
 
 Usage:
-    pytest scripts/test_scripts.py
-    pytest scripts/test_scripts.py -v
-    pytest scripts/test_scripts.py -k sine
-    pytest scripts/test_scripts.py --tb=short
+    pytest tests/training/test_all_configs.py
+    pytest tests/training/test_all_configs.py -v
+    pytest tests/training/test_all_configs.py -k sine
+    ./run_tests.sh --training
 """
 
 import pytest
@@ -21,35 +23,13 @@ from datetime import datetime
 import json
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
 from cl.config import load_config
 from cl.runners import train_model
 
-
-# Test configuration overrides for fast minimal tests
-# Added by Claude: These settings ensure tests run quickly while covering all code paths
-MINIMAL_TEST_SETTINGS = {
-    # Core test settings
-    'debug_mode': True,
-    'debug_limit': 50,  # Limit to 50 data points
-
-    # Training parameters (minimal)
-    'n_task': 2,
-    'epochs_per_task': 2,  # Just 2 epochs per task
-    'save_iter': 1,
-
-    # Architecture search parameters (minimal)
-    'arch_search_enabled': True,  # Enable to test the code path
-    'arch_search_epochs': 1,  # Just 1 epoch per search
-    'arch_search_max_iter': 1,  # Just 1 iteration
-    'awb_preliminary_epochs': 1,  # Minimal preliminary training
-    'awb_ab_training_epochs': 1,  # Minimal A/B training
-    'awb_ab_max_iterations': 1,  # Minimal A/B iterations
-
-    # Disable plots for speed
-    'generate_plots': False,
-}
+# Added by Claude: Pytest markers for test categorization
+pytestmark = pytest.mark.training
 
 
 class TestRunner:
@@ -73,11 +53,8 @@ class TestRunner:
             True if successful, False if failed
         """
         try:
-            # Load base config
+            # Load base config (already has debug settings baked in)
             config = load_config(config_path)
-
-            # Apply test overrides
-            config.update(MINIMAL_TEST_SETTINGS)
 
             # Apply additional overrides if provided
             if overrides:
@@ -374,10 +351,8 @@ def test_runner():
     return TestRunner()
 
 
-@pytest.fixture(scope="session")
-def config_dir():
-    """Fixture providing path to config directory."""
-    return Path(__file__).parent.parent / 'config'
+# config_dir fixture is defined in conftest.py
+# It points to tests/training/configs/ where test config files are located
 
 
 # ============================================================================
