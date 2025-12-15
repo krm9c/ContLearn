@@ -13,6 +13,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.models.layers import (
     Linear, LinearGCN, Linear2, Dropout,
     AWBLayerSpec, AWBShapeError,

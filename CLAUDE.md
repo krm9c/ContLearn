@@ -26,8 +26,10 @@ python scripts/run.py config/sine.json --figures-dir outputs/figures
 ### Testing
 ```bash
 # Using run_tests.sh (recommended)
-./run_tests.sh --all              # Run all tests
-./run_tests.sh --fast             # Skip slow integration tests
+./run_tests.sh --unit             # Fast unit tests (~30 sec)
+./run_tests.sh --training         # Full training tests (~5 min)
+./run_tests.sh --all              # All tests (~5-10 min)
+./run_tests.sh --fast             # Alias for --unit
 ./run_tests.sh --models           # Run model tests only
 ./run_tests.sh --datasets         # Run dataset tests only
 ./run_tests.sh --layers           # Run layer tests only
@@ -40,11 +42,40 @@ python scripts/run.py config/sine.json --figures-dir outputs/figures
 ./run_tests.sh --all --cov        # Run with coverage report
 
 # Using pytest directly
-pytest                            # Run all tests
+pytest -m unit                    # Unit tests only
+pytest -m training                # Training tests only
 pytest tests/test_models.py       # Run specific test file
 pytest --cov=src/cl               # Run with coverage
 pytest -v --tb=short              # Verbose output
 ```
+
+## Test Organization
+
+Tests are split into two tiers for efficient development workflow:
+
+**Unit Tests** (`tests/*.py`) - 195 tests, ~30 seconds
+- Model architecture tests (`test_models.py`, `test_cnn.py`, `test_graph.py`)
+- Layer implementation tests (`test_layers.py`)
+- Dataset tests (`test_datasets.py`, `test_mnist.py`)
+- Loss and metric tests (`test_losses.py`)
+- AWB utility tests (`test_awb.py`)
+- Recording tests (`test_recording.py`)
+- Component integration tests (`test_integration.py`)
+
+**Training Tests** (`tests/training/`) - 11 tests, ~5 minutes
+- Full pipeline tests for all 10 configs (sine, mnist, cifar10, cifar100, synthetic_graph + AWB variants)
+- Test configs in `tests/training/configs/` with debug settings baked in (50 samples, 2 epochs)
+- Validates end-to-end training workflow
+- Outputs logged to `SCRIPT_TEST_RESULTS.md`
+
+### Pytest Markers
+
+Tests are marked for filtering:
+- `@pytest.mark.unit` - Fast unit tests
+- `@pytest.mark.training` - Slow training tests
+- `@pytest.mark.scripts` - Legacy alias for training
+
+Filter with: `pytest -m unit` or `pytest -m training`
 
 ### Development
 ```bash

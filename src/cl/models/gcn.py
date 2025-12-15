@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from functools import partial
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple, Dict, Any
 
 from ..config.constants import (
     DEFAULT_AWB_FNN_ARCH,
@@ -424,6 +424,130 @@ class GCN(eqx.Module):
         params = eqx.tree_at(lambda x: (x.A_gcn, x.B_gcn, x.A_feed, x.B_feed), params,
                             replace=(None, None, None, None))
         return params, static
+
+    # Added by Claude: Architecture search interface methods
+    def generate_search_candidates(self, iteration: int, current_best: Tuple[List[int], List[int]],
+                                   config: Dict[str, Any]) -> List[Tuple[List[int], List[int]]]:
+        """Generate candidate architectures for GCN using neighborhood search.
+
+        GCN architecture has two components:
+        - gcn_sizes: [in_size, gcn_hidden, ...] for graph convolution layers
+        - feed_sizes: [gcn_out, mlp_h1, mlp_h2, n_class] for feedforward layers
+
+        Search strategy:
+        - Uses neighborhood search with expanding radius (n)
+        - For each iteration, explores 3x3x3 = 27 candidates
+        - GCN hidden: z2 + n*(j+1)*step_gcn for j in [0,1,2]
+        - MLP hidden1: x1 + n*(k+1)*step_mlp for k in [0,1,2]
+        - MLP hidden2: x2 + n*(r+1)*step_mlp for r in [0,1,2]
+
+        Args:
+            iteration: Current search iteration (controls neighborhood size n)
+            current_best: Tuple of (gcn_sizes, mlp_sizes) lists
+            config: Configuration dict with step_gcn, step_mlp parameters
+
+        Returns:
+            List of (gcn_sizes, mlp_sizes) tuples to evaluate
+        """
+        from ..config.constants import (
+            DEFAULT_ARCH_SEARCH_STEP_SIZE_GCN,
+            DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP,
+        )
+
+        # Unpack current best architecture
+        current_gcn, current_mlp = current_best
+
+        # Get search parameters from config
+        step_gcn = config.get('arch_search_step_size_gcn', DEFAULT_ARCH_SEARCH_STEP_SIZE_GCN)
+        step_mlp = config.get('arch_search_step_size_mlp', DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP)
+
+        # Extract base dimensions from current architecture
+        # gcn_sizes = [in_size, z2]
+        z2 = current_gcn[1] if len(current_gcn) > 1 else current_gcn[0]
+
+        # mlp_sizes = [gcn_out, x1, x2, n_class]
+        x1 = current_mlp[1] if len(current_mlp) > 1 else current_mlp[0]
+        x2 = current_mlp[2] if len(current_mlp) > 2 else x1
+
+        # Neighborhood radius grows with iteration
+        n = iteration + 1
+
+        # Generate candidate architectures
+        candidates = []
+
+        # Search over GCN architecture (3 candidates)
+        for j in range(3):
+            new_gcn_hidden = z2 + n * (j + 1) * step_gcn
+            curr_gcn = [current_gcn[0], new_gcn_hidden]  # Preserve input size
+
+            # Search over MLP architecture (3x3 = 9 candidates per GCN size)
+            for k in range(3):
+                for r in range(3):
+                    new_mlp_h1 = x1 + n * (k + 1) * step_mlp
+                    new_mlp_h2 = x2 + n * (r + 1) * step_mlp
+
+                    # MLP connects from GCN output to final class count
+                    curr_mlp = [
+                        new_gcn_hidden,  # First MLP layer takes GCN output
+                        new_mlp_h1,
+                        new_mlp_h2,
+                        current_mlp[-1]  # Preserve output size (n_class)
+                    ]
+
+                    candidates.append((curr_gcn, curr_mlp))
+
+        return candidates
+
+    @classmethod
+    def create_with_architecture(cls, arch_spec: Tuple[List[int], List[int]],
+                                 seed: int = 0, awb_enabled: bool = True) -> 'GCN':
+        """Create GCN model with specified architecture.
+
+        Args:
+            arch_spec: Tuple of (gcn_sizes, feed_sizes) lists
+            seed: Random seed for weight initialization
+            awb_enabled: Whether to enable AWB (always True for GCN)
+
+        Returns:
+            New GCN instance with specified architecture
+        """
+        gcn_sizes, feed_sizes = arch_spec
+
+        # Infer parameters from architecture
+        in_size = gcn_sizes[0]
+        out_size = feed_sizes[-1]
+
+        # Create new GCN with specified architecture
+        return cls(
+            in_size=in_size,
+            feed_sizes=feed_sizes,
+            gcn_sizes=gcn_sizes,
+            node_num=0,  # Will be set from actual data
+            SEED=seed,
+            out_size=out_size,
+            graph=True,
+            awb_fnn_arch=None,  # Use defaults
+            awb_gcn_arch=None   # Use defaults
+        )
+
+    def reinitialize_weights(self, seed: int = 0) -> 'GCN':
+        """Reinitialize GCN weights for fair architecture comparison.
+
+        For GCN models, we create a fresh instance because the architecture
+        is fixed at initialization (GCN and feed layers).
+
+        Args:
+            seed: Random seed for initialization
+
+        Returns:
+            New GCN instance with reinitialized weights
+        """
+        # Create fresh GCN with same architecture
+        return self.create_with_architecture(
+            arch_spec=(self.gcn_sizes, self.feed_sizes),
+            seed=seed,
+            awb_enabled=True
+        )
 
 
 # Alias for backward compatibility

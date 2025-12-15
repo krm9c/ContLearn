@@ -8,7 +8,7 @@ architecture morphing during lifelong learning.
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from .layers import Linear, AWBLayerSpec
 import jax.tree_util as jtu
@@ -292,6 +292,118 @@ class MLP(eqx.Module):
         model = eqx.tree_at(lambda x: x.sizes, self, new_arch)
         model = eqx.tree_at(lambda x: x.A, model, A_list)
         model = eqx.tree_at(lambda x: x.B, model, B_list)
+
+        return model
+
+    # Added by Claude: Architecture search interface methods
+    def generate_search_candidates(
+        self,
+        iteration: int,
+        current_best: List[int],
+        config: Dict[str, Any]
+    ) -> List[List[int]]:
+        """Generate candidate architectures for MLP search.
+
+        # Added by Claude: Model-specific search strategy
+        MLP uses additive grid search over hidden layer dimensions.
+        This implements the logic from arch_search_MLP() lines 278-328.
+
+        Args:
+            iteration: Current search iteration (0-indexed)
+            current_best: Current best architecture [in, h1, h2, ..., out]
+            config: Configuration dict with search hyperparameters
+
+        Returns:
+            List of candidate architecture lists to evaluate
+        """
+        from ..config.constants import (
+            DEFAULT_ARCH_SEARCH_MLP_INCREMENT,
+            DEFAULT_ARCH_SEARCH_LARGE_INCREMENT,
+            DEFAULT_ARCH_SEARCH_RANGE,
+        )
+
+        # Get search hyperparameters
+        mlp_increment = config.get('arch_search_mlp_increment', DEFAULT_ARCH_SEARCH_MLP_INCREMENT)
+        large_increment = config.get('arch_search_large_increment', DEFAULT_ARCH_SEARCH_LARGE_INCREMENT)
+        search_range = config.get('arch_search_range', DEFAULT_ARCH_SEARCH_RANGE)
+
+        # For MLP, we search over first two hidden layer dimensions
+        if len(current_best) < 4:
+            return []  # Need at least [input, h1, h2, output]
+
+        input_size = current_best[0]
+        output_size = current_best[-1]
+        h1_base = current_best[1]
+        h2_base = current_best[2]
+
+        candidates = []
+
+        # Grid search over hidden dimensions
+        for n in range(search_range):
+            for m in range(search_range):
+                h1_candidate = h1_base + mlp_increment * n
+                h2_candidate = h2_base + mlp_increment * m
+
+                # Build candidate architecture
+                if len(current_best) == 4:
+                    candidate = [input_size, h1_candidate, h2_candidate, output_size]
+                else:
+                    # Preserve additional layers
+                    candidate = [input_size, h1_candidate, h2_candidate] + current_best[3:]
+
+                # Skip if same as current best (already evaluated)
+                if candidate != current_best:
+                    candidates.append(candidate)
+
+        return candidates
+
+    @classmethod
+    def create_with_architecture(cls, arch_spec: List[int], seed: int = 0, awb_enabled: bool = False) -> 'MLP':
+        """Create MLP instance with specified architecture.
+
+        # Added by Claude: Factory method for search
+        Creates a fresh MLP with given architecture specification.
+
+        Args:
+            arch_spec: Architecture sizes [input, h1, h2, ..., output]
+            seed: Random seed for weight initialization
+            awb_enabled: Whether to enable AWB matrices
+
+        Returns:
+            New MLP instance with specified architecture
+        """
+        key = jax.random.PRNGKey(seed)
+        return cls(sizes=arch_spec, key=key, awb_enabled=awb_enabled)
+
+    def reinitialize_weights(self, seed: int = 0) -> 'MLP':
+        """Reinitialize model weights for fair architecture comparison.
+
+        # Added by Claude: Weight reinitialization for search
+        Uses glorot uniform initialization. Ensures fair comparison between
+        candidate architectures by starting from fresh random weights.
+
+        This implements the logic from _reinitialize_weights() in mlp_search.py
+        (lines 50-76).
+
+        Args:
+            seed: Random seed for reproducible initialization
+
+        Returns:
+            Model with freshly initialized weights
+        """
+        initializer = jax.nn.initializers.glorot_uniform()
+
+        model = self
+        # Reinitialize each layer's weights and biases
+        for j in range(len(self.sizes) - 1):
+            in_size = self.sizes[j]
+            out_size = self.sizes[j + 1]
+
+            weight = initializer(jax.random.PRNGKey(seed + j), (out_size, in_size))
+            bias = initializer(jax.random.PRNGKey(seed + j + 100), (1, out_size))
+
+            model = eqx.tree_at(lambda x, idx=j: x.layers[idx].weight, model, weight)
+            model = eqx.tree_at(lambda x, idx=j: x.layers[idx].bias, model, bias)
 
         return model
 

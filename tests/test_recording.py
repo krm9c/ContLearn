@@ -14,6 +14,9 @@ import numpy as np
 import pickle
 import pytest
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 from cl.core.recording import RecordingMixin
 from cl.models import MLP
 

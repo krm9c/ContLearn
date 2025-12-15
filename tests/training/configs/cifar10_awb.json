@@ -1,0 +1,25 @@
+{
+    "__comment": "Test config for CIFAR-10 classification with AWB enabled",
+
+    "data": "cifar10",
+
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "save_iter": 1,
+
+    "debug_mode": true,
+    "debug_limit": 50,
+
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 1,
+    "awb_ab_max_iterations": 1,
+
+    "arch_search_enabled": true,
+    "arch_search_epochs": 1,
+    "arch_search_max_iter": 1,
+
+    "generate_plots": false,
+
+    "model_path": "outputs/test_cifar10_awb_model"
+}

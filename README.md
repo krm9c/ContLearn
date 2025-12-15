@@ -194,23 +194,39 @@ ContLearn/
 
 ## Testing
 
+Tests are organized in two tiers:
+- **Unit tests** (`tests/*.py`): 195 fast component tests (~30 seconds)
+- **Training tests** (`tests/training/`): 11 full pipeline tests (~5 minutes)
+
+### Quick Commands
+
 ```bash
-# Run all tests
-./run_tests.sh --all
+# Fast feedback during development
+./run_tests.sh --unit              # Unit tests only (~30 sec)
+./run_tests.sh --fast              # Alias for --unit
 
-# Run specific test suites
-./run_tests.sh --models      # Model tests
-./run_tests.sh --datasets    # Dataset tests
-./run_tests.sh --integration # Integration tests
-./run_tests.sh --fast        # Skip slow tests
+# Full validation before commits
+./run_tests.sh --all               # All tests (~5-10 min)
+./run_tests.sh --training          # Training tests only (~5 min)
 
-# With coverage
-./run_tests.sh --all --cov
+# Specific test suites
+./run_tests.sh --models            # Model tests
+./run_tests.sh --datasets          # Dataset tests
+./run_tests.sh --layers            # Layer tests
+./run_tests.sh --awb               # AWB utility tests
 
-# Using pytest directly
-pytest                       # All tests
-pytest tests/test_models.py  # Specific file
-pytest -v --tb=short         # Verbose output
+# Coverage
+./run_tests.sh --unit --cov        # Unit test coverage
+./run_tests.sh --all --cov         # Full coverage
+```
+
+### Using pytest Directly
+
+```bash
+pytest -m unit                     # Unit tests only
+pytest -m training                 # Training tests only
+pytest tests/training/             # Training tests by path
+pytest -k "not training"           # Exclude training tests
 ```
 
 ## Advanced Usage

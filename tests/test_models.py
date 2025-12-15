@@ -17,6 +17,9 @@ import pytest
 from cl.models import MLP, create_mlp, Linear
 from cl.models.layers import AWBLayerSpec
 
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
+
 
 class TestMLP:
     """Tests for MLP model."""

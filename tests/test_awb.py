@@ -12,6 +12,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+
+# Added by Claude: Mark as unit test for test categorization
+pytestmark = pytest.mark.unit
 import equinox as eqx
 
 from cl.core.awb import (

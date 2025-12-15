@@ -218,6 +218,115 @@ class CNN(eqx.Module):
                             replace=(None, None, None, None))
         return params, static
 
+    # Added by Claude: Architecture search interface methods
+    def generate_search_candidates(self, iteration, current_best, config):
+        """Generate candidate architectures for CNN search.
+
+        # Added by Claude: Model-specific search strategy for CNN
+        CNN searches over filter_size and feed hidden dimensions.
+        Returns list of (filter_size, feed_sizes) tuples.
+
+        Args:
+            iteration: Current search iteration (0-indexed)
+            current_best: Tuple of (filter_size, feed_sizes) for current best
+            config: Configuration dict with search hyperparameters
+
+        Returns:
+            List of (filter_size, feed_sizes) candidate tuples
+        """
+        from ..config.constants import (
+            DEFAULT_ARCH_SEARCH_HIDDEN_RANGE,
+            DEFAULT_ARCH_SEARCH_FILTER_MIN,
+            DEFAULT_ARCH_SEARCH_FILTER_MAX,
+            DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP,
+        )
+
+        # Get search hyperparameters
+        search_hidden_range = config.get('arch_search_hidden_range', DEFAULT_ARCH_SEARCH_HIDDEN_RANGE)
+        search_filter_min = config.get('arch_search_filter_min', DEFAULT_ARCH_SEARCH_FILTER_MIN)
+        search_filter_max = config.get('arch_search_filter_max', DEFAULT_ARCH_SEARCH_FILTER_MAX)
+        step_mlp = config.get('arch_search_step_size_mlp', DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP)
+
+        # Unpack current best
+        curr_filter, curr_feed_sizes = current_best
+        x = curr_feed_sizes[1]  # First hidden layer
+        y = curr_feed_sizes[2]  # Second hidden layer
+        num_classes = curr_feed_sizes[-1]
+
+        # Helper to calculate feed input size
+        def calc_feed_input_size(fil_size, img_size, ch_out):
+            conv_output = img_size - fil_size + 1
+            pool_output = conv_output // 2
+            return ch_out * pool_output * pool_output
+
+        candidates = []
+
+        # Grid search over filter and hidden dimensions
+        for p in range(search_filter_min, search_filter_max):
+            for n in range(0, search_hidden_range):
+                for j in range(0, search_hidden_range):
+                    candidate_filter = p
+                    candidate_feed = [
+                        calc_feed_input_size(candidate_filter, self.input_size, self.channel_out),
+                        x + iteration * (j + 1) * step_mlp,
+                        y + iteration * (n + 1) * step_mlp,
+                        num_classes
+                    ]
+                    candidates.append((candidate_filter, candidate_feed))
+
+        return candidates
+
+    @classmethod
+    def create_with_architecture(cls, arch_spec, seed=0, awb_enabled=True):
+        """Create CNN instance with specified architecture.
+
+        # Added by Claude: Factory method for search
+
+        Args:
+            arch_spec: Tuple of (filter_size, feed_sizes)
+            seed: Random seed for weight initialization
+            awb_enabled: Not used for CNN (always has AWB matrices)
+
+        Returns:
+            New CNN instance with specified architecture
+        """
+        filter_size, feed_sizes = arch_spec
+
+        # Get config values or use defaults
+        # Note: These should ideally come from config, but we use model defaults
+        key = jax.random.PRNGKey(seed)
+        return cls(
+            key=key,
+            filter_size=filter_size,
+            feed_sizes=feed_sizes
+        )
+
+    def reinitialize_weights(self, seed=0):
+        """Reinitialize model weights for fair architecture comparison.
+
+        # Added by Claude: Weight reinitialization for search
+        For CNN, we create a fresh model instead of reinitializing in place
+        since the architecture is already set.
+
+        Args:
+            seed: Random seed for reproducible initialization
+
+        Returns:
+            New CNN with fresh weights (same architecture)
+        """
+        # For CNN, architecture is fixed at creation, so we return a fresh instance
+        key = jax.random.PRNGKey(seed)
+        return CNN(
+            key=key,
+            filter_size=self.filter_size,
+            feed_sizes=self.feed_sizes,
+            input_size=self.input_size,
+            channel_in=self.channel_in,
+            channel_out=self.channel_out,
+            padding=self.padding,
+            stride=self.stride
+        )
+
 
 class CNN3D(eqx.Module):
     """CNN3D with AWB support for CIFAR-10/100 (3-channel 32x32 images)."""
@@ -400,3 +509,110 @@ class CNN3D(eqx.Module):
         params = eqx.tree_at(lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed), params,
                             replace=(None, None, None, None, None, None))
         return params, static
+
+    # Added by Claude: Architecture search interface methods
+    def generate_search_candidates(self, iteration, current_best, config):
+        """Generate candidate architectures for CNN3D search.
+
+        # Added by Claude: Model-specific search strategy for CNN3D
+        CNN3D searches over filter_size and feed hidden dimensions (same as CNN).
+        Returns list of (filter_size, feed_sizes) tuples.
+
+        Args:
+            iteration: Current search iteration (0-indexed)
+            current_best: Tuple of (filter_size, feed_sizes) for current best
+            config: Configuration dict with search hyperparameters
+
+        Returns:
+            List of (filter_size, feed_sizes) candidate tuples
+        """
+        from ..config.constants import (
+            DEFAULT_ARCH_SEARCH_HIDDEN_RANGE,
+            DEFAULT_ARCH_SEARCH_FILTER_MIN,
+            DEFAULT_ARCH_SEARCH_FILTER_MAX,
+            DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP,
+        )
+
+        # Get search hyperparameters
+        search_hidden_range = config.get('arch_search_hidden_range', DEFAULT_ARCH_SEARCH_HIDDEN_RANGE)
+        search_filter_min = config.get('arch_search_filter_min', DEFAULT_ARCH_SEARCH_FILTER_MIN)
+        search_filter_max = config.get('arch_search_filter_max', DEFAULT_ARCH_SEARCH_FILTER_MAX)
+        step_mlp = config.get('arch_search_step_size_mlp', DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP)
+
+        # Unpack current best
+        curr_filter, curr_feed_sizes = current_best
+        x = curr_feed_sizes[1]  # First hidden layer
+        y = curr_feed_sizes[2]  # Second hidden layer
+        num_classes = curr_feed_sizes[-1]
+
+        # Helper to calculate feed input size for CNN3D (2 conv layers)
+        def calc_feed_input_size(fil_size, img_size, ch_out):
+            # First conv + pool
+            after_conv1 = (img_size - fil_size + 1) // 2
+            # Second conv + pool
+            after_conv2 = (after_conv1 - fil_size + 1) // 2
+            return ch_out * 2 * after_conv2 * after_conv2
+
+        candidates = []
+
+        # Grid search over filter and hidden dimensions
+        for p in range(search_filter_min, search_filter_max):
+            for n in range(0, search_hidden_range):
+                for j in range(0, search_hidden_range):
+                    candidate_filter = p
+                    candidate_feed = [
+                        calc_feed_input_size(candidate_filter, self.input_size, self.channel_out),
+                        x + iteration * (j + 1) * step_mlp,
+                        y + iteration * (n + 1) * step_mlp,
+                        num_classes
+                    ]
+                    candidates.append((candidate_filter, candidate_feed))
+
+        return candidates
+
+    @classmethod
+    def create_with_architecture(cls, arch_spec, seed=0, awb_enabled=True):
+        """Create CNN3D instance with specified architecture.
+
+        # Added by Claude: Factory method for search
+
+        Args:
+            arch_spec: Tuple of (filter_size, feed_sizes)
+            seed: Random seed for weight initialization
+            awb_enabled: Not used for CNN3D (always has AWB matrices)
+
+        Returns:
+            New CNN3D instance with specified architecture
+        """
+        filter_size, feed_sizes = arch_spec
+
+        # Create with defaults
+        key = jax.random.PRNGKey(seed)
+        return cls(
+            key=key,
+            filter_size=filter_size,
+            feed_sizes=feed_sizes
+        )
+
+    def reinitialize_weights(self, seed=0):
+        """Reinitialize model weights for fair architecture comparison.
+
+        # Added by Claude: Weight reinitialization for search
+        For CNN3D, we create a fresh model instead of reinitializing in place.
+
+        Args:
+            seed: Random seed for reproducible initialization
+
+        Returns:
+            New CNN3D with fresh weights (same architecture)
+        """
+        # For CNN3D, architecture is fixed at creation, so we return a fresh instance
+        key = jax.random.PRNGKey(seed)
+        return CNN3D(
+            key=key,
+            filter_size=self.filter_size,
+            feed_sizes=self.feed_sizes,
+            input_size=self.input_size,
+            channel_in=self.channel_in,
+            channel_out=self.channel_out
+        )
