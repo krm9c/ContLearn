@@ -33,7 +33,53 @@ DEFAULT_GRAD_WEIGHTS = [0.01, 0.98, 0.1]
 class HamiltonianMixin:
     """Mixin class containing Hamiltonian computation methods for continual learning."""
 
-    def return_Hamiltonian_graph(self, params, data, notABTrain, grad_weights=None):
+    def _count_parameters(self, params):
+        """Count total number of parameters in pytree.
+
+        Added by Claude: Helper for normalization.
+
+        Args:
+            params: PyTree of parameters
+
+        Returns:
+            Total parameter count as float
+        """
+        leaves = jax.tree_util.tree_leaves(params)
+        return float(sum(leaf.size for leaf in leaves))
+
+    def _normalize_dV(self, dV, params, normalize=True, scale_factor=1.0):
+        """Normalize dV by parameter count to prevent scaling with model size.
+
+        Added by Claude: Following optimization best practices (Glorot & Bengio, 2010),
+        normalize regularization terms by parameter dimension.
+
+        Reference:
+        - Glorot & Bengio, "Understanding the difficulty of training deep
+          feedforward neural networks", AISTATS 2010
+
+        Args:
+            dV: Raw dV value
+            params: Model parameters (for counting)
+            normalize: Whether to apply normalization
+            scale_factor: Additional manual scaling factor
+
+        Returns:
+            Normalized dV
+        """
+        if not normalize:
+            return dV * scale_factor
+
+        # Normalize by sqrt of parameter count (following weight initialization theory)
+        param_count = self._count_parameters(params)
+        dV_normalized = dV / jnp.sqrt(param_count)
+
+        # Apply additional scaling if specified
+        dV_normalized = dV_normalized * scale_factor
+
+        return dV_normalized
+
+    def return_Hamiltonian_graph(self, params, data, notABTrain, grad_weights=None,
+                                 normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for graph classification.
 
         Args:
@@ -42,6 +88,8 @@ class HamiltonianMixin:
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
                          [current_task, experience_replay, hamiltonian_regularization]
+            normalize_dV: Whether to normalize dV by parameter count (default True)
+            dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx, dV_dadj))
@@ -103,7 +151,13 @@ class HamiltonianMixin:
         # Linearize and compute directional derivatives
         V, f_jvp = jax.linearize(return_V_star_graph, params, ex, eadj)
         grad_dV = jax.grad(f_jvp)(wdot, xdot, adjdot)
-        dV = f_jvp(wdot, xdot, adjdot)
+        dV_raw = f_jvp(wdot, xdot, adjdot)
+
+        # Added by Claude: Normalize dV to prevent extreme magnitudes
+        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx, zero_dadj), params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot, zero_dadj), params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dadj = self._normalize_dV(f_jvp(zero_dtheta, zero_dx, adjdot), params, normalize=normalize_dV, scale_factor=dV_scale)
 
         # Added by Claude: Use configurable gradient weights
         def combine_grad(x, y, z):
@@ -112,15 +166,16 @@ class HamiltonianMixin:
         grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
 
         return grad, (
-            (V + dV),  # H = V + dV
+            (V + dV),  # H = V + dV (using normalized dV)
             V,         # V (loss on experience)
-            dV,        # dV (total perturbation effect)
-            f_jvp(wdot, zero_dx, zero_dadj),    # dV_dtheta
-            f_jvp(zero_dtheta, xdot, zero_dadj), # dV_dx
-            f_jvp(zero_dtheta, zero_dx, adjdot)  # dV_dadj
+            dV,        # dV (normalized)
+            dV_dtheta, # dV_dtheta (normalized)
+            dV_dx,     # dV_dx (normalized)
+            dV_dadj    # dV_dadj (normalized)
         )
 
-    def return_Hamiltonian_mse(self, params, data, notABTrain=True, grad_weights=None):
+    def return_Hamiltonian_mse(self, params, data, notABTrain=True, grad_weights=None,
+                               normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for MSE regression.
 
         Args:
@@ -129,6 +184,8 @@ class HamiltonianMixin:
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
                          [current_task, experience_replay, hamiltonian_regularization]
+            normalize_dV: Whether to normalize dV by parameter count (default True)
+            dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx))
@@ -172,7 +229,12 @@ class HamiltonianMixin:
         # Linearize: produces linear approximation using jvp and partial eval
         V, f_jvp = jax.linearize(return_V_star_vector_mse, params, exp_x)
         grad_dV = jax.grad(f_jvp)(wdot, xdot)
-        dV = f_jvp(wdot, xdot)
+        dV_raw = f_jvp(wdot, xdot)
+
+        # Added by Claude: Normalize dV to prevent extreme magnitudes
+        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx), params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot), params, normalize=normalize_dV, scale_factor=dV_scale)
 
         # Added by Claude: Use configurable gradient weights
         def combine_grad(x, y, z):
@@ -181,14 +243,15 @@ class HamiltonianMixin:
         grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
 
         return grad, (
-            (V + dV),  # H
+            (V + dV),  # H (using normalized dV)
             V,         # V
-            dV,        # dV
-            f_jvp(wdot, zero_dx),   # dV_dtheta
-            f_jvp(zero_dtheta, xdot) # dV_dx
+            dV,        # dV (normalized)
+            dV_dtheta, # dV_dtheta (normalized)
+            dV_dx      # dV_dx (normalized)
         )
 
-    def return_Hamiltonian_class(self, params, data, notABTrain=True, grad_weights=None):
+    def return_Hamiltonian_class(self, params, data, notABTrain=True, grad_weights=None,
+                                 normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for classification.
 
         Args:
@@ -197,6 +260,8 @@ class HamiltonianMixin:
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
                          [current_task, experience_replay, hamiltonian_regularization]
+            normalize_dV: Whether to normalize dV by parameter count (default True)
+            dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx))
@@ -242,7 +307,12 @@ class HamiltonianMixin:
         # Linearize
         V, f_jvp = jax.linearize(return_V_star_class, params, exp_x)
         grad_dV = jax.grad(f_jvp)(wdot, xdot)
-        dV = f_jvp(wdot, xdot)
+        dV_raw = f_jvp(wdot, xdot)
+
+        # Added by Claude: Normalize dV to prevent extreme magnitudes
+        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx), params, normalize=normalize_dV, scale_factor=dV_scale)
+        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot), params, normalize=normalize_dV, scale_factor=dV_scale)
 
         # Added by Claude: Use configurable gradient weights
         def combine_grad(x, y, z):
@@ -251,9 +321,9 @@ class HamiltonianMixin:
         grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
 
         return grad, (
-            (V + dV),  # H
+            (V + dV),  # H (using normalized dV)
             V,         # V
-            dV,        # dV
-            f_jvp(wdot, zero_dx),    # dV_dtheta
-            f_jvp(zero_dtheta, xdot)  # dV_dx
+            dV,        # dV (normalized)
+            dV_dtheta, # dV_dtheta (normalized)
+            dV_dx      # dV_dx (normalized)
         )

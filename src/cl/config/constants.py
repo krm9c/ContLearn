@@ -97,11 +97,11 @@ DEFAULT_TRAIN_TEST_SPLIT = 0.8
 # ============================================================================
 # OPTIMIZER DEFAULTS
 # ============================================================================
-DEFAULT_OPTIMIZER = "adam"  # Options: "adam", "adamw", "sgd", "rmsprop"
-DEFAULT_LR = 1e-4  # General default learning rate
-DEFAULT_LR_REGRESSION = 1e-4
+DEFAULT_OPTIMIZER = "adamw"  # Options: "adam", "adamw", "sgd", "rmsprop"
+DEFAULT_LR = 1e-3  # General default learning rate
+DEFAULT_LR_REGRESSION = 1e-3
 DEFAULT_LR_CLASSIFICATION = 1e-3
-DEFAULT_LR_GRAPH = 1e-4
+DEFAULT_LR_GRAPH = 1e-3
 DEFAULT_WEIGHT_DECAY = 1e-4
 DEFAULT_MOMENTUM = 0.9  # For SGD/RMSprop
 
@@ -118,6 +118,12 @@ DEFAULT_LR_MIN = 1e-6  # Minimum learning rate
 # ============================================================================
 DEFAULT_FLAG = [1.0, 1.0]  # Regularization weights for dV/dx and dV/dtheta
 DEFAULT_GRAD_WEIGHTS = [0.01, 0.98, 0.1]  # [alpha, beta, gamma] for [current_task, experience, hamiltonian]
+
+# Added by Claude: dV normalization and gradient clipping (Priority 1 improvements)
+# Reference: Glorot & Bengio (2010), Pascanu et al. (2013)
+DEFAULT_NORMALIZE_DV = True  # Normalize dV by parameter count to prevent extreme magnitudes
+DEFAULT_DV_SCALE_FACTOR = 1.0  # Additional manual scaling factor for dV (tune if needed)
+DEFAULT_GRADIENT_CLIP_NORM = None  # Maximum gradient norm (None = no clipping, recommended: 1.0-10.0)
 
 # ============================================================================
 # DEBUG MODE DEFAULTS
@@ -188,21 +194,19 @@ DEFAULT_SYNTHETIC_NUM_CLASSES = 10
 # ============================================================================
 # AWB (Adaptive Weight Basis) DEFAULTS
 # ============================================================================
-
 # Master switch
 DEFAULT_AWB_ENABLED = False
-
 # AWB 5-Step Pipeline
-DEFAULT_AWB_PRELIMINARY_EPOCHS = 10  # STEP 1: Preliminary training epochs
+DEFAULT_AWB_PRELIMINARY_EPOCHS = 1000  # STEP 1: Preliminary training epochs
 DEFAULT_AWB_AB_TRAINING_EPOCHS = 50  # STEP 3b: A/B matrix training epochs
-DEFAULT_AWB_AB_WARMUP_EPOCHS = 2  # STEP 5: Warmup epochs after V computation
-DEFAULT_AWB_AB_MAX_ITERATIONS = 8  # Max iterations for A/B training loop
-DEFAULT_AWB_AVERAGING_WINDOW = 10  # Epochs to average for loss computation
-
+DEFAULT_AWB_AB_WARMUP_EPOCHS   = 2  # STEP 5: Warmup epochs after V computation
+DEFAULT_AWB_AB_MAX_ITERATIONS  = 2  # Max iterations for A/B training loop
+DEFAULT_AWB_AVERAGING_WINDOW   = 10  # Epochs to average for loss computation
 # AWB Decision Thresholds
-DEFAULT_AWB_CHANGE_THRESHOLD_HIGH = 0.1  # Loss ratio threshold to trigger arch change
-DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA = 0.1  # Minimum loss increase to trigger change
-DEFAULT_AWB_AB_THRESHOLD_BASE = 0.1  # Base threshold for AB training convergence
+DEFAULT_AWB_CHANGE_THRESHOLD_HIGH = 0.9  # Loss ratio threshold to trigger arch change
+DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA = 0.01  # Minimum loss increase to trigger change
+DEFAULT_AWB_AB_THRESHOLD_BASE = 0.6  # Base threshold for AB training convergence
+
 
 # AWB Architecture Defaults (target architectures)
 DEFAULT_AWB_FILTER_INCREMENT = 2  # Increment for conv filter expansion
@@ -219,16 +223,16 @@ DEFAULT_AWB_FNN_ARCH = [100, 140, 140]  # For GCN FNN part
 DEFAULT_ARCH_SEARCH_ENABLED = False
 DEFAULT_ARCH_SEARCH_START_TASK = 999  # 999 = never
 DEFAULT_ARCH_SEARCH_EPOCHS = 10  # General default
-DEFAULT_ARCH_SEARCH_LR = 1e-3
+DEFAULT_ARCH_SEARCH_LR = 1e-4
 DEFAULT_ARCH_SEARCH_BATCH_SIZE = 20
 DEFAULT_ARCH_SEARCH_EXP_REPLAY = 20000
-DEFAULT_ARCH_SEARCH_MAX_ITER = 5
+DEFAULT_ARCH_SEARCH_MAX_ITER = DEFAULT_AWB_AB_MAX_ITERATIONS 
 DEFAULT_ARCH_SEARCH_THRESHOLD = 0.95
 
 # CNN Architecture Search
 DEFAULT_CNN_ARCH_SEARCH_EPOCHS = 2  # Per search iteration for CNN
 DEFAULT_CNN3D_ARCH_SEARCH_EPOCHS = 2  # Per search iteration for CNN3D
-DEFAULT_ARCH_SEARCH_LOSS_THRESHOLD = 0.6  # Loss ratio threshold for arch change
+DEFAULT_ARCH_SEARCH_LOSS_THRESHOLD = 0.9  # Loss ratio threshold for arch change
 DEFAULT_ARCH_SEARCH_HIDDEN_RANGE = 3  # Range for hidden layer search (0 to N-1)
 DEFAULT_ARCH_SEARCH_FILTER_MIN = 2  # Minimum filter size
 DEFAULT_ARCH_SEARCH_FILTER_MAX = 5  # Maximum filter size (exclusive)

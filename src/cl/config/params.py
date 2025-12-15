@@ -156,6 +156,11 @@ def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     set_default('flag', constants.DEFAULT_FLAG)
     set_default('grad_weights', constants.DEFAULT_GRAD_WEIGHTS)
 
+    # Added by Claude: dV normalization and gradient clipping (Priority 1 improvements)
+    set_default('normalize_dV', constants.DEFAULT_NORMALIZE_DV)
+    set_default('dV_scale_factor', constants.DEFAULT_DV_SCALE_FACTOR)
+    set_default('gradient_clip_norm', constants.DEFAULT_GRADIENT_CLIP_NORM)
+
     # ===== DEBUG MODE DEFAULTS =====
     set_default('debug_mode', constants.DEFAULT_DEBUG_MODE)
     set_default('debug_limit', constants.DEFAULT_DEBUG_LIMIT)

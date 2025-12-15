@@ -171,27 +171,38 @@ def restore_model_weights(model, saved_weights):
 # ============================================================================
 
 def create_optimizer(config: Dict[str, Any]) -> optax.GradientTransformationExtraArgs:
-    """Create optimizer from config (works for all problem types).
+    """Create optimizer from config with injectable hyperparameters.
+
+    Added by Claude: Wraps optimizer with optax.inject_hyperparams to enable
+    dynamic learning rate adjustment per task.
+
+    Reference:
+    - https://optax.readthedocs.io/en/latest/api.html#optax.inject_hyperparams
 
     Args:
         config: Configuration dict with optimizer, lr, weight_decay, momentum
 
     Returns:
-        Optax optimizer
+        Optax optimizer with injectable hyperparameters
     """
     optimizer_name = config.get('optimizer', 'adam').lower()
     lr = config.get('lr', 1e-4)
     weight_decay = config.get('weight_decay', 1e-4)
     momentum = config.get('momentum', 0.9)
 
+    # Added by Claude: Use inject_hyperparams to allow dynamic LR changes
     if optimizer_name == 'adam':
-        return optax.adamw(learning_rate=lr, weight_decay=weight_decay)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
     elif optimizer_name == 'adamw':
-        return optax.adamw(learning_rate=lr, weight_decay=weight_decay)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
     elif optimizer_name == 'sgd':
-        return optax.sgd(learning_rate=lr, momentum=momentum)
+        base_optimizer = optax.inject_hyperparams(optax.sgd)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
     elif optimizer_name == 'rmsprop':
-        return optax.rmsprop(learning_rate=lr, momentum=momentum)
+        base_optimizer = optax.inject_hyperparams(optax.rmsprop)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
     else:
         raise ValueError(f"Unknown optimizer: {optimizer_name}")
 
@@ -199,13 +210,29 @@ def create_optimizer(config: Dict[str, Any]) -> optax.GradientTransformationExtr
 def update_learning_rate(opt_state, new_lr: float):
     """Update learning rate in optimizer state.
 
+    Added by Claude: Uses optax.inject_hyperparams mechanism to dynamically
+    adjust learning rate per task by mutating the optimizer state.
+
+    Example:
+        >>> opt = optax.inject_hyperparams(optax.adam)(learning_rate=1e-4)
+        >>> opt_state = opt.init(params)
+        >>> opt_state = update_learning_rate(opt_state, 1e-5)
+        >>> # Next opt.update() will use new learning rate
+
     Args:
-        opt_state: Current optimizer state
+        opt_state: Current optimizer state (must have hyperparams attribute)
         new_lr: New learning rate
 
     Returns:
-        Updated optimizer state
+        Updated optimizer state with modified learning rate
     """
+    # Added by Claude: Directly mutate the hyperparams in optimizer state
+    if hasattr(opt_state, 'hyperparams'):
+        opt_state.hyperparams['learning_rate'] = new_lr
+    else:
+        # Fallback: If no hyperparams (shouldn't happen with inject_hyperparams)
+        print(f"Warning: opt_state has no hyperparams attribute. LR not updated.")
+
     return opt_state
 
 
@@ -504,6 +531,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # Compute learning rate for this task
         task_lr = compute_task_lr(config, task_id)
 
+        # Added by Claude: Update optimizer state with task-specific learning rate
+        opt_state = update_learning_rate(opt_state, task_lr)
+
         # Task 0 or AWB disabled: Standard CL training
         if task_id == 0 or not awb_enabled:
             print(f"Standard CL training (lr={task_lr:.6f})")
@@ -588,7 +618,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 'change_reason': None,
             }
 
-            if True:
+            if change_arch:
                 print("  ARCHITECTURE CHANGE TRIGGERED!")
                 history_entry['change_reason'] = 'should_change_arch=True'
 
@@ -752,9 +782,49 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     # Architecture search returned same architecture
                     history_entry['arch_changed'] = False
                     history_entry['change_reason'] = 'search_found_same_arch'
-                    print("    Architecture search found same architecture, continuing normal training")
 
                     remaining_epochs = epochs_per_task - awb_prelim_epochs
+
+                    # Added by Claude: Handle case where all epochs were used in preliminary training
+                    if remaining_epochs > 0:
+                        print(f"    Architecture search found same architecture, continuing normal training for {remaining_epochs} epochs")
+
+                        params, static, opt_state, record_dict = trainer.train__CL(
+                            train__=(trainloader, exploader, valloader, testloader),
+                            params=params,
+                            static=static,
+                            opt_state=opt_state,
+                            optim=optim,
+                            n_iter=remaining_epochs,
+                            task_id=task_id,
+                            config=config,
+                            record_dict=record_dict,
+                            notABTrain=True,
+                            problem_type=problem_type,
+                            loss_type=loss_type
+                        )
+
+                        optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
+                    else:
+                        # Added by Claude: No remaining epochs - use preliminary training loss
+                        print(f"    Architecture search found same architecture, no remaining epochs (used all {awb_prelim_epochs} in preliminary training)")
+                        optimal_loss = trainWLoss
+
+                    history_entry['optimal_loss'] = optimal_loss
+                    history_entry['final_arch'] = get_model_architecture(eqx.combine(params, static))
+                    print(f"    Final optimal_loss: {optimal_loss:.6f}")
+
+            else:
+                # No architecture change decided
+                history_entry['change_reason'] = 'should_change_arch=False'
+                print(f"    No architecture change needed")
+
+                remaining_epochs = epochs_per_task - awb_prelim_epochs
+
+                # Added by Claude: Handle case where all epochs were used in preliminary training
+                if remaining_epochs > 0:
+                    print(f"    Continuing training for {remaining_epochs} remaining epochs")
+
                     params, static, opt_state, record_dict = trainer.train__CL(
                         train__=(trainloader, exploader, valloader, testloader),
                         params=params,
@@ -771,33 +841,14 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     )
 
                     optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
-                    history_entry['optimal_loss'] = optimal_loss
-                    history_entry['final_arch'] = get_model_architecture(eqx.combine(params, static))
+                else:
+                    # Added by Claude: No remaining epochs - use preliminary training loss
+                    print(f"    No remaining epochs (used all {awb_prelim_epochs} in preliminary training)")
+                    optimal_loss = trainWLoss
 
-            else:
-                # No architecture change decided
-                history_entry['change_reason'] = 'should_change_arch=False'
-                print(f"    No architecture change needed")
-
-                remaining_epochs = epochs_per_task - awb_prelim_epochs
-                params, static, opt_state, record_dict = trainer.train__CL(
-                    train__=(trainloader, exploader, valloader, testloader),
-                    params=params,
-                    static=static,
-                    opt_state=opt_state,
-                    optim=optim,
-                    n_iter=remaining_epochs,
-                    task_id=task_id,
-                    config=config,
-                    record_dict=record_dict,
-                    notABTrain=True,
-                    problem_type=problem_type,
-                    loss_type=loss_type
-                )
-
-                optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
                 history_entry['optimal_loss'] = optimal_loss
                 history_entry['final_arch'] = history_entry['original_arch']
+                print(f"    Final optimal_loss: {optimal_loss:.6f}")
 
             # Save history entry for this task
             record_dict['architecture_history'][task_id] = history_entry
