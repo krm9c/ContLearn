@@ -86,7 +86,7 @@ class MLP(eqx.Module):
             Output tensor of shape (batch, output_dim) or (output_dim,)
         """
         for layer in self.layers[:-1]:
-            x = jax.nn.relu(layer(x))
+            x = jax.nn.tanh(layer(x))
         x = self.layers[-1](x)
         return x
 
@@ -119,7 +119,7 @@ class MLP(eqx.Module):
             bias_transformed = (self.layers[i].bias @ self.A[i].T).T.squeeze(1)
 
             x = weight_transformed @ x + bias_transformed
-            x = jax.nn.relu(x)
+            x = jax.nn.tanh(x)
 
         return x
 

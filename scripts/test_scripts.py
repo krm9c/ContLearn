@@ -16,7 +16,9 @@ import tempfile
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
+from datetime import datetime
+import json
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
@@ -56,6 +58,8 @@ class TestRunner:
     def __init__(self):
         self.failures: List[Tuple[str, str, Exception]] = []
         self.successes: List[str] = []
+        # Added by Claude: Store training outputs for markdown report
+        self.training_outputs: Dict[str, Dict[str, Any]] = {}
 
     def run_config(self, config_name: str, config_path: str, overrides: Dict[str, Any] = None) -> bool:
         """Run a single config and track success/failure.
@@ -91,6 +95,9 @@ class TestRunner:
                 # Basic validation: check that training completed
                 assert record_dict is not None, "No record_dict returned"
                 assert 'iterations' in record_dict or 'tasks' in record_dict, "Invalid record_dict structure"
+
+                # Added by Claude: Store training outputs for markdown report
+                self._store_training_output(config_name, config, record_dict)
 
             self.successes.append(config_name)
             return True
@@ -137,6 +144,224 @@ class TestRunner:
             print(f"   File: {path}")
             print(f"   Error: {type(error).__name__}")
             print(f"   Message: {str(error)[:200]}")
+
+    def _store_training_output(self, config_name: str, config: Dict[str, Any], record_dict: Dict[str, Any]):
+        """Store training outputs for markdown report generation.
+
+        Added by Claude: Extract key metrics from record_dict and store them
+        for later markdown generation.
+        """
+        output = {
+            'config_name': config_name,
+            'config': {
+                'data': config.get('data', 'unknown'),
+                'prob': config.get('prob', 'unknown'),
+                'network': config.get('network', 'unknown'),
+                'n_task': config.get('n_task', 0),
+                'epochs_per_task': config.get('epochs_per_task', 0),
+                'awb_enabled': config.get('awb_enabled', False),
+                'debug_mode': config.get('debug_mode', False),
+                'debug_limit': config.get('debug_limit', 0),
+            },
+            'record_dict': self._extract_metrics(record_dict),
+        }
+        self.training_outputs[config_name] = output
+
+    def _extract_metrics(self, record_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract key metrics from record_dict for reporting.
+
+        Added by Claude: Extract final losses, metrics, and summary statistics.
+        """
+        metrics = {}
+
+        # Get final metrics from last task
+        if 'tasks' in record_dict and record_dict['tasks']:
+            last_task = record_dict['tasks'][-1]
+            task_id = last_task.get('task_id', 'unknown')
+
+            # Extract final losses
+            if 'losses' in last_task and last_task['losses']:
+                final_losses = last_task['losses'][-1] if isinstance(last_task['losses'], list) else last_task['losses']
+                metrics['final_losses'] = {
+                    'H': final_losses.get('H', 'N/A'),
+                    'V': final_losses.get('V', 'N/A'),
+                    'dV': final_losses.get('dV', 'N/A'),
+                }
+
+            # Extract final metrics
+            if 'train_metric' in last_task:
+                train_metrics = last_task['train_metric']
+                metrics['final_train_metric'] = train_metrics[-1] if isinstance(train_metrics, list) else train_metrics
+
+            if 'test_metric' in last_task:
+                test_metrics = last_task['test_metric']
+                metrics['final_test_metric'] = test_metrics[-1] if isinstance(test_metrics, list) else test_metrics
+
+            metrics['task_id'] = task_id
+
+        # Count total iterations
+        if 'iterations' in record_dict:
+            metrics['total_iterations'] = len(record_dict['iterations'])
+
+        return metrics
+
+    def generate_markdown_report(self, output_path: str = 'SCRIPT_TEST_RESULTS.md'):
+        """Generate markdown report of all training outputs.
+
+        Added by Claude: Create a comprehensive markdown report categorized by
+        problem type and script.
+        """
+        # Categorize outputs by problem type
+        categories = {
+            'Regression': [],
+            'MNIST Classification': [],
+            'CIFAR-10 Classification': [],
+            'CIFAR-100 Classification': [],
+            'Graph Classification': [],
+        }
+
+        for name, output in self.training_outputs.items():
+            data = output['config']['data']
+            if 'sine' in data:
+                categories['Regression'].append(output)
+            elif 'mnist' in data.lower():
+                categories['MNIST Classification'].append(output)
+            elif 'cifar10' in data.lower():
+                categories['CIFAR-10 Classification'].append(output)
+            elif 'cifar100' in data.lower():
+                categories['CIFAR-100 Classification'].append(output)
+            elif 'graph' in data.lower() or 'synthetic' in data.lower():
+                categories['Graph Classification'].append(output)
+
+        # Generate markdown content
+        lines = [
+            "# Script Test Results",
+            "",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Total Tests**: {len(self.successes)}",
+            f"**Passed**: {len(self.successes)}",
+            f"**Failed**: {len(self.failures)}",
+            "",
+            "---",
+            "",
+            "## Test Settings",
+            "",
+            "All tests run with minimal settings for fast validation:",
+            "- `debug_mode`: true",
+            "- `debug_limit`: 50 samples",
+            "- `epochs_per_task`: 2",
+            "- `n_task`: 2",
+            "- `arch_search_max_iter`: 1",
+            "",
+            "---",
+            "",
+        ]
+
+        # Add each category
+        for category_name, outputs in categories.items():
+            if not outputs:
+                continue
+
+            lines.extend([
+                f"## {category_name}",
+                "",
+            ])
+
+            for output in outputs:
+                lines.extend(self._format_training_output(output))
+
+        # Add failures section if any
+        if self.failures:
+            lines.extend([
+                "---",
+                "",
+                "## Failed Tests",
+                "",
+            ])
+            for name, path, error in self.failures:
+                lines.extend([
+                    f"### {name}",
+                    "",
+                    f"**Config**: `{path}`",
+                    "",
+                    f"**Error**: `{type(error).__name__}`",
+                    "",
+                    "```",
+                    str(error),
+                    "```",
+                    "",
+                ])
+
+        # Write to file
+        output_file = Path(__file__).parent.parent / output_path
+        with open(output_file, 'w') as f:
+            f.write('\n'.join(lines))
+
+        return str(output_file)
+
+    def _format_training_output(self, output: Dict[str, Any]) -> List[str]:
+        """Format a single training output for markdown.
+
+        Added by Claude: Create a nicely formatted section for each test.
+        """
+        config = output['config']
+        metrics = output['record_dict']
+
+        lines = [
+            f"### {output['config_name']}",
+            "",
+            "**Configuration**:",
+            "```json",
+            json.dumps({
+                'data': config['data'],
+                'prob': config['prob'],
+                'network': config['network'],
+                'n_task': config['n_task'],
+                'epochs_per_task': config['epochs_per_task'],
+                'awb_enabled': config['awb_enabled'],
+            }, indent=2),
+            "```",
+            "",
+        ]
+
+        # Add metrics if available
+        if metrics:
+            lines.extend([
+                "**Training Results**:",
+                "",
+            ])
+
+            if 'task_id' in metrics:
+                lines.append(f"- **Final Task**: {metrics['task_id']}")
+
+            if 'total_iterations' in metrics:
+                lines.append(f"- **Total Iterations**: {metrics['total_iterations']}")
+
+            if 'final_losses' in metrics:
+                losses = metrics['final_losses']
+                lines.extend([
+                    "- **Final Losses**:",
+                    f"  - H (Hamiltonian): {losses.get('H', 'N/A')}",
+                    f"  - V (Experience): {losses.get('V', 'N/A')}",
+                    f"  - dV (Regularization): {losses.get('dV', 'N/A')}",
+                ])
+
+            if 'final_train_metric' in metrics:
+                lines.append(f"- **Final Train Metric**: {metrics['final_train_metric']}")
+
+            if 'final_test_metric' in metrics:
+                lines.append(f"- **Final Test Metric**: {metrics['final_test_metric']}")
+
+            lines.append("")
+
+        lines.extend([
+            "**Status**: ✅ Passed",
+            "",
+            "---",
+            "",
+        ])
+
+        return lines
 
 
 @pytest.fixture(scope="session")
@@ -268,6 +493,14 @@ class TestSummary:
         """
         summary = test_runner.get_summary()
         print(summary)
+
+        # Added by Claude: Generate markdown report with training outputs
+        if test_runner.training_outputs:
+            try:
+                report_path = test_runner.generate_markdown_report()
+                print(f"\n✓ Training outputs saved to: {report_path}")
+            except Exception as e:
+                print(f"\n⚠ Warning: Failed to generate markdown report: {e}")
 
         # If there were failures, fail this test with the summary
         if test_runner.failures:

@@ -49,6 +49,44 @@ def get_graph_transforms():
 class TrainingLoopsMixin:
     """Mixin class containing training loop methods for continual learning."""
 
+    def _clip_gradients(self, grads, max_norm=None):
+        """Clip gradients by global norm.
+
+        Added by Claude: Following Pascanu et al. (2013) recommendations for
+        gradient clipping in recurrent networks, applicable to continual learning
+        with potentially unstable gradients.
+
+        Reference:
+        - Pascanu et al., "On the difficulty of training recurrent neural networks",
+          ICML 2013
+
+        Args:
+            grads: PyTree of gradients
+            max_norm: Maximum gradient norm (None = no clipping)
+
+        Returns:
+            Tuple of (clipped_grads, global_norm, was_clipped)
+        """
+        if max_norm is None or max_norm <= 0:
+            # No clipping
+            grad_leaves = jax.tree_util.tree_leaves(grads)
+            global_norm = jnp.sqrt(sum([jnp.sum(g**2) for g in grad_leaves]))
+            return grads, global_norm, False
+
+        # Compute global norm
+        grad_leaves = jax.tree_util.tree_leaves(grads)
+        global_norm = jnp.sqrt(sum([jnp.sum(g**2) for g in grad_leaves]))
+
+        # Compute clipping coefficient
+        clip_coef = max_norm / (global_norm + 1e-6)
+        clip_coef = jnp.minimum(clip_coef, 1.0)
+
+        # Apply clipping
+        clipped_grads = jax.tree_map(lambda g: g * clip_coef, grads)
+        was_clipped = global_norm > max_norm
+
+        return clipped_grads, global_norm, was_clipped
+
     def _compute_metrics_on_sampled_batches(self, params, static, loader,
                                             num_batches=10, problem_type='vectors',
                                             notABTrain=True, transforms=None):
@@ -230,6 +268,12 @@ class TrainingLoopsMixin:
         # Added by Claude: Get gradient combination weights from config
         # [alpha, beta, gamma] for [current_task, experience_replay, hamiltonian_regularization]
         grad_weights = config.get("grad_weights", None)  # None uses defaults in hamiltonian.py
+
+        # Added by Claude: Get dV normalization and gradient clipping settings
+        normalize_dV = config.get("normalize_dV", True)  # Default: enabled
+        dV_scale = config.get("dV_scale_factor", 1.0)  # Default: no extra scaling
+        gradient_clip_norm = config.get("gradient_clip_norm", None)  # Default: no clipping
+
         pbar = tqdm(range(n_iter), dynamic_ncols=True)
 
         # Select Hamiltonian function based on problem/loss type
@@ -285,8 +329,11 @@ class TrainingLoopsMixin:
                     delta_x = jnp.array(np_.random.normal(0, var_x, exp_x.shape))
                     data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
-                # Compute Hamiltonian gradient (with configurable gradient weights)
-                grad, losses = hamiltonian_fn(params, data, notABTrain, grad_weights=grad_weights)
+                # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
+                grad, losses = hamiltonian_fn(params, data, notABTrain,
+                                             grad_weights=grad_weights,
+                                             normalize_dV=normalize_dV,
+                                             dV_scale=dV_scale)
 
                 # Unpack losses
                 if problem_type == 'graph':
@@ -295,11 +342,8 @@ class TrainingLoopsMixin:
                 else:
                     (H, V, dV, dV_dtheta, dV_dx) = losses
 
-                # Compute gradient norm
-                grad_leaves = jax.tree_util.tree_leaves(grad)
-                grad_norm = jnp.sqrt(
-                    sum([jnp.linalg.norm(g)**2 for g in grad_leaves]) / max(len(grad_leaves), 1)
-                )
+                # Added by Claude: Apply gradient clipping if enabled
+                grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
                 # Update parameters
                 updates, opt_state = optim.update(grad, opt_state, params)
