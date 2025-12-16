@@ -34,6 +34,12 @@ dependencies = [
     "scikit-learn>=1.0.0",
 ]
 
+# NOTE: JAX and PyTorch are NOT included in dependencies above
+# They require special CUDA-aware installation for GPU support
+# Use polaris_run/setup_cuda.sh or install manually:
+#   JAX (GPU): pip install jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+#   PyTorch (CPU for data loading): pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
 [project.optional-dependencies]
 # Graph neural networks
 graph = [
@@ -52,7 +58,7 @@ dev = [
     "isort>=5.10.0",
     "mypy>=1.0.0",
 ]
-# All extras (for local dev - requires manual CUDA setup)
+# All extras (excludes torch/jax - install separately with CUDA support)
 all = [
     "cl-framework[graph,plotting,dev]",
 ]
