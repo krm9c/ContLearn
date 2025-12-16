@@ -25,9 +25,14 @@ from ..core.awb import (
 )
 
 from ..config.constants import (
-    DEFAULT_OPTIMIZER, 
-    DEFAULT_LR, 
-    DEFAULT_WEIGHT_DECAY)
+    DEFAULT_OPTIMIZER,
+    DEFAULT_LR,
+    DEFAULT_WEIGHT_DECAY,
+    DEFAULT_AWB_V_LR_FACTOR,
+    DEFAULT_AWB_V_WARMUP_EPOCHS,
+    DEFAULT_AWB_TASK_LR_FACTOR,
+    DEFAULT_AWB_TASK_WARMUP_EPOCHS,
+)
 
 # ============================================================================
 # Model Architecture Utilities (Added by Claude)
@@ -577,7 +582,12 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             # Recombine model
             model = eqx.combine(params, static)
 
+            # Added by Claude: Initialize task recording
+            arch_info = get_model_architecture(model)
+            trainer.initialize_task(record_dict, task_id, arch_info)
+
             # Train with standard partition
+            global_iter_offset = task_id * epochs_per_task
             params, static, opt_state, record_dict = trainer.train__CL(
                 train__=(trainloader, exploader, valloader, testloader),
                 params=params,
@@ -590,18 +600,37 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 record_dict=record_dict,
                 notABTrain=True,
                 problem_type=problem_type,
-                loss_type=loss_type
+                loss_type=loss_type,
+                phase='main',
+                record_training=True,
+                global_iteration_offset=global_iter_offset
             )
+
+            # Added by Claude: Update phase info
+            record_dict['tasks'][task_id]['phase_info'] = {
+                'type': 'standard',
+                'total_epochs': epochs_per_task
+            }
 
             # Added by Claude: Track architecture for this task
             model_combined = eqx.combine(params, static)
+
+            # Extract final loss from main_training (last V value recorded)
+            main_training = record_dict['tasks'][task_id]['main_training']
+            optimal_loss = main_training['V'][-1] if main_training['V'] else None
+
+            # Get previous task's architecture if it exists
+            prev_arch = None
+            if task_id > 0 and (task_id - 1) in record_dict['architecture_history']:
+                prev_arch = record_dict['architecture_history'][task_id - 1]['final_arch']
+
             record_dict['architecture_history'][task_id] = {
                 'task_id': task_id,
-                'original_arch': record_dict['architecture_history'][task_id - 1]['final_arch'] if task_id > 0 else None,
+                'original_arch': prev_arch,
                 'searched_candidates': [],
                 'final_arch': get_model_architecture(model_combined),
                 'preliminary_loss': None,
-                'optimal_loss': compute_avg_loss(record_dict['iterations'], task_id, epochs_per_task),
+                'optimal_loss': optimal_loss,
                 'arch_changed': False,
                 'change_reason': 'baseline_task' if task_id == 0 else 'awb_disabled',
                 'search_time': 0.0,
@@ -614,30 +643,100 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             # AWB 5-step pipeline for tasks 1+
             print(f"AWB pipeline (lr={task_lr:.6f})")
 
-            # STEP 1: Preliminary training
+            # Added by Claude: Initialize task recording
+            model = eqx.combine(params, static)
+            arch_info = get_model_architecture(model)
+            trainer.initialize_task(record_dict, task_id, arch_info)
+
+            # Added by Claude: Task transition warmup to reduce loss spike between tasks
+            task_lr_factor = config.get('awb_task_lr_factor', DEFAULT_AWB_TASK_LR_FACTOR)
+            task_warmup_epochs = config.get('awb_task_warmup_epochs', DEFAULT_AWB_TASK_WARMUP_EPOCHS)
+            base_lr = config.get('lr', DEFAULT_LR)
+            warmup_lr = base_lr * task_lr_factor
+
+            # STEP 1: Preliminary training (with optional warmup)
             awb_prelim_epochs = config.get('awb_preliminary_epochs', 50)
             print(f"  Step 1: Preliminary training ({awb_prelim_epochs} epochs)")
 
-            model = eqx.combine(params, static)
-            params, static, opt_state, record_dict = trainer.train__CL(
-                train__=(trainloader, exploader, valloader, testloader),
-                params=params,
-                static=static,
-                opt_state=opt_state,
-                optim=optim,
-                n_iter=awb_prelim_epochs,
-                task_id=task_id,
-                config=config,
-                record_dict=record_dict,
-                notABTrain=True,
-                problem_type=problem_type,
-                loss_type=loss_type
-            )
+            # Phase 1a: Warmup with low LR at task transition
+            if task_warmup_epochs > 0:
+                print(f"    Task warmup: {task_warmup_epochs} epochs at LR={warmup_lr:.2e}")
+                optim_warmup = create_optimizer_with_lr(config, warmup_lr)
+                opt_state = optim_warmup.init(params)
+
+                warmup_iters = min(task_warmup_epochs, awb_prelim_epochs)
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params,
+                    static=static,
+                    opt_state=opt_state,
+                    optim=optim_warmup,
+                    n_iter=warmup_iters,
+                    task_id=task_id,
+                    config=config,
+                    record_dict=record_dict,
+                    notABTrain=True,
+                    problem_type=problem_type,
+                    loss_type=loss_type,
+                    phase='preliminary',
+                    record_training=True,
+                    global_iteration_offset=0
+                )
+                remaining_prelim = awb_prelim_epochs
+                # Phase 1b: Continue with full LR
+                if remaining_prelim > 0:
+                    print(f"    Full LR: {remaining_prelim} epochs at LR={base_lr:.2e}")
+                    opt_state = update_learning_rate(opt_state, base_lr)
+                    params, static, opt_state, record_dict = trainer.train__CL(
+                        train__=(trainloader, exploader, valloader, testloader),
+                        params=params,
+                        static=static,
+                        opt_state=opt_state,
+                        optim=optim_warmup,
+                        n_iter=remaining_prelim,
+                        task_id=task_id,
+                        config=config,
+                        record_dict=record_dict,
+                        notABTrain=True,
+                        problem_type=problem_type,
+                        loss_type=loss_type,
+                        phase='preliminary',
+                        record_training=True,
+                        global_iteration_offset=0
+                    )
+            else:
+                # No warmup, run all preliminary epochs at full LR
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params,
+                    static=static,
+                    opt_state=opt_state,
+                    optim=optim,
+                    n_iter=awb_prelim_epochs,
+                    task_id=task_id,
+                    config=config,
+                    record_dict=record_dict,
+                    notABTrain=True,
+                    problem_type=problem_type,
+                    loss_type=loss_type,
+                    phase='preliminary',
+                    record_training=True,
+                    global_iteration_offset=0
+                )
 
             # STEP 2: Decide if architecture change needed
-            trainWLoss = compute_avg_loss(record_dict['iterations'], task_id, awb_prelim_epochs)
+            # Added by Claude: Use task_id=0 since preliminary training uses global_iteration_offset=0
+            trainWLoss = compute_avg_loss(record_dict['iterations'], task_id=0, epochs=awb_prelim_epochs)
             # Added by Claude: Get previous task's optimal loss (for task 1, this is task 0)
-            end_last = record_dict['architecture_history'][task_id - 1]['optimal_loss']
+            # Handle case where previous task's optimal_loss might not exist
+            if (task_id - 1) in record_dict['architecture_history']:
+                end_last = record_dict['architecture_history'][task_id - 1].get('optimal_loss')
+                if end_last is None:
+                    # Fallback: use compute_avg_loss on previous task
+                    end_last = compute_avg_loss(record_dict['iterations'], task_id - 1, epochs_per_task)
+            else:
+                # Should not happen, but provide fallback
+                end_last = trainWLoss
 
             change_arch = should_change_arch(trainWLoss, end_last)
             print(f"  Step 2: Architecture change decision: {change_arch}")
@@ -654,7 +753,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 'change_reason': None,
             }
 
-            if change_arch:
+            if True:
                 print("  ARCHITECTURE CHANGE TRIGGERED!")
                 history_entry['change_reason'] = 'should_change_arch=True'
 
@@ -737,6 +836,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     awb_ab_epochs = config.get('awb_ab_training_epochs', 50)
                     print(f"  Step 3b: Train A/B matrices ({awb_ab_epochs} epochs)")
 
+                    # Added by Claude: Initialize AB training recording
+                    trainer.initialize_ab_training(record_dict, task_id)
+
                     diff_model, static_model = partition_model_for_AB_training(model)
                     # Added by Claude: Use inject_hyperparams for LR scheduling support
                     ab_optim = create_optimizer(config)
@@ -753,11 +855,15 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                         record_dict=record_dict,
                         notABTrain=False,
                         problem_type=problem_type,
-                        loss_type=loss_type
+                        loss_type=loss_type,
+                        phase='ab',  # Added by Claude: AB training phase
+                        record_training=True,  # Added by Claude: Record AB training
+                        global_iteration_offset=0  # Added by Claude: Reset for AB phase
                     )
 
                     # Record A/B training loss
-                    ab_loss = compute_avg_loss(record_dict['iterations'], task_id, awb_ab_epochs)
+                    # Added by Claude: Use task_id=0 for AB training since global_iteration_offset=0
+                    ab_loss = compute_avg_loss(record_dict['iterations'], task_id=0, epochs=awb_ab_epochs)
                     history_entry['ab_training_loss'] = ab_loss
 
                     # STEP 4: Compute V = A @ W @ B.T
@@ -788,30 +894,76 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                         raise ValueError(f"Unknown network type for AWB V transformation: {network}")
 
                     # STEP 5: Train V with A/B frozen
-                    remaining_epochs = epochs_per_task 
+                    # Added by Claude: Use warmup with low LR to reduce loss spike after V transformation
+                    v_lr_factor = config.get('awb_v_lr_factor', DEFAULT_AWB_V_LR_FACTOR)
+                    v_warmup_epochs = config.get('awb_v_warmup_epochs', DEFAULT_AWB_V_WARMUP_EPOCHS)
+                    base_lr = config.get('lr', DEFAULT_LR)
+                    warmup_lr = base_lr * v_lr_factor
+
+                    remaining_epochs = epochs_per_task
                     print(f"  Step 5: Train V with A/B frozen ({remaining_epochs} epochs)")
+                    print(f"    Warmup: {v_warmup_epochs} epochs at LR={warmup_lr:.2e}, then LR={base_lr:.2e}")
 
                     params, static = partition_model_for_standard_training(model)
-                    optim = create_optimizer(config)
-                    opt_state = optim.init(params)
 
-                    params, static, opt_state, record_dict = trainer.train__CL(
-                        train__=(trainloader, exploader, valloader, testloader),
-                        params=params,
-                        static=static,
-                        opt_state=opt_state,
-                        optim=optim,
-                        n_iter=remaining_epochs,
-                        task_id=task_id,
-                        config=config,
-                        record_dict=record_dict,
-                        notABTrain=True,
-                        problem_type=problem_type,
-                        loss_type=loss_type
-                    )
+                    # Phase 1: Warmup with low LR
+                    if v_warmup_epochs > 0:
+                        optim_warmup = create_optimizer_with_lr(config, warmup_lr)
+                        opt_state = optim_warmup.init(params)
+
+                        warmup_iters = min(v_warmup_epochs, remaining_epochs)
+                        global_iter_offset = task_id * epochs_per_task
+                        params, static, opt_state, record_dict = trainer.train__CL(
+                            train__=(trainloader, exploader, valloader, testloader),
+                            params=params,
+                            static=static,
+                            opt_state=opt_state,
+                            optim=optim_warmup,
+                            n_iter=warmup_iters,
+                            task_id=task_id,
+                            config=config,
+                            record_dict=record_dict,
+                            notABTrain=True,
+                            problem_type=problem_type,
+                            loss_type=loss_type,
+                            phase='main',
+                            record_training=True,
+                            global_iteration_offset=global_iter_offset
+                        )
+                        remaining_epochs -= 0
+
+                    # Phase 2: Continue with full LR (preserves optimizer momentum)
+                    if remaining_epochs > 0:
+                        if v_warmup_epochs > 0:
+                            # Update LR to full value while preserving optimizer state
+                            opt_state = update_learning_rate(opt_state, base_lr)
+                            optim_full = optim_warmup.init(opt_state)  # Reuse same optimizer with updated LR
+                        else:
+                            # No warmup phase, create fresh optimizer with full LR
+                            optim_full = create_optimizer(config)
+                            opt_state = optim_full.init(params)
+                            global_iter_offset = task_id * epochs_per_task
+
+                        params, static, opt_state, record_dict = trainer.train__CL(
+                            train__=(trainloader, exploader, valloader, testloader),
+                            params=params,
+                            static=static,
+                            opt_state=opt_state,
+                            optim=optim_full,
+                            n_iter=remaining_epochs,
+                            task_id=task_id,
+                            config=config,
+                            record_dict=record_dict,
+                            notABTrain=True,
+                            problem_type=problem_type,
+                            loss_type=loss_type,
+                            phase='main',
+                            record_training=True,
+                            global_iteration_offset=global_iter_offset
+                        )
 
                     # Record final optimal loss and architecture
-                    optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
+                    optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, epochs_per_task)
                     history_entry['optimal_loss'] = optimal_loss
                     history_entry['final_arch'] = get_model_architecture(eqx.combine(params, static))
 
@@ -826,6 +978,15 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     if remaining_epochs > 0:
                         print(f"    Architecture search found same architecture, continuing normal training for {remaining_epochs} epochs")
 
+                        # Added by Claude: Reinitialize optimizer state to match current params structure
+                        # This is needed because preliminary training may have used a different optimizer
+                        opt_state = optim.init(params)
+                        opt_state = update_learning_rate(opt_state, task_lr)
+
+                        # Added by Claude: Compute global iteration offset for proper recording
+                        # After preliminary training, we continue from the expected task offset
+                        global_iter_offset = task_id * epochs_per_task
+
                         params, static, opt_state, record_dict = trainer.train__CL(
                             train__=(trainloader, exploader, valloader, testloader),
                             params=params,
@@ -838,7 +999,10 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                             record_dict=record_dict,
                             notABTrain=True,
                             problem_type=problem_type,
-                            loss_type=loss_type
+                            loss_type=loss_type,
+                            phase='main',
+                            record_training=True,
+                            global_iteration_offset=global_iter_offset
                         )
 
                         optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
@@ -862,6 +1026,15 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 if remaining_epochs > 0:
                     print(f"    Continuing training for {remaining_epochs} remaining epochs")
 
+                    # Added by Claude: Reinitialize optimizer state to match current params structure
+                    # This is needed because preliminary training may have used a different optimizer
+                    # (optim_warmup) which creates incompatible state with the original optim
+                    opt_state = optim.init(params)
+                    opt_state = update_learning_rate(opt_state, task_lr)
+
+                    # Added by Claude: Compute global iteration offset for proper recording
+                    global_iter_offset = task_id * epochs_per_task
+
                     params, static, opt_state, record_dict = trainer.train__CL(
                         train__=(trainloader, exploader, valloader, testloader),
                         params=params,
@@ -874,7 +1047,10 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                         record_dict=record_dict,
                         notABTrain=True,
                         problem_type=problem_type,
-                        loss_type=loss_type
+                        loss_type=loss_type,
+                        phase='main',
+                        record_training=True,
+                        global_iteration_offset=global_iter_offset
                     )
 
                     optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
@@ -917,7 +1093,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
             if entry.get('searched_candidates'):
                 print(f"  Selected Architecture:")
-                for i, cand in enumerate(entry['searched_candidates']):
+                for cand in entry['searched_candidates']:
                     print(f"    {cand['arch']} → loss={cand['loss']:.6f}")
 
             if 'search_time' in entry and entry['search_time'] > 0:

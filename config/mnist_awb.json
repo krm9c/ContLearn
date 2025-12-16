@@ -3,7 +3,7 @@
 
     "data": "mnist",
 
-    "n_task": 2,
+    "n_task": 10,
     "epochs_per_task": 2,
     "batch_size": 64,
 
@@ -16,9 +16,13 @@
     "awb_ab_training_epochs": 1,
     "awb_ab_warmup_epochs": 1,
     "awb_ab_max_iterations": 1,
+    "awb_v_lr_factor": 0.1,
+    "awb_v_warmup_epochs": 1,
+    "awb_task_lr_factor": 0.1,
+    "awb_task_warmup_epochs": 1,
 
     "__comment_arch_search": "keep this value equal to or greater than epochs_per_task, otherwise, architecture search is trivial because, an architecture initialized from scratch cannot keep up with an architecture that is being trained for epochs_per_task epochs",
-    "arch_search_epochs": 40,
+    "arch_search_epochs": 1,
     "arch_search_lr": 0.001,
     "arch_search_max_iter": 2,
 

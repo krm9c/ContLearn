@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 
 from cl.datasets import SineDataset
 from cl.models import MLP, create_mlp
-from cl.runners import train_model_reg, load_regression_checkpoint
+from cl.runners import train_model
 from cl.core.trainer import Trainer
 
 
@@ -60,64 +60,19 @@ class TestSineRegressionPipeline:
     """Integration tests for sine regression training pipeline."""
 
     def test_basic_training_loop(self, test_sine_config, jax_key, tmp_path):
-        """Test basic training loop execution."""
-        # Setup config with temp output
+        """Test basic training loop execution using generic_runner."""
+        # Added by Claude: Use generic runner's train_model() for end-to-end integration test
         config = test_sine_config.copy()
         config['model_path'] = str(tmp_path / "test_model")
+        config['n_task'] = 1  # Single task for basic test
 
-        # Create dataset
-        dataset = SineDataset(config)
-
-        # Create model
-        # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dataset properties to get correct dimensions from loaded data
-        config['input_size'] = dataset.input_size
-        config['output_size'] = dataset.output_size
-        model = create_mlp(config)
-
-        # Create trainer
-        trainer = Trainer(
-            loss=config['loss'],
-            problem=config['problem'],
-            metric=config['metric']
-        )
-
-        # Initialize recording
-        record_dict = trainer.initialize_record_dict(config, run_id=0)
-
-        # Get data for one task
-        train_loader, exp_loader = dataset.generate_dataset(
-            task_id=0, batch_size=config['batch_size'], phase='training'
-        )
-        test_loader, test_exp_loader = dataset.generate_dataset(
-            task_id=0, batch_size=config['batch_size'], phase='testing'
-        )
-
-        # Setup training
-        import optax
-        params, static = eqx.partition(model, eqx.is_array)
-        optim = optax.adam(config['lr'])
-        opt_state = optim.init(params)
-
-        # Run training
-        params, static, opt_state, record_dict = trainer.train__CL(
-            train__=(train_loader, exp_loader, (test_loader, test_exp_loader), (test_loader, test_exp_loader)),
-            params=params,
-            static=static,
-            opt_state=opt_state,
-            optim=optim,
-            n_iter=config['epochs_per_task'],
-            save_iter=config['save_iter'],
-            task_id=0,
-            config=config,
-            record_dict=record_dict,
-            notABTrain=True,
-            problem_type='vectors',
-            loss_type='regression'
-        )
+        # Run training through generic runner
+        record_dict = train_model(config, run_id=0)
 
         # Verify training completed
         assert len(record_dict['iterations']) > 0
+        assert 0 in record_dict['tasks']
+        assert 'main_training' in record_dict['tasks'][0]
 
     def test_model_saving_and_loading(self, test_sine_config, jax_key, tmp_path):
         """Test model can be saved and loaded correctly."""
@@ -145,56 +100,23 @@ class TestSineRegressionPipeline:
         assert jnp.allclose(output_before, output_after)
 
     def test_multi_task_training(self, test_sine_config, jax_key, tmp_path):
-        """Test training across multiple tasks."""
+        """Test training across multiple tasks using generic_runner."""
+        # Added by Claude: Use generic runner's train_model() for end-to-end integration test
         config = test_sine_config.copy()
         config['model_path'] = str(tmp_path / "test_model")
         config['n_task'] = 2
         config['epochs_per_task'] = 2
-        config['save_iter'] = 1  # Added by Claude: ensure metrics are recorded
+        config['save_iter'] = 1
 
-        dataset = SineDataset(config)
-        # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dataset properties to get correct dimensions from loaded data
-        config['input_size'] = dataset.input_size
-        config['output_size'] = dataset.output_size
-        model = create_mlp(config)
-        trainer = Trainer(loss='mse', problem='vectors', metric='mse')
-
-        import optax
-        params, static = eqx.partition(model, eqx.is_array)
-        optim = optax.adam(config['lr'])
-        opt_state = optim.init(params)
-        record_dict = trainer.initialize_record_dict(config, run_id=0)
-
-        # Train on multiple tasks
-        for task_id in range(config['n_task']):
-            train_loader, exp_loader = dataset.generate_dataset(
-                task_id=task_id, batch_size=config['batch_size'], phase='training'
-            )
-            test_loader, _ = dataset.generate_dataset(
-                task_id=task_id, batch_size=config['batch_size'], phase='testing'
-            )
-
-            params, static, opt_state, record_dict = trainer.train__CL(
-                train__=(train_loader, exp_loader, (test_loader, test_loader), (test_loader, test_loader)),
-                params=params,
-                static=static,
-                opt_state=opt_state,
-                optim=optim,
-                n_iter=config['epochs_per_task'],
-                save_iter=config['save_iter'],
-                task_id=task_id,
-                config=config,
-                record_dict=record_dict,
-                problem_type='vectors',
-                loss_type='regression'
-            )
-
-            # Append to experience replay
-            dataset.append_to_experience(task_id)
+        # Run training through generic runner
+        record_dict = train_model(config, run_id=0)
 
         # Verify multi-task training recorded
         assert len(record_dict['iterations']) > 0
+        assert 0 in record_dict['tasks']
+        assert 1 in record_dict['tasks']
+        assert 'main_training' in record_dict['tasks'][0]
+        assert 'main_training' in record_dict['tasks'][1]
 
 
 class TestExperienceReplayIntegration:
@@ -232,49 +154,31 @@ class TestRecordDictIntegration:
 
     def test_record_dict_structure(self, test_sine_config, jax_key, tmp_path):
         """Test record dict has correct structure after training."""
+        # Added by Claude: Use generic runner's train_model() for end-to-end integration test
         config = test_sine_config.copy()
         config['model_path'] = str(tmp_path / "test_model")
+        config['n_task'] = 1
 
-        dataset = SineDataset(config)
-        # Added by Claude: create_mlp expects input_size/output_size in config dict
-        # Use dataset properties to get correct dimensions from loaded data
-        config['input_size'] = dataset.input_size
-        config['output_size'] = dataset.output_size
-        model = create_mlp(config)
-        trainer = Trainer(loss='mse', problem='vectors', metric='mse')
+        # Run training through generic runner
+        record_dict = train_model(config, run_id=0)
 
-        import optax
-        params, static = eqx.partition(model, eqx.is_array)
-        optim = optax.adam(config['lr'])
-        opt_state = optim.init(params)
-        record_dict = trainer.initialize_record_dict(config, run_id=0)
-
-        train_loader, exp_loader = dataset.generate_dataset(
-            task_id=0, batch_size=config['batch_size'], phase='training'
-        )
-        test_loader, _ = dataset.generate_dataset(
-            task_id=0, batch_size=config['batch_size'], phase='testing'
-        )
-
-        params, static, opt_state, record_dict = trainer.train__CL(
-            train__=(train_loader, exp_loader, (test_loader, test_loader), (test_loader, test_loader)),
-            params=params,
-            static=static,
-            opt_state=opt_state,
-            optim=optim,
-            n_iter=config['epochs_per_task'],
-            save_iter=config['save_iter'],
-            task_id=0,
-            config=config,
-            record_dict=record_dict,
-            problem_type='vectors',
-            loss_type='regression'
-        )
-
-        # Check structure
+        # Check new structure
         assert 'metadata' in record_dict
-        assert 'iterations' in record_dict
+        assert 'iterations' in record_dict  # Backward compatibility
+        assert 'tasks' in record_dict  # New task-based structure
+        assert 'architecture_history' in record_dict
 
+        # Check task structure
+        assert 0 in record_dict['tasks']
+        assert 'main_training' in record_dict['tasks'][0]
+        task_data = record_dict['tasks'][0]['main_training']
+        assert 'iterations' in task_data  # Global iterations
+        assert 'epochs' in task_data      # Within-task epochs
+        assert 'H' in task_data
+        assert 'V' in task_data
+        assert 'train_metric' in task_data
+
+        # Check backward compatibility - iterations dict
         if len(record_dict['iterations']) > 0:
             sample_iter = list(record_dict['iterations'].values())[0]
             assert 'losses' in sample_iter

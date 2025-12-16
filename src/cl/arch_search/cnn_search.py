@@ -41,10 +41,11 @@ from ..config.constants import (
 def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs, config,
                           dataloader_curr, dataloader_exp, test_loader_curr, test_loader_exp,
                           trainer=None):
-    """Architecture search for CNN (BACKWARD COMPATIBLE).
+    """Architecture search for CNN and CNN3D (BACKWARD COMPATIBLE).
 
     # Added by Claude: Now delegates to core.arch_search.search_architecture()
     This is a backward-compatible wrapper that uses the new generic search algorithm.
+    Automatically detects CNN vs CNN3D based on channel_in config.
 
     Args:
         filter_size: Current filter size
@@ -70,24 +71,51 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
     input_size = config.get('input_size', 28)
     channel_in = config.get('channel_in', 1)
 
-    # Calculate feed input size for current filter
-    conv_output = input_size - filter_size + 1
-    pool_output = conv_output // 2
-    feed_input_size = channel_out * pool_output * pool_output
+    # Added by Claude: Detect CNN3D based on channel_in or data type
+    # CNN3D is used for multi-channel images (CIFAR-10/100 with 3 RGB channels)
+    is_cnn3d = (
+        channel_in > 1 or
+        config.get('data', '') in ['cifar10', 'cifar100'] or
+        config.get('network', '') == 'cnn3d'
+    )
+
+    if is_cnn3d:
+        # CNN3D: Two conv layers, need to calculate feed input size differently
+        # First conv: (input_size - filter_size + 1) // 2 after pooling
+        # Second conv: (first_out - filter_size + 1) // 2 after pooling
+        first_conv_out = (input_size - filter_size + 1) // 2
+        second_conv_out = (first_conv_out - filter_size + 1) // 2
+        # Second conv outputs channel_out * 2 channels
+        feed_input_size = (channel_out * 2) * second_conv_out * second_conv_out
+    else:
+        # CNN: Single conv layer
+        conv_output = input_size - filter_size + 1
+        pool_output = conv_output // 2
+        feed_input_size = channel_out * pool_output * pool_output
 
     # Adjust feed_sizes to have correct input dimension
     adjusted_feed_sizes = list(feed_sizes)
     adjusted_feed_sizes[0] = feed_input_size
 
-    # Create reference CNN model for search interface
-    current_model = CNN(
-        key=jax.random.PRNGKey(0),
-        filter_size=filter_size,
-        feed_sizes=adjusted_feed_sizes,
-        input_size=input_size,
-        channel_in=channel_in,
-        channel_out=channel_out,
-    )
+    # Added by Claude: Create appropriate model type based on channel_in
+    if is_cnn3d:
+        current_model = CNN3D(
+            key=jax.random.PRNGKey(0),
+            filter_size=filter_size,
+            feed_sizes=adjusted_feed_sizes,
+            input_size=input_size,
+            channel_in=channel_in,
+            channel_out=channel_out,
+        )
+    else:
+        current_model = CNN(
+            key=jax.random.PRNGKey(0),
+            filter_size=filter_size,
+            feed_sizes=adjusted_feed_sizes,
+            input_size=input_size,
+            channel_in=channel_in,
+            channel_out=channel_out,
+        )
 
     # Baseline architecture: (filter_size, feed_sizes) tuple
     baseline_arch = (filter_size, adjusted_feed_sizes)
@@ -119,141 +147,125 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
 # which properly reads all configuration parameters from config files.
 
 
-def prepABs(model, prev_feed_sizes, prev_filter_size):
+def prepABs(model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter_size):
     """
-    Prepare A and B transformation matrices for CNN architecture search.
+    Prepare A and B transformation matrices for CNN architecture transition.
 
-    When filter size changes, the flattened conv output size (feed_sizes[0]) also changes.
-    This function handles all three cases:
-    1. Both feed hidden layers AND conv filter change
-    2. Only feed hidden layers change (filter stays same)
-    3. Only conv filter changes (feed hidden layers stay same, but feed_sizes[0] changes)
+    The AWB algorithm transforms OLD weights W_old using: A @ W_old @ B.T
+    - A transforms output dimensions: shape (new_out, old_out)
+    - B transforms input dimensions: shape (new_in, old_in)
+
+    W_old stays in the model - we do NOT recreate the model.
 
     Args:
-        model: Current CNN model with new architecture
-        prev_feed_sizes: Previous feed layer sizes
-        prev_filter_size: Previous filter size
+        model: CNN model with OLD weights (W_old)
+        prev_feed_sizes: Previous/old feed layer sizes
+        prev_filter_size: Previous/old filter size
+        new_feed_sizes: New/target feed layer sizes
+        new_filter_size: New/target filter size
 
     Returns:
         Tuple of (A_feed, B_feed, A_conv, B_conv) transformation matrices
     """
-    opt_MLParch = list(model.feed_sizes)  # Added by Claude: Convert to list for comparison
-    opt_filter = model.filter_size
     initializer = jax.nn.initializers.glorot_uniform()
 
-    # Added by Claude: Check if hidden layers changed (indices 1:3), not including feed_sizes[0]
-    # which changes when filter size changes
-    # Convert to lists to ensure proper comparison (in case model.feed_sizes is JAX array)
-    hidden_changed = (list(prev_feed_sizes[1:3]) != list(opt_MLParch[1:3]))
-    filter_changed = (opt_filter != prev_filter_size)
+    # Check what changed
+    hidden_changed = (list(prev_feed_sizes[1:3]) != list(new_feed_sizes[1:3]))
+    filter_changed = (new_filter_size != prev_filter_size)
 
-    if hidden_changed and filter_changed:
-        print("New feed AND conv!!!------------------")
-        # Both changed: need transformation matrices for feed layers
-        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
-        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        # Added by Claude: When filter size changes, model recreated with new size - use identity
-        B_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
-        A_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
-    elif hidden_changed and not filter_changed:
-        print("New FEED ONLY!!!------------------")
-        # Only hidden layers changed: need transformation for feed layers, identity for conv
-        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
-        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        # Set conv A's B's to identity to keep them
-        B_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
-        A_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
+    print(f"  prepABs: filter {prev_filter_size}→{new_filter_size}, "
+          f"feed {prev_feed_sizes}→{new_feed_sizes}")
+
+    # A_conv/B_conv: Transform conv filter from old→new size
+    # A_conv @ W_old @ B_conv.T: (new, old) @ (old, old) @ (old, new) = (new, new)
+    if filter_changed:
+        print(f"  Conv filter changed: A_conv/B_conv shape = ({new_filter_size}, {prev_filter_size})")
+        A_conv = [initializer(jax.random.PRNGKey(5), (new_filter_size, prev_filter_size))
+                  for _ in range(model.channel_out)]
+        B_conv = [initializer(jax.random.PRNGKey(6), (new_filter_size, prev_filter_size))
+                  for _ in range(model.channel_out)]
     else:
-        # Added by Claude: Only filter changed - hidden layers stay same but feed_sizes[0] changes
-        # because the flattened conv output size depends on filter size
-        print("New CONV ONLY!!!------------------")
-        # Added by Claude: When filter size changes, model has been recreated with NEW filter size
-        # Conv weights are already at new size, so use identity matrices (no transformation needed)
-        # A/B training will then learn to transform these fresh weights to perform better
-        B_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
-        A_conv = [jnp.eye(opt_filter, opt_filter) for j in range(0, model.channel_out)]
-        # Added by Claude: For feed layers, hidden layers are unchanged so use identity,
-        # BUT B_feed[0] maps from prev_feed_sizes[0] (old flattened size) to opt_MLParch[0] (new flattened size)
-        # A_feed maps output dimensions, B_feed maps input dimensions
-        # B_feed[i] shape: (new_input_size, old_input_size) for layer i
-        # A_feed[i] shape: (new_output_size, old_output_size) for layer i
-        A_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]  # Output dims unchanged
-        # B_feed[0] needs to transform from prev_feed_sizes[0] to opt_MLParch[0]
-        B_feed = []
-        B_feed.append(initializer(jax.random.PRNGKey(10), (opt_MLParch[0], prev_feed_sizes[0])))
-        # Rest of B_feed are identity (hidden layer input dims unchanged)
-        for x in prev_feed_sizes[1:-1]:
-            B_feed.append(jnp.eye(x, x))
+        # No filter change - identity matrices
+        A_conv = [jnp.eye(prev_filter_size) for _ in range(model.channel_out)]
+        B_conv = [jnp.eye(prev_filter_size) for _ in range(model.channel_out)]
+
+    # A_feed/B_feed: Transform feed layers from old→new dimensions
+    # A_feed[i] shape: (new_out, old_out) for layer i
+    # B_feed[i] shape: (new_in, old_in) for layer i
+    # A_feed @ W_old @ B_feed.T: (new_out, old_out) @ (old_out, old_in) @ (old_in, new_in) = (new_out, new_in)
+
+    # A_feed transforms output dimensions (indices 1: of feed_sizes)
+    A_feed = [initializer(jax.random.PRNGKey(7), (new_out, old_out))
+              for old_out, new_out in zip(prev_feed_sizes[1:], new_feed_sizes[1:])]
+
+    # B_feed transforms input dimensions (indices :-1 of feed_sizes)
+    B_feed = [initializer(jax.random.PRNGKey(8), (new_in, old_in))
+              for old_in, new_in in zip(prev_feed_sizes[:-1], new_feed_sizes[:-1])]
 
     return A_feed, B_feed, A_conv, B_conv
 
 
-def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size):
+def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter_size):
     """
-    Prepare A and B transformation matrices for CNN3D architecture search.
-    Handles multi-channel conv layers (A_conv1, B_conv1, A_conv2, B_conv2).
+    Prepare A and B transformation matrices for CNN3D architecture transition.
 
-    When filter size changes, the flattened conv output size (feed_sizes[0]) also changes.
-    This function handles all three cases:
-    1. Both feed hidden layers AND conv filter change
-    2. Only feed hidden layers change (filter stays same)
-    3. Only conv filter changes (feed hidden layers stay same, but feed_sizes[0] changes)
+    The AWB algorithm transforms OLD weights W_old using: A @ W_old @ B.T
+    - A transforms output dimensions: shape (new_out, old_out)
+    - B transforms input dimensions: shape (new_in, old_in)
+
+    W_old stays in the model - we do NOT recreate the model.
+    CNN3D has two conv layers, so we need A/B for both conv1 and conv2.
 
     Args:
-        model: Current CNN3D model with new architecture
-        prev_feed_sizes: Previous feed layer sizes
-        prev_filter_size: Previous filter size
+        model: CNN3D model with OLD weights (W_old)
+        prev_feed_sizes: Previous/old feed layer sizes
+        prev_filter_size: Previous/old filter size
+        new_feed_sizes: New/target feed layer sizes
+        new_filter_size: New/target filter size
 
     Returns:
         Tuple of (A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2) transformation matrices
     """
-    opt_MLParch = list(model.feed_sizes)  # Added by Claude: Convert to list for comparison
-    opt_filter = model.filter_size
     initializer = jax.nn.initializers.glorot_uniform()
 
-    # Added by Claude: Check if hidden layers changed (indices 1:3), not including feed_sizes[0]
-    # Convert to lists to ensure proper comparison (in case model.feed_sizes is JAX array)
-    hidden_changed = (list(prev_feed_sizes[1:3]) != list(opt_MLParch[1:3]))
-    filter_changed = (opt_filter != prev_filter_size)
+    # Check what changed
+    hidden_changed = (list(prev_feed_sizes[1:3]) != list(new_feed_sizes[1:3]))
+    filter_changed = (new_filter_size != prev_filter_size)
 
-    if hidden_changed and filter_changed:
-        print("CNN3D: New feed AND conv!!!------------------")
-        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
-        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        # Added by Claude: When filter size changes, model recreated with new size - use identity
-        A_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        B_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        A_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        B_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+    print(f"  prepABs_CNN3D: filter {prev_filter_size}→{new_filter_size}, "
+          f"feed {prev_feed_sizes}→{new_feed_sizes}")
 
-    elif hidden_changed and not filter_changed:
-        print("CNN3D: New FEED ONLY!!!------------------")
-        A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[1:], opt_MLParch[1:])]
-        B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(prev_feed_sizes[:-1], opt_MLParch[:-1])]
-        # Set conv A's B's to identity to keep them
-        A_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        B_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        A_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        B_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-
+    # A_conv/B_conv: Transform conv filter from old→new size
+    # Shape: (new_filter, old_filter) to transform W_old of shape (old_filter, old_filter)
+    if filter_changed:
+        print(f"  Conv filter changed: A_conv/B_conv shape = ({new_filter_size}, {prev_filter_size})")
+        # Conv1: channel_out filters, each with channel_in input channels
+        A_conv1 = [[initializer(jax.random.PRNGKey(5), (new_filter_size, prev_filter_size))
+                    for c in range(model.channel_in)] for j in range(model.channel_out)]
+        B_conv1 = [[initializer(jax.random.PRNGKey(6), (new_filter_size, prev_filter_size))
+                    for c in range(model.channel_in)] for j in range(model.channel_out)]
+        # Conv2: channel_out*2 filters, each with channel_out input channels
+        A_conv2 = [[initializer(jax.random.PRNGKey(7), (new_filter_size, prev_filter_size))
+                    for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        B_conv2 = [[initializer(jax.random.PRNGKey(8), (new_filter_size, prev_filter_size))
+                    for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
     else:
-        # Added by Claude: Only filter changed - hidden layers stay same but feed_sizes[0] changes
-        print("CNN3D: New CONV ONLY!!!------------------")
-        # Added by Claude: When filter size changes, model has been recreated with NEW filter size
-        # Conv weights are already at new size, so use identity matrices (no transformation needed)
-        # A/B training will then learn to transform these fresh weights to perform better
-        A_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        B_conv1 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        A_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        B_conv2 = [[jnp.eye(opt_filter, opt_filter) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        # Added by Claude: For feed layers, hidden layers are unchanged so use identity,
-        # BUT B_feed[0] maps from prev_feed_sizes[0] (old flattened size) to opt_MLParch[0] (new flattened size)
-        A_feed = [jnp.eye(x, x) for x in prev_feed_sizes[1:]]  # Output dims unchanged
-        # B_feed[0] needs to transform from prev_feed_sizes[0] to opt_MLParch[0]
-        B_feed = []
-        B_feed.append(initializer(jax.random.PRNGKey(10), (opt_MLParch[0], prev_feed_sizes[0])))
-        # Rest of B_feed are identity (hidden layer input dims unchanged)
-        for x in prev_feed_sizes[1:-1]:
-            B_feed.append(jnp.eye(x, x))
+        # No filter change - identity matrices
+        A_conv1 = [[jnp.eye(prev_filter_size) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        B_conv1 = [[jnp.eye(prev_filter_size) for c in range(model.channel_in)] for j in range(model.channel_out)]
+        A_conv2 = [[jnp.eye(prev_filter_size) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        B_conv2 = [[jnp.eye(prev_filter_size) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+
+    # A_feed/B_feed: Transform feed layers from old→new dimensions
+    # A_feed[i] shape: (new_out, old_out) for layer i
+    # B_feed[i] shape: (new_in, old_in) for layer i
+
+    # A_feed transforms output dimensions (indices 1: of feed_sizes)
+    A_feed = [initializer(jax.random.PRNGKey(9), (new_out, old_out))
+              for old_out, new_out in zip(prev_feed_sizes[1:], new_feed_sizes[1:])]
+
+    # B_feed transforms input dimensions (indices :-1 of feed_sizes)
+    B_feed = [initializer(jax.random.PRNGKey(10), (new_in, old_in))
+              for old_in, new_in in zip(prev_feed_sizes[:-1], new_feed_sizes[:-1])]
 
     return A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2

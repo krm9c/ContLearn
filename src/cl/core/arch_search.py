@@ -478,6 +478,8 @@ def search_architecture(
             record_dict = trainer.initialize_record_dict(config, run_id=0)
 
             # GENERIC: Train candidate
+            # Added by Claude: Disable task-based recording during architecture search
+            # (only use old iterations dict for loss computation)
             params, static, opt_state, record_dict = trainer.train__CL(
                 train_data,
                 params,
@@ -490,21 +492,26 @@ def search_architecture(
                 config=train_config,
                 record_dict=record_dict,
                 problem_type=problem_type,
-                loss_type=loss_type
+                loss_type=loss_type,
+                phase='preliminary',
+                record_training=True,  # Still record to iterations dict for compute_avg_loss
+                global_iteration_offset=0
             )
 
             # GENERIC: Extract loss
+            # Added by Claude: Use task_id=0 for search since each candidate trains with fresh record_dict
+            # and global_iteration_offset=0, so iterations are 0, save_iter, 2*save_iter, ...
             candidate_loss = compute_search_loss(
                 record_dict,
-                task_id,
-                search_epochs,
+                task_id=0,  # Search context uses 0-based iterations
+                epochs=search_epochs,
                 window=averaging_window
             )
 
             # Skip if same as baseline (already tested)
-            if candidate_spec == baseline_arch:
+            if cand_id == 0:
                 best_loss = candidate_loss
-                # print("I found my baseline")
+                print("I found my baseline", best_loss)
             # Track best architecture
             elif candidate_loss < best_loss:
                 best_loss = candidate_loss

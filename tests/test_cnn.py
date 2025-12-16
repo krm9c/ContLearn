@@ -383,9 +383,10 @@ class TestCNNAWBPartitioning:
 
         params, static = partition_for_standard_training_cnn(model)
 
-        # A/B should be frozen (None in params, values in static)
-        assert params.A_conv is None
-        assert params.B_conv is None
+        # A/B should be frozen (list of None in params to preserve PyTree structure, values in static)
+        # The list structure is preserved to ensure optimizer state matches gradient structure
+        assert all(x is None for x in params.A_conv)
+        assert all(x is None for x in params.B_conv)
         assert static.A_conv is not None
         assert static.B_conv is not None
 
@@ -423,11 +424,12 @@ class TestCNNAWBPartitioning:
 
         params, static = partition_for_standard_training_cnn3d(model)
 
-        # All A/B should be frozen
-        assert params.A_conv1 is None
-        assert params.B_conv1 is None
-        assert params.A_conv2 is None
-        assert params.B_conv2 is None
+        # All A/B should be frozen (nested lists of None in params to preserve PyTree structure)
+        # The nested list structure is preserved to ensure optimizer state matches gradient structure
+        assert all(all(x is None for x in row) for row in params.A_conv1)
+        assert all(all(x is None for x in row) for row in params.B_conv1)
+        assert all(all(x is None for x in row) for row in params.A_conv2)
+        assert all(all(x is None for x in row) for row in params.B_conv2)
         assert static.A_conv1 is not None
         assert static.B_conv1 is not None
 
@@ -475,46 +477,63 @@ class TestCNNAWBPartitioning:
 
 
 class TestPrepABs:
-    """Tests for prepABs functions that prepare A/B matrices for architecture transitions."""
+    """Tests for prepABs functions that prepare A/B matrices for architecture transitions.
+
+    Key concept: W_old is PRESERVED in the model. A/B matrices transform W_old to new dimensions.
+    - A transforms output dimensions: shape (new_out, old_out)
+    - B transforms input dimensions: shape (new_in, old_in)
+    - Result: A @ W_old @ B.T = (new_out, new_in)
+    """
 
     def test_prepABs_new_filter_only(self, jax_key, cnn_config):
-        """Test prepABs for CNN when only filter size changes."""
+        """Test prepABs for CNN when only filter size changes.
+
+        Model has OLD filter size (4). We want to transform to NEW filter size (5).
+        A_conv/B_conv should be (5, 4) to transform (4, 4) weights to (5, 5).
+        """
+        # Model with OLD architecture - W_old weights are here
         model = CNN(
             key=jax_key,
-            filter_size=4,
-            feed_sizes=[1728, 64, 10],
+            filter_size=4,  # OLD filter size
+            feed_sizes=[1728, 64, 10],  # OLD feed sizes
             input_size=28,
             channel_in=1,
             channel_out=3
         )
 
-        # Same hidden layers, but filter will change
         prev_feed_sizes = [1728, 64, 10]
         prev_filter_size = 4
+        new_filter_size = 5
+        # Calculate new feed_sizes[0] for new filter size
+        conv_out = 28 - new_filter_size + 1  # 24
+        pool_out = conv_out // 2  # 12
+        new_feed_input = 3 * pool_out * pool_out  # 432
+        new_feed_sizes = [new_feed_input, 64, 10]
 
-        # Simulate model with new filter size (which changes feed_sizes[0])
-        new_filter = 5
-        model = eqx.tree_at(lambda x: x.filter_size, model, new_filter)
+        A_feed, B_feed, A_conv, B_conv = prepABs(
+            model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter_size
+        )
 
-        A_feed, B_feed, A_conv, B_conv = prepABs(model, prev_feed_sizes, prev_filter_size)
-
-        # Added by Claude: Conv A/B should be IDENTITY when filter changes
-        # Because model is recreated with new filter size (fresh weights)
+        # A_conv/B_conv should be (new, old) = (5, 4) to transform W_old (4x4) to (5x5)
         assert len(A_conv) == model.channel_out
-        assert A_conv[0].shape == (new_filter, new_filter)  # Identity matrix
-        assert jnp.allclose(A_conv[0], jnp.eye(new_filter, new_filter))
-        assert jnp.allclose(B_conv[0], jnp.eye(new_filter, new_filter))
+        assert A_conv[0].shape == (new_filter_size, prev_filter_size)  # (5, 4)
+        assert B_conv[0].shape == (new_filter_size, prev_filter_size)  # (5, 4)
 
-        # B_feed[0] should be transformation matrix (not identity) due to flattened size change
-        # The rest should be identity
+        # B_feed[0] transforms from old input (1728) to new input (432)
+        assert B_feed[0].shape == (new_feed_input, 1728)
         assert len(B_feed) == len(prev_feed_sizes) - 1
 
     def test_prepABs_new_feed_only(self, jax_key, cnn_config):
-        """Test prepABs for CNN when only feed sizes change."""
+        """Test prepABs for CNN when only feed sizes change (filter unchanged).
+
+        When filter is the same, conv A/B should be identity.
+        Feed A/B should transform from old→new dimensions.
+        """
+        # Model with OLD architecture
         model = CNN(
             key=jax_key,
             filter_size=4,
-            feed_sizes=[1728, 128, 10],  # Changed hidden layer
+            feed_sizes=[1728, 64, 10],  # OLD feed sizes
             input_size=28,
             channel_in=1,
             channel_out=3
@@ -522,22 +541,31 @@ class TestPrepABs:
 
         prev_feed_sizes = [1728, 64, 10]
         prev_filter_size = 4
+        new_feed_sizes = [1728, 128, 10]  # New hidden layer
+        new_filter_size = 4  # Unchanged
 
-        A_feed, B_feed, A_conv, B_conv = prepABs(model, prev_feed_sizes, prev_filter_size)
+        A_feed, B_feed, A_conv, B_conv = prepABs(
+            model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter_size
+        )
 
         # Conv A/B should be identity (filter didn't change)
-        assert jnp.allclose(A_conv[0], jnp.eye(4, 4))
-        assert jnp.allclose(B_conv[0], jnp.eye(4, 4))
+        assert jnp.allclose(A_conv[0], jnp.eye(4))
+        assert jnp.allclose(B_conv[0], jnp.eye(4))
 
-        # Feed A/B should be transformation matrices
-        assert A_feed[0].shape == (128, 64)  # (new_out, old_out)
+        # Feed A/B should be transformation matrices (new_out, old_out)
+        assert A_feed[0].shape == (128, 64)  # Transform layer 1 output: 64→128
 
     def test_prepABs_CNN3D_new_filter_only(self, jax_key, cnn3d_config):
-        """Test prepABs_CNN3D when only filter size changes."""
+        """Test prepABs_CNN3D when only filter size changes.
+
+        Model has OLD filter (3). We want to transform to NEW filter (4).
+        A_conv/B_conv should be (4, 3) to transform (3, 3) weights to (4, 4).
+        """
+        # Model with OLD architecture
         model = CNN3D(
             key=jax_key,
-            filter_size=4,  # Changed from 3
-            feed_sizes=[2304, 256, 10],  # Note: should be recalculated for new filter
+            filter_size=3,  # OLD filter size
+            feed_sizes=[2304, 256, 10],
             input_size=32,
             channel_in=3,
             channel_out=32
@@ -545,24 +573,26 @@ class TestPrepABs:
 
         prev_feed_sizes = [2304, 256, 10]
         prev_filter_size = 3
+        new_filter_size = 4
+        # Calculate new feed_sizes[0] for new filter size
+        # (32 - 4 + 1) // 2 = 14, then (14 - 4 + 1) // 2 = 5
+        # new_feed_input = 32 * 2 * 5 * 5 = 1600
+        new_feed_sizes = [1600, 256, 10]
 
         A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2 = prepABs_CNN3D(
-            model, prev_feed_sizes, prev_filter_size
+            model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter_size
         )
 
-        # Added by Claude: Conv matrices should be IDENTITY when filter changes
-        # Because model is recreated with new filter size (fresh weights)
-        new_filter = model.filter_size
+        # A_conv/B_conv should be (new, old) = (4, 3) to transform W_old (3x3) to (4x4)
         assert len(A_conv1) == model.channel_out
         assert len(A_conv1[0]) == model.channel_in
-        assert A_conv1[0][0].shape == (new_filter, new_filter)  # Identity matrix
-        assert jnp.allclose(A_conv1[0][0], jnp.eye(new_filter, new_filter))
-        assert jnp.allclose(B_conv1[0][0], jnp.eye(new_filter, new_filter))
+        assert A_conv1[0][0].shape == (new_filter_size, prev_filter_size)  # (4, 3)
+        assert B_conv1[0][0].shape == (new_filter_size, prev_filter_size)  # (4, 3)
 
         assert len(A_conv2) == model.channel_out * 2
         assert len(A_conv2[0]) == model.channel_out
-        assert jnp.allclose(A_conv2[0][0], jnp.eye(new_filter, new_filter))
-        assert jnp.allclose(B_conv2[0][0], jnp.eye(new_filter, new_filter))
+        assert A_conv2[0][0].shape == (new_filter_size, prev_filter_size)  # (4, 3)
+        assert B_conv2[0][0].shape == (new_filter_size, prev_filter_size)  # (4, 3)
 
 
 class TestCNNAWBIntegration:
