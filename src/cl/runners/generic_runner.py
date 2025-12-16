@@ -937,7 +937,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                         if v_warmup_epochs > 0:
                             # Update LR to full value while preserving optimizer state
                             opt_state = update_learning_rate(opt_state, base_lr)
-                            optim_full = optim_warmup.init(opt_state)  # Reuse same optimizer with updated LR
+                            optim_full = optim_warmup  # Reuse same optimizer (LR updated in state)
                         else:
                             # No warmup phase, create fresh optimizer with full LR
                             optim_full = create_optimizer(config)

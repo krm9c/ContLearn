@@ -152,27 +152,59 @@ class TestRunner:
         metrics = {}
 
         # Get final metrics from last task
+        # Added by Claude: Handle tasks as either dict or list
         if 'tasks' in record_dict and record_dict['tasks']:
-            last_task = record_dict['tasks'][-1]
-            task_id = last_task.get('task_id', 'unknown')
+            tasks = record_dict['tasks']
+
+            # Get last task (tasks can be dict with int keys or list)
+            if isinstance(tasks, dict):
+                # Tasks is a dict with task IDs as keys - get the max key
+                last_task_id = max(tasks.keys())
+                last_task = tasks[last_task_id]
+                task_id = last_task.get('task_id', last_task_id)
+            else:
+                # Tasks is a list
+                last_task = tasks[-1]
+                task_id = last_task.get('task_id', 'unknown')
 
             # Extract final losses
             if 'losses' in last_task and last_task['losses']:
-                final_losses = last_task['losses'][-1] if isinstance(last_task['losses'], list) else last_task['losses']
+                losses_data = last_task['losses']
+                # losses can be dict with iteration keys or list
+                if isinstance(losses_data, dict):
+                    final_loss_key = max(losses_data.keys())
+                    final_losses = losses_data[final_loss_key]
+                elif isinstance(losses_data, list):
+                    final_losses = losses_data[-1]
+                else:
+                    final_losses = losses_data
+
                 metrics['final_losses'] = {
-                    'H': final_losses.get('H', 'N/A'),
-                    'V': final_losses.get('V', 'N/A'),
-                    'dV': final_losses.get('dV', 'N/A'),
+                    'H': final_losses.get('H', 'N/A') if isinstance(final_losses, dict) else 'N/A',
+                    'V': final_losses.get('V', 'N/A') if isinstance(final_losses, dict) else 'N/A',
+                    'dV': final_losses.get('dV', 'N/A') if isinstance(final_losses, dict) else 'N/A',
                 }
 
             # Extract final metrics
             if 'train_metric' in last_task:
                 train_metrics = last_task['train_metric']
-                metrics['final_train_metric'] = train_metrics[-1] if isinstance(train_metrics, list) else train_metrics
+                if isinstance(train_metrics, dict):
+                    final_key = max(train_metrics.keys())
+                    metrics['final_train_metric'] = train_metrics[final_key]
+                elif isinstance(train_metrics, list):
+                    metrics['final_train_metric'] = train_metrics[-1]
+                else:
+                    metrics['final_train_metric'] = train_metrics
 
             if 'test_metric' in last_task:
                 test_metrics = last_task['test_metric']
-                metrics['final_test_metric'] = test_metrics[-1] if isinstance(test_metrics, list) else test_metrics
+                if isinstance(test_metrics, dict):
+                    final_key = max(test_metrics.keys())
+                    metrics['final_test_metric'] = test_metrics[final_key]
+                elif isinstance(test_metrics, list):
+                    metrics['final_test_metric'] = test_metrics[-1]
+                else:
+                    metrics['final_test_metric'] = test_metrics
 
             metrics['task_id'] = task_id
 
