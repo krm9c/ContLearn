@@ -16,6 +16,19 @@ echo "Started: $(date)" >> "${SUMMARY_FILE}"
 echo "========================================" >> "${SUMMARY_FILE}"
 echo "" >> "${SUMMARY_FILE}"
 
+# Count existing successful completions
+EXISTING_SUCCESS=0
+for config in "${CONFIGS[@]}"; do
+    if [ -f "${LOG_DIR}/${config%.json}.success" ]; then
+        EXISTING_SUCCESS=$((EXISTING_SUCCESS + 1))
+    fi
+done
+
+if [ ${EXISTING_SUCCESS} -gt 0 ]; then
+    echo "Resume mode: ${EXISTING_SUCCESS} configs already completed" >> "${SUMMARY_FILE}"
+    echo "" >> "${SUMMARY_FILE}"
+fi
+
 # All config files
 CONFIGS=(
     "cifar10.json"
@@ -67,47 +80,82 @@ wait_for_job() {
     fi
 }
 
+# Check for previously completed jobs
+echo "=========================================="
+echo "Checking for previously completed jobs..."
+echo "=========================================="
+SKIPPED_COUNT=0
+TO_RUN=()
+
+for config in "${CONFIGS[@]}"; do
+    SUCCESS_FILE="${LOG_DIR}/${config%.json}.success"
+    if [ -f "${SUCCESS_FILE}" ]; then
+        echo "  ✓ ${config} - Already completed ($(cat ${SUCCESS_FILE} | grep Timestamp | cut -d' ' -f2-))"
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+    else
+        TO_RUN+=("${config}")
+    fi
+done
+
+echo ""
+echo "Summary: ${SKIPPED_COUNT} completed, ${#TO_RUN[@]} to run"
+echo ""
+
+# Update config list to only include jobs that need to run
+CONFIGS=("${TO_RUN[@]}")
+
+if [ ${#CONFIGS[@]} -eq 0 ]; then
+    echo "All configs already completed! Nothing to run."
+    echo "To force re-run, delete .success files in ${LOG_DIR}/"
+    echo "COMPLETED_SUCCESSFULLY" >> "${SUMMARY_FILE}"
+    echo "" >> "${SUMMARY_FILE}"
+    echo "All jobs were already completed in previous runs." >> "${SUMMARY_FILE}"
+    exit 0
+fi
+
 # Launch jobs in batches
 echo "=========================================="
-echo "Launching jobs across ${NUM_GPUS} GPUs..."
+echo "Launching ${#CONFIGS[@]} jobs across ${NUM_GPUS} GPUs..."
 echo "=========================================="
 echo ""
 
-# First batch: Launch 8 jobs in parallel
-echo "BATCH 1: Launching first 8 jobs..."
-for i in {0..7}; do
-    if [ $i -lt ${#CONFIGS[@]} ]; then
+# Determine batch sizes
+BATCH1_SIZE=$((${#CONFIGS[@]} < ${NUM_GPUS} ? ${#CONFIGS[@]} : ${NUM_GPUS}))
+BATCH2_SIZE=$((${#CONFIGS[@]} - ${BATCH1_SIZE}))
+
+# First batch: Launch up to 8 jobs in parallel
+if [ ${BATCH1_SIZE} -gt 0 ]; then
+    echo "BATCH 1: Launching first ${BATCH1_SIZE} jobs..."
+    for i in $(seq 0 $((BATCH1_SIZE - 1))); do
         run_job "${CONFIGS[$i]}" $i
-    fi
-done
+    done
+fi
 
 # Wait for first batch to complete
-echo ""
-echo "Waiting for batch 1 to complete..."
-for i in {0..7}; do
-    if [ $i -lt ${#CONFIGS[@]} ]; then
+if [ ${BATCH1_SIZE} -gt 0 ]; then
+    echo ""
+    echo "Waiting for batch 1 to complete..."
+    for i in $(seq 0 $((BATCH1_SIZE - 1))); do
         wait_for_job "${CONFIGS[$i]}"
-    fi
-done
+    done
+fi
 
-# Second batch: Launch remaining 3 jobs
-echo ""
-echo "BATCH 2: Launching remaining jobs..."
-for i in {8..10}; do
-    if [ $i -lt ${#CONFIGS[@]} ]; then
-        gpu_id=$((i - 8))  # Use GPUs 0-2 for remaining jobs
+# Second batch: Launch remaining jobs
+if [ ${BATCH2_SIZE} -gt 0 ]; then
+    echo ""
+    echo "BATCH 2: Launching remaining ${BATCH2_SIZE} jobs..."
+    for i in $(seq ${BATCH1_SIZE} $((${#CONFIGS[@]} - 1))); do
+        gpu_id=$((i - BATCH1_SIZE))  # Use GPUs starting from 0
         run_job "${CONFIGS[$i]}" ${gpu_id}
-    fi
-done
+    done
 
-# Wait for second batch to complete
-echo ""
-echo "Waiting for batch 2 to complete..."
-for i in {8..10}; do
-    if [ $i -lt ${#CONFIGS[@]} ]; then
+    # Wait for second batch to complete
+    echo ""
+    echo "Waiting for batch 2 to complete..."
+    for i in $(seq ${BATCH1_SIZE} $((${#CONFIGS[@]} - 1))); do
         wait_for_job "${CONFIGS[$i]}"
-    fi
-done
+    done
+fi
 
 # Generate summary
 echo "" >> "${SUMMARY_FILE}"
