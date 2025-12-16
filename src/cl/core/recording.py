@@ -190,8 +190,13 @@ class RecordingMixin:
             run_id: The run/repetition number for this experiment
 
         Returns:
-            dict: Initialized recording structure with metadata
+            dict: Initialized recording structure with task-based format
         """
+        # Added by Claude: New task-based recording structure
+        # - Global iterations: track progress across all tasks
+        # - Within-task epochs: track progress within each task
+        # - AB iterations: separate counter for AB training phases
+        # Also maintain 'iterations' dict for backward compatibility with compute_avg_loss
         record_dict = {
             'metadata': {
                 'problem': config.get('problem', 'unknown'),
@@ -208,9 +213,142 @@ class RecordingMixin:
                 'awb_enabled': config.get('awb_enabled', False),
                 'run_id': run_id,
             },
-            'iterations': {}
+            'tasks': {},
+            'architecture_history': {},
+            'iterations': {}  # Backward compatibility with existing code
         }
         return record_dict
+
+    def initialize_task(self, record_dict: Dict[str, Any], task_id: int, arch_info: Dict[str, Any]):
+        """Initialize a new task's recording structure.
+
+        Args:
+            record_dict: The recording dictionary
+            task_id: Task ID to initialize
+            arch_info: Architecture information (sizes, filter_size, etc.)
+        """
+        # Added by Claude: Initialize task with main_training structure
+        record_dict['tasks'][task_id] = {
+            'main_training': {
+                'iterations': [],      # Global iteration numbers
+                'epochs': [],          # Within-task epoch numbers
+                'H': [],
+                'V': [],
+                'dV': [],
+                'dV_dx': [],
+                'dV_dtheta': [],
+                'grad_norm': [],
+                'train_metric': [],
+                'test_current': [],
+                'test_experience': [],
+                'eigenvalues': {'A': {}, 'B': {}}
+            },
+            'phase_info': {
+                'type': 'standard',
+                'total_epochs': 0
+            },
+            'arch_changed': False,
+            'architecture': arch_info
+        }
+
+    def record_preliminary_summary(self, record_dict: Dict[str, Any], task_id: int,
+                                   n_epochs: int, warmup_epochs: int,
+                                   final_loss: float, decision: str):
+        """Record summary of preliminary phase (not detailed metrics).
+
+        Args:
+            record_dict: The recording dictionary
+            task_id: Task ID
+            n_epochs: Total preliminary epochs
+            warmup_epochs: Warmup epochs within preliminary
+            final_loss: Final loss after preliminary training
+            decision: 'arch_change' or 'no_change'
+        """
+        # Added by Claude: Record preliminary phase summary
+        record_dict['tasks'][task_id]['preliminary'] = {
+            'n_epochs': n_epochs,
+            'warmup_epochs': warmup_epochs,
+            'final_loss': float(final_loss),
+            'decision': decision
+        }
+
+    def initialize_ab_training(self, record_dict: Dict[str, Any], task_id: int):
+        """Initialize AB training recording for a task.
+
+        Args:
+            record_dict: The recording dictionary
+            task_id: Task ID
+        """
+        # Added by Claude: Initialize AB training structure with separate iteration counter
+        record_dict['tasks'][task_id]['ab_training'] = {
+            'iterations': [],      # AB-specific iteration numbers (local to AB phase)
+            'H': [],
+            'V': [],
+            'ab_eigenvalues': {'A': {}, 'B': {}}
+        }
+
+    def record_ab_training_epoch(self, record_dict: Dict[str, Any], task_id: int,
+                                 iteration: int, losses: Dict[str, float], model):
+        """Record a single epoch of AB training with AB eigenvalues.
+
+        Args:
+            record_dict: The recording dictionary
+            task_id: Task ID
+            iteration: AB training iteration number (local to AB phase)
+            losses: Loss dictionary
+            model: Model for eigenvalue extraction
+        """
+        # Added by Claude: Record AB training epoch
+        ab = record_dict['tasks'][task_id]['ab_training']
+        ab['iterations'].append(iteration)
+        ab['H'].append(float(losses.get('H', 0.0)))
+        ab['V'].append(float(losses.get('V', 0.0)))
+
+        # Record A/B eigenvalues during AB training
+        eigs = self._compute_eigenvalues(model)
+        for matrix_type in ['A', 'B']:
+            for layer_name, eig_values in eigs[matrix_type].items():
+                if layer_name not in ab['ab_eigenvalues'][matrix_type]:
+                    ab['ab_eigenvalues'][matrix_type][layer_name] = []
+                ab['ab_eigenvalues'][matrix_type][layer_name].append(eig_values)
+
+    def record_main_training_epoch(self, record_dict: Dict[str, Any], task_id: int,
+                                   global_iteration: int, epoch: int,
+                                   losses: Dict[str, float], gradients: Dict[str, float],
+                                   metrics: Dict[str, float], model):
+        """Record a single epoch of main training (Step 5 or standard).
+
+        Args:
+            record_dict: The recording dictionary
+            task_id: Task ID
+            global_iteration: Global iteration number (across all tasks)
+            epoch: Within-task epoch number
+            losses: Loss dictionary
+            gradients: Gradient dictionary
+            metrics: Metrics dictionary
+            model: Model for eigenvalue extraction
+        """
+        # Added by Claude: Record main training epoch with both global and local tracking
+        task = record_dict['tasks'][task_id]['main_training']
+        task['iterations'].append(global_iteration)
+        task['epochs'].append(epoch)
+        task['H'].append(float(losses.get('H', 0.0)))
+        task['V'].append(float(losses.get('V', 0.0)))
+        task['dV'].append(float(losses.get('dV', 0.0)))
+        task['dV_dx'].append(float(losses.get('dV_dx', 0.0)))
+        task['dV_dtheta'].append(float(losses.get('dV_dtheta', 0.0)))
+        task['grad_norm'].append(float(gradients.get('grad_norm', 0.0)))
+        task['train_metric'].append(float(metrics.get('train', 0.0)))
+        task['test_current'].append(float(metrics.get('test_current', 0.0)))
+        task['test_experience'].append(float(metrics.get('test_experience', 0.0)))
+
+        # Record eigenvalues
+        eigs = self._compute_eigenvalues(model)
+        for matrix_type in ['A', 'B']:
+            for layer_name, eig_values in eigs[matrix_type].items():
+                if layer_name not in task['eigenvalues'][matrix_type]:
+                    task['eigenvalues'][matrix_type][layer_name] = []
+                task['eigenvalues'][matrix_type][layer_name].append(eig_values)
 
     def save_record_dict(self, record_dict: Dict[str, Any], base_path: str):
         """Save the recording dictionary to file using problem/dataset name.

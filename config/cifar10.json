@@ -5,8 +5,8 @@
     "data": "cifar10",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 3,
-    "epochs_per_task": 2,
+    "n_task": 10,
+    "epochs_per_task": 1,
 
     "model_path": "outputs/cifar10_model",
 

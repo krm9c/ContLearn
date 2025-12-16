@@ -363,6 +363,11 @@ def partition_for_AB_training_cnn(model):
 def partition_for_standard_training_cnn(model):
     """Partition CNN model for standard training (freeze A/B, train W).
 
+    Note: A_conv, B_conv, A_feed, B_feed are lists of arrays.
+    We must preserve the list structure by replacing each element with None,
+    not replacing the entire list with None (which would change the PyTree structure
+    and cause optimizer state mismatch errors).
+
     Args:
         model: Equinox CNN model
 
@@ -377,10 +382,12 @@ def partition_for_standard_training_cnn(model):
         replace=(model.A_conv, model.B_conv, model.A_feed, model.B_feed)
     )
 
+    # Preserve list structure by replacing each element with None
     params = eqx.tree_at(
         lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
         params,
-        replace=(None, None, None, None)
+        replace=([None]*len(model.A_conv), [None]*len(model.B_conv),
+                 [None]*len(model.A_feed), [None]*len(model.B_feed))
     )
 
     return params, static
@@ -409,6 +416,12 @@ def partition_for_AB_training_cnn3d(model):
 def partition_for_standard_training_cnn3d(model):
     """Partition CNN3D model for standard training (freeze A/B, train W).
 
+    Note: A_conv1, B_conv1, A_conv2, B_conv2 are lists of lists of arrays.
+    A_feed, B_feed are lists of arrays.
+    We must preserve the nested list structure by replacing each element with None,
+    not replacing the entire list with None (which would change the PyTree structure
+    and cause optimizer state mismatch errors).
+
     Args:
         model: Equinox CNN3D model
 
@@ -423,10 +436,14 @@ def partition_for_standard_training_cnn3d(model):
         replace=(model.A_conv1, model.B_conv1, model.A_conv2, model.B_conv2, model.A_feed, model.B_feed)
     )
 
+    # Preserve nested list structure by replacing each element with None
+    none_conv1 = [[None for _ in row] for row in model.A_conv1]
+    none_conv2 = [[None for _ in row] for row in model.A_conv2]
+    none_feed = [None] * len(model.A_feed)
     params = eqx.tree_at(
         lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed),
         params,
-        replace=(None, None, None, None, None, None)
+        replace=(none_conv1, none_conv1, none_conv2, none_conv2, none_feed, none_feed)
     )
 
     return params, static

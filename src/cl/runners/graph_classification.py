@@ -62,27 +62,34 @@ from ..config.constants import (
 def create_graph_optimizer(config: Dict[str, Any]) -> optax.GradientTransformationExtraArgs:
     """Create optimizer from configuration for graph classification tasks.
 
+    Added by Claude: Now uses inject_hyperparams to enable dynamic LR scheduling.
+
     Args:
         config: Configuration dictionary with:
             - optimizer: Optimizer type (default: 'adamw')
             - lr: Learning rate (default: 1e-4)
 
     Returns:
-        Configured optimizer
+        Configured optimizer with injectable hyperparameters
     """
     lr = config.get('lr', 1e-4)
     optimizer_name = config.get('optimizer', 'adamw').lower()
+    weight_decay = config.get('weight_decay', 1e-4)
+    momentum = config.get('momentum', 0.9)
 
+    # Added by Claude: Use inject_hyperparams for dynamic LR adjustment
     if optimizer_name == 'adam':
-        return optax.adam(lr)
+        base_optimizer = optax.inject_hyperparams(optax.adam)
+        return base_optimizer(learning_rate=lr)
     elif optimizer_name == 'adamw':
-        weight_decay = config.get('weight_decay', 1e-4)
-        return optax.adamw(lr, weight_decay=weight_decay)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
     elif optimizer_name == 'sgd':
-        momentum = config.get('momentum', 0.9)
-        return optax.sgd(lr, momentum=momentum)
+        base_optimizer = optax.inject_hyperparams(optax.sgd)
+        return base_optimizer(learning_rate=lr, momentum=momentum)
     else:
-        return optax.adamw(lr)
+        base_optimizer = optax.inject_hyperparams(optax.adamw)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
 
 
 def load_graph_checkpoint(config: Dict[str, Any]):

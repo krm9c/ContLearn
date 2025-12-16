@@ -327,40 +327,33 @@ def compute_V_from_AWB_cnn3d(model):
 def set_new_AB_matrices_cnn(model, original_feed_sizes, new_feed_sizes, original_filter, new_filter):
     """Set new A/B matrices for CNN (single conv layer) architecture transition.
 
+    The AWB algorithm keeps the OLD weights W_old and uses A/B matrices to transform them:
+    - During Step 3b: get_AWBT computes A @ W_old @ B.T for forward pass
+    - During Step 4: V = A @ W_old @ B.T replaces the weights
+    - During Step 5: Train V with A/B frozen
+
+    We do NOT recreate the model - W_old must be preserved for the transformation.
+
     Args:
-        model: CNN model
+        model: CNN model (with old weights to be transformed)
         original_feed_sizes: Original feed layer sizes
         new_feed_sizes: New feed layer sizes
         original_filter: Original filter size
         new_filter: New filter size
 
     Returns:
-        Model with updated A/B matrices
+        Model with updated A/B matrices (W_old preserved)
     """
-    # Added by Claude: If filter size changed, must recreate CNN with new dimensions
-    # Cannot just update metadata - conv layer weights have fixed filter dimensions
-    if new_filter != original_filter:
-        print(f"  Filter size changed ({original_filter} → {new_filter}): Creating fresh CNN")
-        # Create new CNN with new filter size
-        new_model = CNN(
-            key=jax.random.PRNGKey(0),  # Will get fresh random weights
-            filter_size=new_filter,
-            feed_sizes=new_feed_sizes,
-            channel_in=model.channel_in,
-            channel_out=model.channel_out,
-            input_size=model.input_size,
-            padding=model.padding,
-            stride=model.stride
-        )
-        model = new_model
-
-    # Generate A/B matrices based on current model dimensions
-    A_feed, B_feed, A_conv, B_conv = prepABs(model, original_feed_sizes, original_filter)
+    # Generate A/B matrices to transform from old→new dimensions
+    # W_old stays in model, A/B will transform it during get_AWBT
+    A_feed, B_feed, A_conv, B_conv = prepABs(model, original_feed_sizes, original_filter,
+                                              new_feed_sizes, new_filter)
 
     model = eqx.tree_at(lambda x: x.A_feed, model, A_feed)
     model = eqx.tree_at(lambda x: x.B_feed, model, B_feed)
     model = eqx.tree_at(lambda x: x.A_conv, model, A_conv)
     model = eqx.tree_at(lambda x: x.B_conv, model, B_conv)
+    # Update metadata to reflect new architecture (used after V transformation)
     model = eqx.tree_at(lambda x: x.feed_sizes, model, new_feed_sizes)
     model = eqx.tree_at(lambda x: x.filter_size, model, new_filter)
 
@@ -371,36 +364,27 @@ def set_new_AB_matrices_cnn(model, original_feed_sizes, new_feed_sizes, original
 def set_new_AB_matrices_cnn3d(model, original_feed_sizes, new_feed_sizes, original_filter, new_filter):
     """Set new A/B matrices for CNN3D (two conv layers) architecture transition.
 
+    The AWB algorithm keeps the OLD weights W_old and uses A/B matrices to transform them:
+    - During Step 3b: get_AWBT computes A @ W_old @ B.T for forward pass
+    - During Step 4: V = A @ W_old @ B.T replaces the weights
+    - During Step 5: Train V with A/B frozen
+
+    We do NOT recreate the model - W_old must be preserved for the transformation.
+
     Args:
-        model: CNN3D model
+        model: CNN3D model (with old weights to be transformed)
         original_feed_sizes: Original feed layer sizes
         new_feed_sizes: New feed layer sizes
         original_filter: Original filter size
         new_filter: New filter size
 
     Returns:
-        Model with updated A/B matrices
+        Model with updated A/B matrices (W_old preserved)
     """
-    # Added by Claude: If filter size changed, must recreate CNN3D with new dimensions
-    # Cannot just update metadata - conv layer weights have fixed filter dimensions
-    if new_filter != original_filter:
-        print(f"  Filter size changed ({original_filter} → {new_filter}): Creating fresh CNN3D")
-        # Create new CNN3D with new filter size
-        # Get num_classes from feed_sizes (last dimension)
-        num_classes = new_feed_sizes[-1] if new_feed_sizes else 10
-        new_model = CNN3D(
-            key=jax.random.PRNGKey(0),  # Will get fresh random weights
-            filter_size=new_filter,
-            feed_sizes=new_feed_sizes,
-            channel_in=model.channel_in,
-            channel_out=model.channel_out,
-            input_size=model.input_size,
-            num_classes=num_classes
-        )
-        model = new_model
-
-    # Generate A/B matrices based on current model dimensions
-    A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2 = prepABs_CNN3D(model, original_feed_sizes, original_filter)
+    # Generate A/B matrices to transform from old→new dimensions
+    # W_old stays in model, A/B will transform it during get_AWBT
+    A_feed, B_feed, A_conv1, B_conv1, A_conv2, B_conv2 = prepABs_CNN3D(
+        model, original_feed_sizes, original_filter, new_feed_sizes, new_filter)
 
     model = eqx.tree_at(lambda x: x.A_feed, model, A_feed)
     model = eqx.tree_at(lambda x: x.B_feed, model, B_feed)
@@ -408,6 +392,7 @@ def set_new_AB_matrices_cnn3d(model, original_feed_sizes, new_feed_sizes, origin
     model = eqx.tree_at(lambda x: x.B_conv1, model, B_conv1)
     model = eqx.tree_at(lambda x: x.A_conv2, model, A_conv2)
     model = eqx.tree_at(lambda x: x.B_conv2, model, B_conv2)
+    # Update metadata to reflect new architecture (used after V transformation)
     model = eqx.tree_at(lambda x: x.feed_sizes, model, new_feed_sizes)
     model = eqx.tree_at(lambda x: x.filter_size, model, new_filter)
 

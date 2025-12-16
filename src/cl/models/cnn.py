@@ -210,12 +210,20 @@ class CNN(eqx.Module):
         return eqx.partition(self, filter_spec)
 
     def partition_for_standard_training(self):
-        """Partition for standard training (freeze A/B, train W)."""
+        """Partition for standard training (freeze A/B, train W).
+
+        Note: A_conv, B_conv, A_feed, B_feed are lists of arrays.
+        We must preserve the list structure by replacing each element with None,
+        not replacing the entire list with None (which would change the PyTree structure
+        and cause optimizer state mismatch errors).
+        """
         params, static = eqx.partition(self, eqx.is_array)
         static = eqx.tree_at(lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed), static,
                             replace=(self.A_conv, self.B_conv, self.A_feed, self.B_feed))
+        # Preserve list structure by replacing each element with None
         params = eqx.tree_at(lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed), params,
-                            replace=(None, None, None, None))
+                            replace=([None]*len(self.A_conv), [None]*len(self.B_conv),
+                                     [None]*len(self.A_feed), [None]*len(self.B_feed)))
         return params, static
 
     # Added by Claude: Architecture search interface methods
@@ -276,11 +284,10 @@ class CNN(eqx.Module):
 
         return candidates
 
-    @classmethod
-    def create_with_architecture(cls, arch_spec, seed=0, awb_enabled=True):
+    def create_with_architecture(self, arch_spec, seed=0, awb_enabled=True):
         """Create CNN instance with specified architecture.
 
-        # Added by Claude: Factory method for search
+        # Added by Claude: Instance method for search (uses self for channel_in, etc.)
 
         Args:
             arch_spec: Tuple of (filter_size, feed_sizes)
@@ -292,13 +299,17 @@ class CNN(eqx.Module):
         """
         filter_size, feed_sizes = arch_spec
 
-        # Get config values or use defaults
-        # Note: These should ideally come from config, but we use model defaults
+        # Added by Claude: Use self attributes to preserve channel_in, channel_out, input_size
         key = jax.random.PRNGKey(seed)
-        return cls(
+        return CNN(
             key=key,
             filter_size=filter_size,
-            feed_sizes=feed_sizes
+            feed_sizes=feed_sizes,
+            input_size=self.input_size,
+            channel_in=self.channel_in,
+            channel_out=self.channel_out,
+            padding=self.padding,
+            stride=self.stride
         )
 
     def reinitialize_weights(self, seed=0):
@@ -502,12 +513,26 @@ class CNN3D(eqx.Module):
         return eqx.partition(self, filter_spec)
 
     def partition_for_standard_training(self):
-        """Partition for standard training (freeze A/B, train W)."""
+        """Partition for standard training (freeze A/B, train W).
+
+        Note: A_conv1, B_conv1, A_conv2, B_conv2 are lists of lists of arrays.
+        A_feed, B_feed are lists of arrays.
+        We must preserve the nested list structure by replacing each element with None,
+        not replacing the entire list with None (which would change the PyTree structure
+        and cause optimizer state mismatch errors).
+        """
         params, static = eqx.partition(self, eqx.is_array)
         static = eqx.tree_at(lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed), static,
                             replace=(self.A_conv1, self.B_conv1, self.A_conv2, self.B_conv2, self.A_feed, self.B_feed))
+        # Preserve nested list structure by replacing each element with None
+        # A_conv1/B_conv1: [[array for channel_in] for channel_out]
+        # A_conv2/B_conv2: [[array for channel_out] for channel_out*2]
+        # A_feed/B_feed: [array for each layer]
+        none_conv1 = [[None for _ in row] for row in self.A_conv1]
+        none_conv2 = [[None for _ in row] for row in self.A_conv2]
+        none_feed = [None] * len(self.A_feed)
         params = eqx.tree_at(lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed), params,
-                            replace=(None, None, None, None, None, None))
+                            replace=(none_conv1, none_conv1, none_conv2, none_conv2, none_feed, none_feed))
         return params, static
 
     # Added by Claude: Architecture search interface methods
@@ -570,11 +595,10 @@ class CNN3D(eqx.Module):
 
         return candidates
 
-    @classmethod
-    def create_with_architecture(cls, arch_spec, seed=0, awb_enabled=True):
+    def create_with_architecture(self, arch_spec, seed=0, awb_enabled=True):
         """Create CNN3D instance with specified architecture.
 
-        # Added by Claude: Factory method for search
+        # Added by Claude: Instance method for search (uses self for channel_in, etc.)
 
         Args:
             arch_spec: Tuple of (filter_size, feed_sizes)
@@ -586,12 +610,15 @@ class CNN3D(eqx.Module):
         """
         filter_size, feed_sizes = arch_spec
 
-        # Create with defaults
+        # Added by Claude: Use self attributes to preserve channel_in, channel_out, input_size
         key = jax.random.PRNGKey(seed)
-        return cls(
+        return CNN3D(
             key=key,
             filter_size=filter_size,
-            feed_sizes=feed_sizes
+            feed_sizes=feed_sizes,
+            input_size=self.input_size,
+            channel_in=self.channel_in,
+            channel_out=self.channel_out
         )
 
     def reinitialize_weights(self, seed=0):

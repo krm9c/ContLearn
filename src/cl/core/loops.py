@@ -242,7 +242,8 @@ class TrainingLoopsMixin:
     def train__CL(self, train__, params, static, opt_state, optim,
                   n_iter=1000, save_iter=10, task_id=0, config={},
                   record_dict={}, notABTrain=True,
-                  problem_type='vectors', loss_type='classification'):
+                  problem_type='vectors', loss_type='classification',
+                  phase='main', record_training=True, global_iteration_offset=0):
         """Unified continual learning training loop for all problem types.
 
         Args:
@@ -259,6 +260,9 @@ class TrainingLoopsMixin:
             notABTrain: True for normal training, False for AWB A/B training
             problem_type: 'vectors' or 'graph'
             loss_type: 'classification' or 'regression'
+            phase: Training phase - 'main' (Step 5/standard), 'ab' (AB training), 'preliminary' (not recorded)
+            record_training: Whether to record metrics (False for preliminary/warmup phases)
+            global_iteration_offset: Offset for global iteration counter (to continue from previous phase)
 
         Returns:
             Tuple of (params, static, opt_state, record_dict)
@@ -398,19 +402,92 @@ class TrainingLoopsMixin:
                     f"Tr={train_metric_avg:.4f} Te/Cur={test_current:.4f} Te/Exp={test_exp:.4f}"
                 )
 
-                # Record metrics
-                iteration = epoch + task_id * n_iter
-                model = eqx.combine(params, static)
-                record_dict['iterations'][iteration] = self.record_metrics(
-                    iteration=iteration, step=epoch, task_id=task_id,
-                    losses=losses_dict,
-                    gradients={'grad_norm': grad_norm_avg},
-                    metrics={
-                        'train': train_metric_avg,
-                        'test_current': float(test_current),
-                        'test_experience': float(test_exp),
-                    },
-                    model=model
-                )
+                # Added by Claude: Phase-aware recording using new task-based structure
+                # Also maintain backward compatibility with old 'iterations' dict
+                if record_training:
+                    model = eqx.combine(params, static)
+
+                    # Compute global iteration for backward compatibility
+                    global_iteration = global_iteration_offset + epoch
+
+                    if phase == 'main':
+                        # Main training: record to tasks[task_id]['main_training']
+                        self.record_main_training_epoch(
+                            record_dict=record_dict,
+                            task_id=task_id,
+                            global_iteration=global_iteration,
+                            epoch=epoch,
+                            losses=losses_dict,
+                            gradients={'grad_norm': grad_norm_avg},
+                            metrics={
+                                'train': train_metric_avg,
+                                'test_current': float(test_current),
+                                'test_experience': float(test_exp),
+                            },
+                            model=model
+                        )
+
+                        # Added by Claude: Also record to old 'iterations' format for backward compatibility
+                        if 'iterations' not in record_dict:
+                            record_dict['iterations'] = {}
+                        record_dict['iterations'][global_iteration] = self.record_metrics(
+                            iteration=global_iteration,
+                            step=epoch,
+                            task_id=task_id,
+                            losses=losses_dict,
+                            gradients={'grad_norm': grad_norm_avg},
+                            metrics={
+                                'train': train_metric_avg,
+                                'test_current': float(test_current),
+                                'test_experience': float(test_exp),
+                            },
+                            model=model
+                        )
+
+                    elif phase == 'ab':
+                        # AB training: record to tasks[task_id]['ab_training']
+                        self.record_ab_training_epoch(
+                            record_dict=record_dict,
+                            task_id=task_id,
+                            iteration=epoch,  # Local AB iteration
+                            losses=losses_dict,
+                            model=model
+                        )
+
+                        # Added by Claude: Also record to old 'iterations' format for backward compatibility
+                        if 'iterations' not in record_dict:
+                            record_dict['iterations'] = {}
+                        ab_global_iteration = global_iteration  # Use same global iteration tracking
+                        record_dict['iterations'][ab_global_iteration] = self.record_metrics(
+                            iteration=ab_global_iteration,
+                            step=epoch,
+                            task_id=task_id,
+                            losses=losses_dict,
+                            gradients={'grad_norm': 0.0},  # Not tracked for AB
+                            metrics={
+                                'train': 0.0,
+                                'test_current': 0.0,
+                                'test_experience': 0.0,
+                            },
+                            model=model
+                        )
+
+                    elif phase == 'preliminary':
+                        # Preliminary phase: record to old 'iterations' format for compute_avg_loss
+                        if 'iterations' not in record_dict:
+                            record_dict['iterations'] = {}
+                        record_dict['iterations'][global_iteration] = self.record_metrics(
+                            iteration=global_iteration,
+                            step=epoch,
+                            task_id=task_id,
+                            losses=losses_dict,
+                            gradients={'grad_norm': grad_norm_avg},
+                            metrics={
+                                'train': train_metric_avg,
+                                'test_current': float(test_current),
+                                'test_experience': float(test_exp),
+                            },
+                            model=model
+                        )
 
         return params, static, opt_state, record_dict

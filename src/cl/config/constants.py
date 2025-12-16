@@ -212,6 +212,11 @@ DEFAULT_AWB_AB_THRESHOLD_BASE = 0.6  # Base threshold for AB training convergenc
 DEFAULT_AWB_V_LR_FACTOR = 0.1  # Start V training at 10% of normal LR
 DEFAULT_AWB_V_WARMUP_EPOCHS = 10  # Epochs to warm up before using full LR
 
+# Added by Claude: AWB Task Transition - Warmup and LR settings
+# These help reduce the loss spike when transitioning between tasks
+DEFAULT_AWB_TASK_LR_FACTOR = 0.1  # Start task training at 10% of normal LR
+DEFAULT_AWB_TASK_WARMUP_EPOCHS = 10  # Epochs to warm up at start of each new task
+
 
 # AWB Architecture Defaults (target architectures)
 DEFAULT_AWB_FILTER_INCREMENT = 2  # Increment for conv filter expansion

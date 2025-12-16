@@ -39,8 +39,58 @@ def load_records(filepath: str) -> Tuple[Dict[str, Any], bool]:
     return data, is_multi_run
 
 
+def extract_task_based_series(run_data: Dict[str, Any], task_id: int, phase: str = 'main_training') -> Dict[str, np.ndarray]:
+    """Extract time series data for a specific task from new task-based structure.
+
+    Added by Claude: New function to extract data from tasks[task_id][phase] structure
+    for task-by-task comparison between AWB and non-AWB runs.
+
+    Args:
+        run_data: Record dict with 'tasks' structure
+        task_id: Task ID to extract
+        phase: Phase to extract ('main_training', 'ab_training', 'preliminary')
+
+    Returns:
+        Dict of numpy arrays with time series data
+    """
+    # Check if new structure exists
+    if 'tasks' not in run_data or task_id not in run_data['tasks']:
+        return {}
+
+    task_data = run_data['tasks'][task_id].get(phase, {})
+    if not task_data:
+        return {}
+
+    series = {
+        'iterations': np.array(task_data.get('iterations', [])),
+        'epochs': np.array(task_data.get('epochs', [])),
+    }
+
+    # Extract losses
+    for loss_key in ['H', 'V', 'dV', 'dV_dx', 'dV_dtheta']:
+        if loss_key in task_data:
+            series[f'loss_{loss_key}'] = np.array(task_data[loss_key])
+
+    # Extract gradients if available
+    if 'grad_norm' in task_data:
+        series['grad_norm'] = np.array(task_data['grad_norm'])
+
+    # Extract metrics if available
+    if 'train_metric' in task_data:
+        series['metric_train'] = np.array(task_data['train_metric'])
+    if 'test_current' in task_data:
+        series['metric_test_current'] = np.array(task_data['test_current'])
+    if 'test_experience' in task_data:
+        series['metric_test_experience'] = np.array(task_data['test_experience'])
+
+    return series
+
+
 def extract_time_series(run_data: Dict[str, Any]) -> Dict[str, np.ndarray]:
-    """Extract time series data from a single run."""
+    """Extract time series data from a single run (backward compatible).
+
+    Uses the 'iterations' dict which is maintained for backward compatibility.
+    """
     iterations = sorted(run_data['iterations'].keys())
 
     series = {
@@ -980,6 +1030,111 @@ def generate_plots(record_dict: Dict[str, Any], output_dir: str = 'figures', run
     return generated_files
 
 
+def plot_ab_training_eigenvalues(run_data: Dict[str, Any], output_dir: str, run_id: str = ''):
+    """Plot A and B matrix eigenvalues during AB training phases.
+
+    Added by Claude: Plots eigenvalue evolution during AB training (Step 3b)
+    for each task that underwent architecture change. Uses AB-specific iteration
+    numbers from tasks[task_id]['ab_training'].
+
+    Args:
+        run_data: Single run data dictionary with 'tasks' structure
+        output_dir: Output directory for saving plots
+        run_id: Run identifier
+    """
+    # Check if new structure exists
+    if 'tasks' not in run_data:
+        print('No task-based structure found, skipping AB training eigenvalue plot')
+        return
+
+    metadata = run_data['metadata']
+    awb_enabled = metadata.get('awb_enabled', False)
+
+    if not awb_enabled:
+        print('AWB not enabled, skipping AB training eigenvalue plot')
+        return
+
+    # Find tasks with AB training
+    tasks_with_ab = []
+    for task_id, task_data in run_data['tasks'].items():
+        if 'ab_training' in task_data and task_data['ab_training']:
+            tasks_with_ab.append(task_id)
+
+    if not tasks_with_ab:
+        print('No AB training data found, skipping AB training eigenvalue plot')
+        return
+
+    # Create subplots: one row per task with AB training
+    n_tasks = len(tasks_with_ab)
+    fig, axes = plt.subplots(n_tasks, 2, figsize=(18, 6 * n_tasks))
+    if n_tasks == 1:
+        axes = axes.reshape(1, -1)
+
+    fig.suptitle(f'AB Training Eigenvalue Evolution - {metadata["dataset"]} (Run {run_id})',
+                 fontsize=16, fontweight='bold')
+
+    for idx, task_id in enumerate(tasks_with_ab):
+        ab_data = run_data['tasks'][task_id]['ab_training']
+        iterations = ab_data.get('iterations', [])
+        ab_eigenvalues = ab_data.get('ab_eigenvalues', {'A': {}, 'B': {}})
+
+        if not iterations:
+            continue
+
+        # Plot A matrix eigenvalues
+        ax_a = axes[idx, 0]
+        layer_names_a = sorted(ab_eigenvalues['A'].keys())
+
+        for layer_name in layer_names_a:
+            eig_series = ab_eigenvalues['A'][layer_name]
+            if eig_series:
+                # Compute mean eigenvalue magnitude for each iteration
+                mean_eigs = [np.mean(np.abs(np.real(eigs))) for eigs in eig_series]
+                max_eigs = [np.max(np.abs(np.real(eigs))) for eigs in eig_series]
+
+                ax_a.plot(iterations[:len(mean_eigs)], mean_eigs, '-o', linewidth=2,
+                         label=f'{layer_name} (mean)', markersize=6)
+                ax_a.plot(iterations[:len(max_eigs)], max_eigs, '--', linewidth=1.5,
+                         alpha=0.6, label=f'{layer_name} (max)')
+
+        ax_a.set_xlabel('AB Training Iteration', fontsize=12)
+        ax_a.set_ylabel('Eigenvalue Magnitude', fontsize=12)
+        ax_a.set_title(f'Task {task_id} - A Matrix Eigenvalues', fontsize=13, fontweight='bold')
+        ax_a.grid(True, alpha=0.3)
+        ax_a.legend(fontsize=9, loc='best')
+
+        # Plot B matrix eigenvalues
+        ax_b = axes[idx, 1]
+        layer_names_b = sorted(ab_eigenvalues['B'].keys())
+
+        for layer_name in layer_names_b:
+            eig_series = ab_eigenvalues['B'][layer_name]
+            if eig_series:
+                # Compute mean eigenvalue magnitude for each iteration
+                mean_eigs = [np.mean(np.abs(np.real(eigs))) for eigs in eig_series]
+                max_eigs = [np.max(np.abs(np.real(eigs))) for eigs in eig_series]
+
+                ax_b.plot(iterations[:len(mean_eigs)], mean_eigs, '-o', linewidth=2,
+                         label=f'{layer_name} (mean)', markersize=6)
+                ax_b.plot(iterations[:len(max_eigs)], max_eigs, '--', linewidth=1.5,
+                         alpha=0.6, label=f'{layer_name} (max)')
+
+        ax_b.set_xlabel('AB Training Iteration', fontsize=12)
+        ax_b.set_ylabel('Eigenvalue Magnitude', fontsize=12)
+        ax_b.set_title(f'Task {task_id} - B Matrix Eigenvalues', fontsize=13, fontweight='bold')
+        ax_b.grid(True, alpha=0.3)
+        ax_b.legend(fontsize=9, loc='best')
+
+    plt.tight_layout()
+
+    # Save figure
+    filename = f'{metadata["prob"]}_{metadata["dataset"]}_{metadata["network"]}_run{run_id}_ab_eigenvalues.png'
+    filepath = os.path.join(output_dir, filename)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f'Saved: {filepath}')
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Generate comprehensive plots for ContLearn training results'
@@ -1008,6 +1163,7 @@ def main():
             plot_losses(run_data, args.output_dir, run_id=run_id)
             plot_metrics(run_data, args.output_dir, run_id=run_id)
             plot_eigenvalues(run_data, args.output_dir, run_id=run_id)
+            plot_ab_training_eigenvalues(run_data, args.output_dir, run_id=run_id)  # Added by Claude
             plot_combined_metrics(run_data, args.output_dir, run_id=run_id)
 
         # Generate multi-run comparison plots
@@ -1024,6 +1180,7 @@ def main():
         plot_losses(data, args.output_dir, run_id=str(run_id))
         plot_metrics(data, args.output_dir, run_id=str(run_id))
         plot_eigenvalues(data, args.output_dir, run_id=str(run_id))
+        plot_ab_training_eigenvalues(data, args.output_dir, run_id=str(run_id))  # Added by Claude
         plot_combined_metrics(data, args.output_dir, run_id=str(run_id))
 
     print(f'\n✓ All plots generated successfully in {args.output_dir}/')
