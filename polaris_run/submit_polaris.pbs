@@ -1,0 +1,72 @@
+#!/bin/bash
+#PBS -l select=2:system=polaris
+#PBS -l place=scatter
+#PBS -l walltime=24:00:00
+#PBS -q prod
+#PBS -A FOUND4CHEM
+#PBS -N contlearn_polaris
+#PBS -o polaris_run/logs/job_${PBS_JOBID}.out
+#PBS -e polaris_run/logs/job_${PBS_JOBID}.err
+
+# Continual Learning Polaris Job Submission Script
+# Runs all configs in parallel across 2 nodes (8 GPUs total)
+
+echo "=========================================="
+echo "Polaris Continual Learning Job"
+echo "=========================================="
+echo "Job ID: ${PBS_JOBID}"
+echo "Nodes: ${PBS_NUM_NODES}"
+echo "Date: $(date)"
+echo "=========================================="
+echo ""
+
+# Change to submission directory
+cd ${PBS_O_WORKDIR}
+
+# Set up environment
+echo "Setting up environment..."
+module use /soft/modulefiles
+module load conda
+conda activate base
+
+# Create venv based on conda environment
+CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+VENV_DIR="$(pwd)/venvs/${CONDA_NAME}"
+mkdir -p "${VENV_DIR}"
+
+# Create or activate venv
+if [ ! -f "${VENV_DIR}/bin/activate" ]; then
+    echo "Creating virtual environment at ${VENV_DIR}..."
+    python -m venv "${VENV_DIR}"
+    source "${VENV_DIR}/bin/activate"
+
+    # Install dependencies
+    echo "Installing dependencies..."
+    pip install --upgrade pip
+    pip install -e ".[all]"
+else
+    echo "Using existing virtual environment at ${VENV_DIR}"
+    source "${VENV_DIR}/bin/activate"
+fi
+
+echo "Python: $(which python)"
+echo "JAX Backend: $(python -c 'import jax; print(jax.default_backend())')"
+echo ""
+
+# Create results and logs directories
+mkdir -p polaris_run/results
+mkdir -p polaris_run/logs
+
+# Run parallel jobs
+echo "Launching parallel jobs..."
+bash polaris_run/run_parallel.sh
+
+# Print summary
+echo ""
+echo "=========================================="
+echo "Job Summary"
+echo "=========================================="
+cat polaris_run/logs/job_summary.txt
+
+echo ""
+echo "Job completed at: $(date)"
