@@ -40,10 +40,9 @@ if [ ! -f "${VENV_DIR}/bin/activate" ]; then
     python -m venv "${VENV_DIR}"
     source "${VENV_DIR}/bin/activate"
 
-    # Install dependencies
-    echo "Installing dependencies..."
-    pip install --upgrade pip
-    pip install -e ".[all]"
+    # Install dependencies with CUDA 12.1 support
+    echo "Installing dependencies with CUDA 12.1..."
+    bash polaris_run/setup_cuda.sh
 else
     echo "Using existing virtual environment at ${VENV_DIR}"
     source "${VENV_DIR}/bin/activate"
