@@ -44,6 +44,28 @@ polaris_run/
 10. synthetic_graph.json → GPU 1
 11. synthetic_graph_awb.json → GPU 2
 
+## Resume Functionality
+
+The scripts automatically **skip configs that completed successfully** in previous runs. Success markers are stored in `polaris_run/logs/*.success`.
+
+**Key Features:**
+- Automatically resumes from where it left off if job times out or fails
+- Skips already-completed configs (saves time and compute)
+- Shows which configs are skipped vs. running
+- Works across multiple PBS job submissions
+
+**To force re-run all configs:**
+```bash
+bash polaris_run/clear_resume.sh
+# or manually:
+rm -f polaris_run/logs/*.success
+```
+
+**To re-run specific config:**
+```bash
+rm polaris_run/logs/cifar10.success  # Force re-run cifar10.json
+```
+
 ## Usage
 
 ### 1. Submit Job to Polaris
