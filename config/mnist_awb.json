@@ -3,7 +3,7 @@
 
     "data": "mnist",
 
-    "n_task": 10,
+    "n_task": 3,
     "epochs_per_task": 2,
     "batch_size": 64,
 

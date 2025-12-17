@@ -5,7 +5,7 @@
     "data": "synthetic",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 2,
+    "n_task": 3,
     "epochs_per_task": 2,
 
     "model_path": "outputs/synthetic_graph_model",

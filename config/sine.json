@@ -5,8 +5,8 @@
     "data": "sine",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 5,
-    "epochs_per_task": 500,
+    "n_task": 3,
+    "epochs_per_task": 2,
 
     "model_path": "outputs/sine_model",
 

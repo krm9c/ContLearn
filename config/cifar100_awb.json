@@ -3,8 +3,8 @@
 
     "data": "cifar100",
 
-    "n_task": 10,
-    "epochs_per_task": 40,
+    "n_task": 3,
+    "epochs_per_task": 2,
 
     "__comment_arch": "100 classes architecture",
     "feed_sizes": [2304, 512, 256, 100],

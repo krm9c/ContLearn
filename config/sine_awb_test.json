@@ -4,8 +4,8 @@
 
     "data": "sine",
 
-    "n_task": 2,
-    "epochs_per_task": 10,
+    "n_task": 3,
+    "epochs_per_task": 2,
     "model_path": "outputs/test_sine_awb",
 
     "__comment_awb": "AWB with minimal epochs for testing",

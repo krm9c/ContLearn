@@ -3,7 +3,7 @@
 
     "data": "synthetic",
 
-    "n_task": 2,
+    "n_task": 3,
     "epochs_per_task": 2,
 
     "model_path": "outputs/synthetic_graph_awb_model",
