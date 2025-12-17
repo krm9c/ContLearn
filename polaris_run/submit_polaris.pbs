@@ -49,7 +49,7 @@ if [ ! -d "${VENV_DIR}" ]; then
 fi
 
 echo "Activating virtual environment: ${VENV_DIR}"
-source "${VENV_DIR}/bin/activate"
+source "${VENV_DIR}/base/bin/activate"
 
 echo "Python: $(which python)"
 echo ""
