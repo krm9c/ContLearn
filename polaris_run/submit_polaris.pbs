@@ -27,6 +27,15 @@ echo "Working directory: $(pwd)"
 # Set up environment
 echo "Setting up environment..."
 
+# Set up proxy for compute nodes (required for pip installs on Polaris)
+export HTTP_PROXY=http://proxy.alcf.anl.gov:3128
+export HTTPS_PROXY=http://proxy.alcf.anl.gov:3128
+export http_proxy=http://proxy.alcf.anl.gov:3128
+export https_proxy=http://proxy.alcf.anl.gov:3128
+export NO_PROXY=localhost,127.0.0.1,.alcf.anl.gov,.cm.polaris.alcf.anl.gov
+export no_proxy=localhost,127.0.0.1,.alcf.anl.gov,.cm.polaris.alcf.anl.gov
+echo "Proxy configured: ${HTTP_PROXY}"
+
 # Initialize Lmod (module system) - Polaris uses Lmod
 if [ -z "$(type -t module)" ]; then
     # Module function not available, initialize it
