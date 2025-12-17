@@ -10,8 +10,13 @@ SUMMARY_FILE="${LOG_DIR}/job_summary.txt"
 # Create logs directory
 mkdir -p "${LOG_DIR}"
 
-# Initialize summary file
-echo "Continual Learning Job Summary" > "${SUMMARY_FILE}"
+# Initialize summary file with separator
+echo "" > "${SUMMARY_FILE}"
+echo "==========================================================================================================" >> "${SUMMARY_FILE}"
+echo "NEW RUN: $(date)" >> "${SUMMARY_FILE}"
+echo "==========================================================================================================" >> "${SUMMARY_FILE}"
+echo "" >> "${SUMMARY_FILE}"
+echo "Continual Learning Job Summary" >> "${SUMMARY_FILE}"
 echo "Started: $(date)" >> "${SUMMARY_FILE}"
 echo "========================================" >> "${SUMMARY_FILE}"
 echo "" >> "${SUMMARY_FILE}"

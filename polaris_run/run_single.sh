@@ -19,20 +19,9 @@ LOG_DIR="${SCRIPT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 
 # Activate virtual environment (needed for background jobs)
-# Detect conda environment and corresponding venv
-if [ -n "${CONDA_DEFAULT_ENV}" ]; then
-    CONDA_NAME=$(basename ${CONDA_DEFAULT_ENV})
-    VENV_DIR="${PROJECT_ROOT}/venvs/${CONDA_NAME}"
-
-    if [ -f "${VENV_DIR}/bin/activate" ]; then
-        source "${VENV_DIR}/bin/activate"
-    else
-        echo "Warning: Virtual environment not found at ${VENV_DIR}"
-        echo "Using system python: $(which python)"
-    fi
-else
-    echo "Warning: CONDA_DEFAULT_ENV not set"
-    echo "Using system python: $(which python)"
+VENV_DIR="${PROJECT_ROOT}/venvs"
+if [ -f "${VENV_DIR}/bin/activate" ]; then
+    source "${VENV_DIR}/bin/activate"
 fi
 
 # Check if this config already completed successfully
@@ -56,6 +45,12 @@ OUTPUT_DIR="${SCRIPT_DIR}/results/${DATASET_NAME}"
 mkdir -p "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/figures"
 
+# Add separator line for new run
+echo ""
+echo "=========================================================================================================="
+echo "NEW RUN: $(date)"
+echo "=========================================================================================================="
+echo ""
 echo "=========================================="
 echo "Running: ${CONFIG_FILE}"
 echo "Dataset: ${DATASET_NAME}"
