@@ -26,15 +26,12 @@ cd ${PBS_O_WORKDIR}
 # Set up environment
 echo "Setting up environment..."
 
-# Initialize module system for PBS jobs
-source /etc/profile.d/modules.sh
+# Source user's bashrc to get module command and conda initialization
+source ~/.bashrc
 
-# Load conda module
-module use /soft/modulefiles
+# Load conda module (should be available after sourcing bashrc)
+module use /soft/modulefiles 2>/dev/null || true
 module load conda
-
-# Initialize conda for bash (required in PBS jobs)
-eval "$(conda shell.bash hook)"
 
 # Activate conda base environment
 conda activate base
