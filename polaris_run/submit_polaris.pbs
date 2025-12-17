@@ -28,30 +28,13 @@ echo "Working directory: $(pwd)"
 # Set up environment
 echo "Setting up environment..."
 
-# Set up proxy for compute nodes (required for pip installs on Polaris)
-export HTTP_PROXY=http://proxy.alcf.anl.gov:3128
-export HTTPS_PROXY=http://proxy.alcf.anl.gov:3128
-export http_proxy=http://proxy.alcf.anl.gov:3128
-export https_proxy=http://proxy.alcf.anl.gov:3128
-export NO_PROXY=localhost,127.0.0.1,.alcf.anl.gov,.cm.polaris.alcf.anl.gov
-export no_proxy=localhost,127.0.0.1,.alcf.anl.gov,.cm.polaris.alcf.anl.gov
-echo "Proxy configured: ${HTTP_PROXY}"
+# Source user's bashrc to get proxy and conda module
+source ~/.bashrc
 
-# Initialize Lmod (module system) - Polaris uses Lmod
-if [ -z "$(type -t module)" ]; then
-    # Module function not available, initialize it
-    export MODULEPATH=/soft/modulefiles:/opt/cray/pe/lmod/modulefiles/core:/opt/cray/modulefiles
-    source /usr/share/lmod/lmod/init/bash 2>/dev/null || \
-    source /opt/cray/pe/lmod/lmod/init/bash 2>/dev/null || \
-    eval "$(/usr/bin/modulecmd bash purge)" 2>/dev/null || true
-fi
+# Verify proxy is set
+echo "Proxy: ${HTTP_PROXY:-not set - WARNING!}"
 
-# Load conda module
-module use /soft/modulefiles
-module load conda
-
-# Initialize and activate conda
-source /soft/applications/conda/2025-09-25/mconda3/etc/profile.d/conda.sh
+# Activate conda base environment
 conda activate base
 
 # Create venv based on conda environment

@@ -3,10 +3,17 @@
 # Run this after activating your virtual environment
 
 echo "=========================================="
-echo "Installing JAX with CUDA 12 + PyTorch CPU"
+echo "Installing JAX with CUDA + PyTorch CPU"
 echo "=========================================="
 echo "Note: JAX handles GPU computation, PyTorch used for data loading only"
 echo ""
+
+# Check proxy (should be set in bash_profile)
+if [ -z "$HTTP_PROXY" ]; then
+    echo "ERROR: HTTP_PROXY not set! Check your bash_profile."
+    exit 1
+fi
+echo "Proxy: $HTTP_PROXY"
 
 # Check CUDA availability
 if command -v nvidia-smi &> /dev/null; then
@@ -19,6 +26,7 @@ else
 fi
 
 # Upgrade pip first
+echo "Upgrading pip, setuptools, wheel..."
 pip install --upgrade pip setuptools wheel
 
 # Install base package with extras (no torch/jax yet)
@@ -31,20 +39,19 @@ else
     pip install equinox optax numpy tqdm scikit-learn matplotlib seaborn pytest pytest-cov black isort mypy
 fi
 
-# Install JAX with CUDA 12 FIRST (priority for GPU computation)
+# Install JAX with CUDA (let pip figure out dependencies)
 echo ""
-echo "Installing JAX with CUDA 12..."
+echo "Installing JAX with CUDA support..."
 # First, try uninstalling any existing JAX
 pip uninstall -y jax jaxlib 2>/dev/null || true
 
-# Install JAX with CUDA 12 support
-# Using cuda12_pip for systems with CUDA 12.x installed
-pip install jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# Install JAX with CUDA support (let pip resolve versions)
+pip install "jax[cuda]"
 
 # Install PyTorch CPU version (datasets/data loading only)
 echo ""
 echo "Installing PyTorch CPU version (for data loading)..."
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install torch torchvision torchaudio
 
 # Install torch-geometric
 echo ""
@@ -98,13 +105,8 @@ JAX_EXIT=$?
 
 if [ $JAX_EXIT -ne 0 ]; then
     echo ""
-    echo "Attempting alternative JAX installation with cuda12_local..."
-    pip uninstall -y jax jaxlib
-    pip install "jax[cuda12_local]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-
-    echo ""
-    echo "Re-verifying JAX installation..."
-    python -c "import jax; print('JAX backend:', jax.default_backend()); print('JAX devices:', jax.devices())" || echo "JAX verification failed"
+    echo "JAX GPU support failed. Keeping JAX as-is (may be CPU-only)."
+    echo "If you need GPU support, check CUDA drivers and LD_LIBRARY_PATH."
 fi
 
 echo ""
