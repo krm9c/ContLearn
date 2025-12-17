@@ -1,8 +1,9 @@
 #!/bin/bash
-#PBS -l select=2:system=polaris
+#PBS -l select=1:wq:system=polaris
 #PBS -l place=scatter
 #PBS -l walltime=24:00:00
-#PBS -q prod
+#PBS -l filesystems=home:eagle
+#PBS -q debug
 #PBS -A FOUND4CHEM
 #PBS -N contlearn_polaris
 #PBS -o polaris_run/logs/job_${PBS_JOBID}.out
