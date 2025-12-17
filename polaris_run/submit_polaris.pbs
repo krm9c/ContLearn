@@ -54,6 +54,18 @@ source "${VENV_DIR}/base/bin/activate"
 echo "Python: $(which python)"
 echo ""
 
+# Detect and display GPU information
+echo "GPU Information:"
+if command -v nvidia-smi &> /dev/null; then
+    NUM_GPUS=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
+    echo "  Total GPUs detected: ${NUM_GPUS}"
+    echo "  GPU details:"
+    nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | sed 's/^/    /'
+else
+    echo "  nvidia-smi not available"
+fi
+echo ""
+
 # Create results and logs directories
 mkdir -p polaris_run/results
 mkdir -p polaris_run/logs
