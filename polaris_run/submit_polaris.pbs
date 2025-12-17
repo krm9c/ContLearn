@@ -12,6 +12,11 @@
 # Continual Learning Polaris Job Submission Script
 # Runs all configs in parallel across 2 nodes (8 GPUs total)
 
+echo ""
+echo "=========================================================================================================="
+echo "NEW PBS JOB STARTED"
+echo "=========================================================================================================="
+echo ""
 echo "=========================================="
 echo "Polaris Continual Learning Job"
 echo "=========================================="
@@ -28,38 +33,25 @@ echo "Working directory: $(pwd)"
 # Set up environment
 echo "Setting up environment..."
 
-# Source user's bashrc to get proxy and conda module
-source ~/.bashrc
-
-# Verify proxy is set
-echo "Proxy: ${HTTP_PROXY:-not set - WARNING!}"
-
-# Activate conda base environment
-conda activate base
-
-# Create venv based on conda environment
-CONDA_NAME=$(basename ${CONDA_DEFAULT_ENV:-base})
-VENV_DIR="$(pwd)/venvs/${CONDA_NAME}"
-echo "CONDA Environment: ${CONDA_DEFAULT_ENV}"
-echo "Virtual Environment Directory: ${VENV_DIR}"
-mkdir -p "$(pwd)/venvs"
-
-# Create or activate venv
-if [ ! -f "${VENV_DIR}/bin/activate" ]; then
-    echo "Creating virtual environment at ${VENV_DIR}..."
-    python -m venv "${VENV_DIR}"
-    source "${VENV_DIR}/bin/activate"
-
-    # Install dependencies with CUDA 12.1 support
-    echo "Installing dependencies with CUDA 12.1..."
-    bash polaris_run/setup_cuda.sh
-else
-    echo "Using existing virtual environment at ${VENV_DIR}"
-    source "${VENV_DIR}/bin/activate"
+# Check if conda is available, load module if needed
+if ! command -v conda &> /dev/null; then
+    echo "Conda not found, loading conda module..."
+    module load conda
+    echo "Conda loaded: $(which conda)"
 fi
 
+# Activate virtual environment
+VENV_DIR="$(pwd)/venvs"
+if [ ! -d "${VENV_DIR}" ]; then
+    echo "ERROR: Virtual environment not found at ${VENV_DIR}"
+    echo "Please create it first: /soft/applications/conda/2025-09-25/mconda3/bin/python -m venv ${VENV_DIR}"
+    exit 1
+fi
+
+echo "Activating virtual environment: ${VENV_DIR}"
+source "${VENV_DIR}/bin/activate"
+
 echo "Python: $(which python)"
-echo "JAX Backend: $(python -c 'import jax; print(jax.default_backend())')"
 echo ""
 
 # Create results and logs directories
