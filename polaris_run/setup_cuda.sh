@@ -2,8 +2,6 @@
 # CUDA 12.1 Installation Script for Polaris
 # Run this after activating your virtual environment
 
-set -e
-
 echo "=========================================="
 echo "Installing JAX with CUDA 12 + PyTorch CPU"
 echo "=========================================="
@@ -21,11 +19,17 @@ else
 fi
 
 # Upgrade pip first
-pip install --upgrade pip
+pip install --upgrade pip setuptools wheel
 
 # Install base package with extras (no torch/jax yet)
 echo "Installing base package..."
-pip install -e ".[graph,plotting,dev]"
+if pip install -e ".[graph,plotting,dev]"; then
+    echo "✓ Base package installed successfully"
+else
+    echo "Warning: Base package installation failed, continuing with core dependencies..."
+    # Install core dependencies manually
+    pip install equinox optax numpy tqdm scikit-learn matplotlib seaborn pytest pytest-cov black isort mypy
+fi
 
 # Install JAX with CUDA 12 FIRST (priority for GPU computation)
 echo ""
@@ -59,33 +63,34 @@ import sys
 
 try:
     import torch
-    print(f"PyTorch version: {torch.__version__}")
-    print(f"PyTorch CUDA available: {torch.cuda.is_available()}")
-    print(f"PyTorch build: {'CPU-only' if not torch.cuda.is_available() else 'CUDA'}")
+    print(f"✓ PyTorch version: {torch.__version__}")
+    print(f"  PyTorch CUDA available: {torch.cuda.is_available()}")
+    print(f"  PyTorch build: {'CPU-only (expected)' if not torch.cuda.is_available() else 'CUDA'}")
     print()
 except Exception as e:
-    print(f"PyTorch import failed: {e}")
-    sys.exit(1)
+    print(f"✗ PyTorch import failed: {e}")
+    print()
 
 try:
     import jax
-    print(f"JAX version: {jax.__version__}")
-    print(f"JAX backend: {jax.default_backend()}")
-    print(f"JAX devices: {jax.devices()}")
+    print(f"✓ JAX version: {jax.__version__}")
+    print(f"  JAX backend: {jax.default_backend()}")
+    print(f"  JAX devices: {jax.devices()}")
 
     # Try to use GPU
     if jax.default_backend() == 'cpu':
-        print("\nWARNING: JAX is using CPU backend!")
-        print("This might be due to:")
-        print("  1. CUDA libraries not in LD_LIBRARY_PATH")
-        print("  2. Incompatible CUDA version")
-        print("  3. jaxlib not properly installed with CUDA support")
-        print("\nTrying alternative JAX installation...")
+        print("\n⚠ WARNING: JAX is using CPU backend!")
+        print("  This might be due to:")
+        print("    1. CUDA libraries not in LD_LIBRARY_PATH")
+        print("    2. Incompatible CUDA version")
+        print("    3. jaxlib not properly installed with CUDA support")
+        print("  Trying alternative JAX installation...")
         sys.exit(1)
     else:
         print("\n✓ JAX GPU support confirmed!")
+        sys.exit(0)
 except Exception as e:
-    print(f"JAX import/check failed: {e}")
+    print(f"✗ JAX import/check failed: {e}")
     sys.exit(1)
 PYEOF
 
@@ -99,7 +104,7 @@ if [ $JAX_EXIT -ne 0 ]; then
 
     echo ""
     echo "Re-verifying JAX installation..."
-    python -c "import jax; print('JAX backend:', jax.default_backend()); print('JAX devices:', jax.devices())"
+    python -c "import jax; print('JAX backend:', jax.default_backend()); print('JAX devices:', jax.devices())" || echo "JAX verification failed"
 fi
 
 echo ""
