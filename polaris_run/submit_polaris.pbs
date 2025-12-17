@@ -22,18 +22,26 @@ echo ""
 
 # Change to submission directory
 cd ${PBS_O_WORKDIR}
+echo "Working directory: $(pwd)"
 
 # Set up environment
 echo "Setting up environment..."
 
-# Source user's bashrc to get module command and conda initialization
-source ~/.bashrc
+# Initialize Lmod (module system) - Polaris uses Lmod
+if [ -z "$(type -t module)" ]; then
+    # Module function not available, initialize it
+    export MODULEPATH=/soft/modulefiles:/opt/cray/pe/lmod/modulefiles/core:/opt/cray/modulefiles
+    source /usr/share/lmod/lmod/init/bash 2>/dev/null || \
+    source /opt/cray/pe/lmod/lmod/init/bash 2>/dev/null || \
+    eval "$(/usr/bin/modulecmd bash purge)" 2>/dev/null || true
+fi
 
-# Load conda module (should be available after sourcing bashrc)
-module use /soft/modulefiles 2>/dev/null || true
+# Load conda module
+module use /soft/modulefiles
 module load conda
 
-# Activate conda base environment
+# Initialize and activate conda
+source /soft/applications/conda/2025-09-25/mconda3/etc/profile.d/conda.sh
 conda activate base
 
 # Create venv based on conda environment
