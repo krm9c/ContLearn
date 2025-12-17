@@ -58,6 +58,11 @@ echo ""
 mkdir -p polaris_run/results
 mkdir -p polaris_run/logs
 
+# Pre-download datasets to avoid parallel download conflicts
+echo "Pre-downloading datasets..."
+python polaris_run/download_datasets.py
+echo ""
+
 # Run parallel jobs
 echo "Launching parallel jobs..."
 bash polaris_run/run_parallel.sh
