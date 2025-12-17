@@ -20,8 +20,8 @@ mkdir -p "${LOG_DIR}"
 
 # Activate virtual environment (needed for background jobs)
 # Detect conda environment and corresponding venv
-if [ -n "${CONDA_PREFIX}" ]; then
-    CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+if [ -n "${CONDA_DEFAULT_ENV}" ]; then
+    CONDA_NAME=$(basename ${CONDA_DEFAULT_ENV})
     VENV_DIR="${PROJECT_ROOT}/venvs/${CONDA_NAME}"
 
     if [ -f "${VENV_DIR}/bin/activate" ]; then
@@ -30,6 +30,9 @@ if [ -n "${CONDA_PREFIX}" ]; then
         echo "Warning: Virtual environment not found at ${VENV_DIR}"
         echo "Using system python: $(which python)"
     fi
+else
+    echo "Warning: CONDA_DEFAULT_ENV not set"
+    echo "Using system python: $(which python)"
 fi
 
 # Check if this config already completed successfully

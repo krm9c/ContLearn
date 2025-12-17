@@ -25,14 +25,26 @@ cd ${PBS_O_WORKDIR}
 
 # Set up environment
 echo "Setting up environment..."
+
+# Initialize module system for PBS jobs
+source /etc/profile.d/modules.sh
+
+# Load conda module
 module use /soft/modulefiles
 module load conda
+
+# Initialize conda for bash (required in PBS jobs)
+eval "$(conda shell.bash hook)"
+
+# Activate conda base environment
 conda activate base
 
 # Create venv based on conda environment
-CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+CONDA_NAME=$(basename ${CONDA_DEFAULT_ENV:-base})
 VENV_DIR="$(pwd)/venvs/${CONDA_NAME}"
-mkdir -p "${VENV_DIR}"
+echo "CONDA Environment: ${CONDA_DEFAULT_ENV}"
+echo "Virtual Environment Directory: ${VENV_DIR}"
+mkdir -p "$(pwd)/venvs"
 
 # Create or activate venv
 if [ ! -f "${VENV_DIR}/bin/activate" ]; then
