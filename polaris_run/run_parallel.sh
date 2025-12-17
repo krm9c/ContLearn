@@ -53,8 +53,17 @@ CONFIGS=(
 declare -A JOB_STATUS
 declare -A JOB_PIDS
 
-# Number of GPUs available
-NUM_GPUS=8
+# Automatically detect number of GPUs available
+if command -v nvidia-smi &> /dev/null; then
+    NUM_GPUS=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
+    echo "Detected ${NUM_GPUS} GPUs via nvidia-smi"
+else
+    # Fallback: assume 4 GPUs per node on Polaris
+    NUM_GPUS=${PBS_NUM_NODES:-1}
+    NUM_GPUS=$((NUM_GPUS * 4))
+    echo "nvidia-smi not available, assuming ${NUM_GPUS} GPUs (${PBS_NUM_NODES:-1} nodes × 4 GPUs)"
+fi
+echo ""
 
 # Function to run a single job
 run_job() {
