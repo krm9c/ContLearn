@@ -5,8 +5,8 @@
     "data": "cifar100",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 10,
-    "epochs_per_task": 100,
+    "n_task": 3,
+    "epochs_per_task": 2,
 
     "__comment_arch": "Override default: 100 classes instead of 10",
     "feed_sizes": [2304, 512, 256, 100],

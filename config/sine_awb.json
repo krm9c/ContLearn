@@ -2,8 +2,8 @@
     "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
 
     "data": "sine",
-    "n_task": 5,
-    "epochs_per_task": 500,
+    "n_task": 3,
+    "epochs_per_task": 2,
     "model_path": "outputs/sine_awb_model",
     
     "__comment_awb": "AWB architecture morphing enabled",
