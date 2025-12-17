@@ -23,9 +23,11 @@ MANIFEST
 
 # Virtual Environments
 venv/
+venvs/
 env/
 ENV/
 .venv
+polaris_run/venvs/
 
 # IDEs
 .vscode/
