@@ -6,9 +6,10 @@
 
     "__comment_training": "Experimental parameters",
     "n_task": 10,
-    "epochs_per_task": 1,
-    "batch_size": 64,
+    "epochs_per_task": 10,
+    "batch_size": 512,
 
+    
     "model_path": "outputs/mnist_model",
     "save_iter": 5,
 
@@ -17,5 +18,5 @@
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
     "lr_schedule": "exponential",
-    "debug_mode": true
+    "debug_mode": false
 }

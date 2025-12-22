@@ -16,7 +16,6 @@ from .recording import RecordingMixin
 # Enable float64 for numerical stability
 jax.config.update("jax_enable_x64", True)
 
-
 class Trainer(LossMixin, HamiltonianMixin, TrainingLoopsMixin, RecordingMixin, eqx.Module):
     """Main Trainer class for continual learning.
 
