@@ -1,13 +1,12 @@
 #!/bin/bash -l
-#PBS -l select=3:system=polaris
-#PBS -l place=scatter
-#PBS -l walltime=12:00:00
+#PBS -l select=8
+#PBS -l walltime=8:00:00
 #PBS -l filesystems=home:eagle
-#PBS -q preemptable
+#PBS -q by-gpu
 #PBS -A FOUND4CHEM
-#PBS -N contlearn_polaris
-#PBS -o polaris_run/logs/job_${PBS_JOBID}.out
-#PBS -e polaris_run/logs/job_${PBS_JOBID}.err
+#PBS -N contlearn_sophia
+#PBS -o sophia_run/logs/job_${PBS_JOBID}.out
+#PBS -e sophia_run/logs/job_${PBS_JOBID}.err
 
 # Continual Learning Polaris Job Submission Script
 # Runs all configs in parallel across 2 nodes (8 GPUs total)
@@ -66,8 +65,8 @@ fi
 echo ""
 
 # Create results and logs directories
-mkdir -p polaris_run/results
-mkdir -p polaris_run/logs
+mkdir -p sophia_run/results
+mkdir -p sophia_run/logs
 
 # Pre-download datasets to avoid parallel download conflicts
 echo "Pre-downloading datasets..."
@@ -76,14 +75,14 @@ echo ""
 
 # Run parallel jobs
 echo "Launching parallel jobs..."
-bash polaris_run/run_parallel.sh
+bash sophia_run/run_parallel.sh
 
 # Print summary
 echo ""
 echo "=========================================="
 echo "Job Summary"
 echo "=========================================="
-cat polaris_run/logs/job_summary.txt
+cat sophia_run/logs/job_summary.txt
 
 echo ""
 echo "Job completed at: $(date)"
