@@ -18,25 +18,428 @@ The Hamiltonian H = V + dV where:
 Each method supports two modes:
 - notABTrain=True: Standard training (train W with A/B frozen)
 - notABTrain=False: AWB training (train A/B with W frozen)
+
+Performance Note:
+    This module uses @eqx.filter_jit for JIT compilation of core computation functions.
+    This enables high GPU utilization by compiling the entire Hamiltonian computation
+    into fused GPU kernels, avoiding Python overhead between operations.
 """
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
+from functools import partial
 
-# Added by Claude: Default gradient combination weights
+# Default gradient combination weights
 # [alpha, beta, gamma] for [current_task, experience_replay, hamiltonian_regularization]
 DEFAULT_GRAD_WEIGHTS = [0.01, 0.98, 0.1]
 
 
+# =============================================================================
+# JIT-Compiled Loss Functions (Step 1)
+# =============================================================================
+# These are pure JAX functions that can be efficiently JIT-compiled.
+# Separate functions for standard vs AWB modes to avoid Python conditionals in JIT.
+
+@eqx.filter_jit
+def _loss_mse_standard(params, static, x, y):
+    """JIT-compiled MSE loss for standard training.
+
+    Args:
+        params: Trainable model parameters (PyTree)
+        static: Frozen model components (PyTree)
+        x: Input features (JAX array, shape [batch, input_dim])
+        y: Target values (JAX array, shape [batch])
+
+    Returns:
+        Scalar loss value
+    """
+    model = eqx.combine(params, static)
+    pred_y = jax.vmap(model)(x)
+    pred_y = pred_y.squeeze(-1) if pred_y.ndim > 1 else pred_y
+    return jnp.mean(optax.l2_loss(y, pred_y))
+
+
+@eqx.filter_jit
+def _loss_mse_awb(params, static, x, y):
+    """JIT-compiled MSE loss for AWB training (uses model.getAWB)."""
+    model = eqx.combine(params, static)
+    pred_y = jax.vmap(model.getAWB)(x)
+    pred_y = pred_y.squeeze(-1) if pred_y.ndim > 1 else pred_y
+    return jnp.mean(optax.l2_loss(y, pred_y))
+
+
+@eqx.filter_jit
+def _loss_class_standard(params, static, x, y):
+    """JIT-compiled classification loss for standard training.
+
+    Args:
+        params: Trainable model parameters (PyTree)
+        static: Frozen model components (PyTree)
+        x: Input features (JAX array, shape [batch, ...])
+        y: Target labels (JAX array, shape [batch], int64)
+
+    Returns:
+        Scalar loss value
+    """
+    model = eqx.combine(params, static)
+    pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
+    return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
+
+
+@eqx.filter_jit
+def _loss_class_awb(params, static, x, y):
+    """JIT-compiled classification loss for AWB training (uses model.get_AWBT)."""
+    model = eqx.combine(params, static)
+    pred_y = jax.vmap(model.get_AWBT)(x)
+    pred_y = jax.nn.log_softmax(pred_y)
+    return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
+
+
+@eqx.filter_jit
+def _loss_graph_standard(params, static, x, adj, b, n, y):
+    """JIT-compiled graph classification loss for standard training.
+
+    Args:
+        params: Trainable model parameters (PyTree)
+        static: Frozen model components (PyTree)
+        x: Node features (JAX array)
+        adj: Adjacency matrix (JAX array)
+        b: Batch assignment vector (JAX array)
+        n: Node counts per graph (JAX array)
+        y: Target labels (JAX array, int64)
+
+    Returns:
+        Scalar loss value
+    """
+    model = eqx.combine(params, static)
+    pred_y = model(x, adj, b, n)
+    return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
+
+
+@eqx.filter_jit
+def _loss_graph_awb(params, static, x, adj, b, n, y):
+    """JIT-compiled graph classification loss for AWB training (uses model.get_AWBT)."""
+    model = eqx.combine(params, static)
+    pred_y = model.get_AWBT(x, adj, b, n)
+    return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
+
+
+# =============================================================================
+# JIT-Compiled Hamiltonian Core Functions (Step 2)
+# =============================================================================
+# These functions compute the full Hamiltonian gradient with all operations
+# fused into a single JIT-compiled kernel for maximum GPU efficiency.
+
+@eqx.filter_jit
+def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
+                                    alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for MSE regression (standard training).
+
+    Computes: grad = alpha * delta_theta + beta * grad_V + gamma * grad_dV
+
+    Args:
+        params: Trainable parameters
+        static: Frozen model components
+        x, y: Current task batch
+        exp_x, exp_y: Experience replay batch
+        deltax: Input perturbation
+        alpha, beta, gamma: Gradient combination weights
+        sqrt_param_count: Pre-computed sqrt(param_count) for normalization
+        dV_scale: Additional dV scaling factor
+
+    Returns:
+        Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx))
+    """
+    # Loss function for current task (closed over y)
+    def loss_fn_curr(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model)(xx)
+        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        return jnp.mean(optax.l2_loss(y, pred))
+
+    # Loss function for experience data (closed over exp_y)
+    def loss_fn_exp(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model)(xx)
+        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        return jnp.mean(optax.l2_loss(exp_y, pred))
+
+    # Compute delta_theta (gradient on current task)
+    delta_theta = jax.grad(loss_fn_curr)(params, x)
+
+    # Compute wdot (negative gradient direction for perturbation)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    # Compute grad_V (gradient on experience data)
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+
+    # Linearize at experience data for directional derivatives
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
+
+    # Compute directional derivatives
+    zero_dx = jnp.zeros_like(deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax)
+    dV_raw = f_jvp(wdot, deltax)
+
+    # Normalize dV values
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+
+    # Combine gradients: grad = alpha * delta_theta + beta * grad_V + gamma * grad_dV
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx)
+
+
+@eqx.filter_jit
+def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
+                               alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for MSE regression (AWB training)."""
+    # Loss function for current task using AWB forward (closed over y)
+    def loss_fn_curr(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model.getAWB)(xx)
+        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        return jnp.mean(optax.l2_loss(y, pred))
+
+    # Loss function for experience data using AWB forward (closed over exp_y)
+    def loss_fn_exp(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model.getAWB)(xx)
+        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        return jnp.mean(optax.l2_loss(exp_y, pred))
+
+    delta_theta = jax.grad(loss_fn_curr)(params, x)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
+
+    zero_dx = jnp.zeros_like(deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax)
+    dV_raw = f_jvp(wdot, deltax)
+
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx)
+
+
+@eqx.filter_jit
+def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
+                                      alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for classification (standard training)."""
+    def loss_fn_curr(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.nn.log_softmax(jax.vmap(model)(xx))
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
+
+    def loss_fn_exp(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.nn.log_softmax(jax.vmap(model)(xx))
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
+
+    delta_theta = jax.grad(loss_fn_curr)(params, x)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
+
+    zero_dx = jnp.zeros_like(deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax)
+    dV_raw = f_jvp(wdot, deltax)
+
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx)
+
+
+@eqx.filter_jit
+def _hamiltonian_core_class_awb(params, static, x, y, exp_x, exp_y, deltax,
+                                 alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for classification (AWB training)."""
+    def loss_fn_curr(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model.get_AWBT)(xx)
+        pred = jax.nn.log_softmax(pred)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
+
+    def loss_fn_exp(p, xx):
+        model = eqx.combine(p, static)
+        pred = jax.vmap(model.get_AWBT)(xx)
+        pred = jax.nn.log_softmax(pred)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
+
+    delta_theta = jax.grad(loss_fn_curr)(params, x)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
+
+    zero_dx = jnp.zeros_like(deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax)
+    dV_raw = f_jvp(wdot, deltax)
+
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx)
+
+
+@eqx.filter_jit
+def _hamiltonian_core_graph_standard(params, static, x, y, adj, b, n,
+                                      exp_x, exp_y, exp_adj, exp_b, exp_n,
+                                      deltax, delta_adj,
+                                      alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for graph classification (standard training)."""
+    def loss_fn_curr(p, xx, xxadj):
+        model = eqx.combine(p, static)
+        pred = model(xx, xxadj, b, n)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
+
+    def loss_fn_exp(p, xx, xxadj):
+        model = eqx.combine(p, static)
+        pred = model(xx, xxadj, exp_b, exp_n)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
+
+    # Compute delta_theta
+    delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
+
+    # Compute wdot with scaling
+    def norm_param(g):
+        return g * (-1e-04 / jnp.sqrt(jnp.linalg.norm(g**2) + 1e-8))
+    wdot = jax.tree_util.tree_map(norm_param, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    # Compute grad_V
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x, exp_adj)
+
+    # Linearize
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x, exp_adj)
+
+    zero_dx = jnp.zeros_like(deltax)
+    zero_dadj = jnp.zeros_like(delta_adj)
+
+    grad_dV = jax.grad(f_jvp)(wdot, deltax, delta_adj)
+    dV_raw = f_jvp(wdot, deltax, delta_adj)
+
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx, zero_dadj) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax, zero_dadj) / sqrt_param_count) * dV_scale
+    dV_dadj = (f_jvp(zero_dtheta, zero_dx, delta_adj) / sqrt_param_count) * dV_scale
+
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx, dV_dadj)
+
+
+@eqx.filter_jit
+def _hamiltonian_core_graph_awb(params, static, x, y, adj, b, n,
+                                 exp_x, exp_y, exp_adj, exp_b, exp_n,
+                                 deltax, delta_adj,
+                                 alpha, beta, gamma, sqrt_param_count, dV_scale):
+    """JIT-compiled Hamiltonian core for graph classification (AWB training)."""
+    def loss_fn_curr(p, xx, xxadj):
+        model = eqx.combine(p, static)
+        pred = model.get_AWBT(xx, xxadj, b, n)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
+
+    def loss_fn_exp(p, xx, xxadj):
+        model = eqx.combine(p, static)
+        pred = model.get_AWBT(xx, xxadj, exp_b, exp_n)
+        return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
+
+    delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
+
+    def norm_param(g):
+        return g * (-1e-04 / jnp.sqrt(jnp.linalg.norm(g**2) + 1e-8))
+    wdot = jax.tree_util.tree_map(norm_param, delta_theta)
+    zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    grad_V = jax.grad(loss_fn_exp)(params, exp_x, exp_adj)
+    V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x, exp_adj)
+
+    zero_dx = jnp.zeros_like(deltax)
+    zero_dadj = jnp.zeros_like(delta_adj)
+
+    grad_dV = jax.grad(f_jvp)(wdot, deltax, delta_adj)
+    dV_raw = f_jvp(wdot, deltax, delta_adj)
+
+    dV = (dV_raw / sqrt_param_count) * dV_scale
+    dV_dtheta = (f_jvp(wdot, zero_dx, zero_dadj) / sqrt_param_count) * dV_scale
+    dV_dx = (f_jvp(zero_dtheta, deltax, zero_dadj) / sqrt_param_count) * dV_scale
+    dV_dadj = (f_jvp(zero_dtheta, zero_dx, delta_adj) / sqrt_param_count) * dV_scale
+
+    grad = jax.tree_util.tree_map(
+        lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
+        delta_theta, grad_V, grad_dV
+    )
+
+    return grad, (V + dV, V, dV, dV_dtheta, dV_dx, dV_dadj)
+
+
+# =============================================================================
+# Helper function to compute parameter count as JAX scalar
+# =============================================================================
+
+def _get_param_count_jax(params):
+    """Compute parameter count as JAX scalar (for use in JIT).
+
+    Args:
+        params: PyTree of parameters
+
+    Returns:
+        JAX scalar with total parameter count
+    """
+    leaves = jax.tree_util.tree_leaves(params)
+    return jnp.array(sum(leaf.size for leaf in leaves), dtype=jnp.float64)
+
+
 class HamiltonianMixin:
-    """Mixin class containing Hamiltonian computation methods for continual learning."""
+    """Mixin class containing Hamiltonian computation methods for continual learning.
+
+    This class provides JIT-optimized Hamiltonian gradient computation for:
+    - MSE regression (return_Hamiltonian_mse)
+    - Classification (return_Hamiltonian_class)
+    - Graph classification (return_Hamiltonian_graph)
+
+    Each method dispatches to pre-compiled JIT functions for high GPU utilization.
+    """
 
     def _count_parameters(self, params):
         """Count total number of parameters in pytree.
-
-        Added by Claude: Helper for normalization.
 
         Args:
             params: PyTree of parameters
@@ -47,15 +450,21 @@ class HamiltonianMixin:
         leaves = jax.tree_util.tree_leaves(params)
         return float(sum(leaf.size for leaf in leaves))
 
+    def _get_sqrt_param_count(self, params):
+        """Get sqrt of parameter count as JAX scalar for JIT compatibility.
+
+        Args:
+            params: PyTree of parameters
+
+        Returns:
+            JAX scalar with sqrt(param_count)
+        """
+        leaves = jax.tree_util.tree_leaves(params)
+        count = sum(leaf.size for leaf in leaves)
+        return jnp.sqrt(jnp.array(count, dtype=jnp.float64))
+
     def _normalize_dV(self, dV, params, normalize=True, scale_factor=1.0):
         """Normalize dV by parameter count to prevent scaling with model size.
-
-        Added by Claude: Following optimization best practices (Glorot & Bengio, 2010),
-        normalize regularization terms by parameter dimension.
-
-        Reference:
-        - Glorot & Bengio, "Understanding the difficulty of training deep
-          feedforward neural networks", AISTATS 2010
 
         Args:
             dV: Raw dV value
@@ -69,11 +478,8 @@ class HamiltonianMixin:
         if not normalize:
             return dV * scale_factor
 
-        # Normalize by sqrt of parameter count (following weight initialization theory)
         param_count = self._count_parameters(params)
-        dV_normalized = dV  / jnp.sqrt(param_count)
-
-        # Apply additional scaling if specified
+        dV_normalized = dV / jnp.sqrt(param_count)
         dV_normalized = dV_normalized * scale_factor
 
         return dV_normalized
@@ -82,248 +488,149 @@ class HamiltonianMixin:
                                  normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for graph classification.
 
+        Uses JIT-compiled core functions for high GPU utilization.
+
         Args:
             params: Trainable model parameters
             data: Tuple of (static, (batch, batch_ex, deltax, delta_adj))
+                  OR (static, (x, y, adj, b, n, exp_x, exp_y, exp_adj, exp_b, exp_n, deltax, delta_adj))
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
-                         [current_task, experience_replay, hamiltonian_regularization]
             normalize_dV: Whether to normalize dV by parameter count (default True)
             dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx, dV_dadj))
         """
-        # Added by Claude: Use provided weights or defaults
         if grad_weights is None:
             grad_weights = DEFAULT_GRAD_WEIGHTS
         alpha, beta, gamma = grad_weights
 
-        static, (batch, batch_ex, deltax, delta_adj) = data
+        static, batch_data = data
 
-        # Extract data from batches
-        x = jnp.float64(jnp.array(batch.x.numpy()))
-        y = jnp.int64(jnp.array(batch.y.numpy()))
-        adj = jnp.float64(jnp.array(batch.adj.numpy()))
-        b = jnp.array(batch.batch.numpy())
-        n = jnp.array(batch.n_nodes.numpy())
-
-        ex = jnp.float64(jnp.array(batch_ex.x.numpy()))
-        ey = jnp.int64(jnp.array(batch_ex.y.numpy()))
-        eadj = jnp.float64(jnp.array(batch_ex.adj.numpy()))
-        eb = jnp.array(batch_ex.batch.numpy())
-        en = jnp.array(batch_ex.n_nodes.numpy())
-
-        extra = (y, b, n)
-
-        # Define loss function based on training mode
-        if notABTrain:
-            def return_V_star_graph(params, xx, xxadj):
-                (yy, bb, nn) = extra
-                model = eqx.combine(params, static)
-                pred_y = model(xx, xxadj, bb, nn)
-                loss = jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, yy))
-                return loss
+        # Check if data is already extracted (new format) or needs extraction (old format)
+        if len(batch_data) == 12:
+            # New format: already extracted JAX arrays
+            (x, y, adj, b, n, exp_x, exp_y, exp_adj, exp_b, exp_n, deltax, delta_adj) = batch_data
         else:
-            def return_V_star_graph(params, xx, xxadj):
-                (yy, bb, nn) = extra
-                model = eqx.combine(params, static)
-                pred_y = model.get_AWBT(xx, xxadj, bb, nn)
-                loss = jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, yy))
-                return loss
+            # Old format: torch_geometric batch objects (for backward compatibility)
+            (batch, batch_ex, deltax, delta_adj) = batch_data
+            x = jnp.asarray(batch.x.numpy(), dtype=jnp.float64)
+            y = jnp.asarray(batch.y.numpy(), dtype=jnp.int64)
+            adj = jnp.asarray(batch.adj.numpy(), dtype=jnp.float64)
+            b = jnp.asarray(batch.batch.numpy())
+            n = jnp.asarray(batch.n_nodes.numpy())
 
-        def norm_param(x):
-            return (x * (-1 * 1e-04 / jnp.sqrt(jnp.linalg.norm(x**2))))
+            exp_x = jnp.asarray(batch_ex.x.numpy(), dtype=jnp.float64)
+            exp_y = jnp.asarray(batch_ex.y.numpy(), dtype=jnp.int64)
+            exp_adj = jnp.asarray(batch_ex.adj.numpy(), dtype=jnp.float64)
+            exp_b = jnp.asarray(batch_ex.batch.numpy())
+            exp_n = jnp.asarray(batch_ex.n_nodes.numpy())
 
-        # Compute perturbation directions
-        xdot = deltax
-        zero_dx = jnp.zeros(xdot.shape)
-        delta_theta = jax.grad(return_V_star_graph, argnums=(0))(params, x, adj)
-        wdot = jax.tree_util.tree_map(norm_param, delta_theta)
-        zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
-        adjdot = delta_adj
-        zero_dadj = jnp.zeros(adjdot.shape)
+            deltax = jnp.asarray(deltax, dtype=jnp.float64)
+            delta_adj = jnp.asarray(delta_adj, dtype=jnp.float64)
 
-        # Switch to experience data
-        extra = (ey, eb, en)
-        grad_V = jax.grad(return_V_star_graph, argnums=(0))(params, ex, eadj)
+        # Compute sqrt(param_count) for normalization
+        sqrt_param_count = self._get_sqrt_param_count(params)
 
-        # Linearize and compute directional derivatives
-        V, f_jvp = jax.linearize(return_V_star_graph, params, ex, eadj)
-        grad_dV = jax.grad(f_jvp)(wdot, xdot, adjdot)
-        dV_raw = f_jvp(wdot, xdot, adjdot)
-
-        # Added by Claude: Normalize dV to prevent extreme magnitudes
-        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx, zero_dadj), params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot, zero_dadj), params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dadj = self._normalize_dV(f_jvp(zero_dtheta, zero_dx, adjdot), params, normalize=normalize_dV, scale_factor=dV_scale)
-
-        # Added by Claude: Use configurable gradient weights
-        def combine_grad(x, y, z):
-            return alpha * x + beta * y + gamma * z
-
-        grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
-
-        return grad, (
-            (V + dV),  # H = V + dV (using normalized dV)
-            V,         # V (loss on experience)
-            dV,        # dV (normalized)
-            dV_dtheta, # dV_dtheta (normalized)
-            dV_dx,     # dV_dx (normalized)
-            dV_dadj    # dV_dadj (normalized)
-        )
+        # Dispatch to JIT-compiled core function (Python branching outside JIT)
+        if notABTrain:
+            return _hamiltonian_core_graph_standard(
+                params, static, x, y, adj, b, n,
+                exp_x, exp_y, exp_adj, exp_b, exp_n,
+                deltax, delta_adj,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
+        else:
+            return _hamiltonian_core_graph_awb(
+                params, static, x, y, adj, b, n,
+                exp_x, exp_y, exp_adj, exp_b, exp_n,
+                deltax, delta_adj,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
 
     def return_Hamiltonian_mse(self, params, data, notABTrain=True, grad_weights=None,
                                normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for MSE regression.
 
+        Uses JIT-compiled core functions for high GPU utilization.
+
         Args:
             params: Trainable model parameters
             data: Tuple of (statics, (x, y, exp_x, exp_y, deltax, flag))
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
-                         [current_task, experience_replay, hamiltonian_regularization]
             normalize_dV: Whether to normalize dV by parameter count (default True)
             dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx))
         """
-        # Added by Claude: Use provided weights or defaults
         if grad_weights is None:
             grad_weights = DEFAULT_GRAD_WEIGHTS
         alpha, beta, gamma = grad_weights
 
         statics, (x, y, exp_x, exp_y, deltax, flag) = data
-        extra = y
 
+        # Compute sqrt(param_count) for normalization
+        sqrt_param_count = self._get_sqrt_param_count(params)
+
+        # Dispatch to JIT-compiled core function (Python branching outside JIT)
         if notABTrain:
-            def return_V_star_vector_mse(params, x):
-                y = extra
-                model = eqx.combine(params, statics)
-                pred_y = jax.vmap(model)(x)
-                pred_y = pred_y.squeeze(1)
-                return jnp.mean(optax.l2_loss(y, pred_y))
+            return _hamiltonian_core_mse_standard(
+                params, statics, x, y, exp_x, exp_y, deltax,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
         else:
-            def return_V_star_vector_mse(params, x):
-                y = extra
-                model = eqx.combine(params, statics)
-                pred_y = jax.vmap(model.getAWB)(x)
-                return jnp.mean(optax.l2_loss(y, pred_y))
-
-        def norm_param(x):
-            return (x * -1)
-
-        # Compute perturbation directions
-        xdot = deltax
-        zero_dx = jnp.zeros(xdot.shape)
-        delta_theta = jax.grad(return_V_star_vector_mse, argnums=(0))(params, x)
-        wdot = jax.tree_util.tree_map(norm_param, delta_theta)
-        zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
-
-        # Switch to experience data
-        extra = exp_y
-        grad_V = jax.grad(return_V_star_vector_mse, argnums=(0))(params, exp_x)
-
-        # Linearize: produces linear approximation using jvp and partial eval
-        V, f_jvp = jax.linearize(return_V_star_vector_mse, params, exp_x)
-        grad_dV = jax.grad(f_jvp)(wdot, xdot)
-        dV_raw = f_jvp(wdot, xdot)
-
-        # Added by Claude: Normalize dV to prevent extreme magnitudes
-        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx), params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot), params, normalize=normalize_dV, scale_factor=dV_scale)
-
-        # Added by Claude: Use configurable gradient weights
-        def combine_grad(x, y, z):
-            return alpha * x + beta * y + gamma * z
-
-        grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
-
-        return grad, (
-            (V + dV),  # H (using normalized dV)
-            V,         # V
-            dV,        # dV (normalized)
-            dV_dtheta, # dV_dtheta (normalized)
-            dV_dx      # dV_dx (normalized)
-        )
+            return _hamiltonian_core_mse_awb(
+                params, statics, x, y, exp_x, exp_y, deltax,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
 
     def return_Hamiltonian_class(self, params, data, notABTrain=True, grad_weights=None,
                                  normalize_dV=True, dV_scale=1.0):
         """Compute Hamiltonian gradient for classification.
 
+        Uses JIT-compiled core functions for high GPU utilization.
+
         Args:
             params: Trainable model parameters
             data: Tuple of (statics, (x, y, exp_x, exp_y, deltax, flag))
             notABTrain: True for standard training, False for AWB A/B training
             grad_weights: Optional [alpha, beta, gamma] weights for gradient combination
-                         [current_task, experience_replay, hamiltonian_regularization]
             normalize_dV: Whether to normalize dV by parameter count (default True)
             dV_scale: Additional scaling factor for dV (default 1.0)
 
         Returns:
             Tuple of (grad, (H, V, dV, dV_dtheta, dV_dx))
         """
-        # Added by Claude: Use provided weights or defaults
         if grad_weights is None:
             grad_weights = DEFAULT_GRAD_WEIGHTS
         alpha, beta, gamma = grad_weights
 
         statics, (x, y, exp_x, exp_y, deltax, flag) = data
-        extra = y
 
+        # Ensure labels are int64 for cross-entropy
+        y = y.astype(jnp.int64)
+        exp_y = exp_y.astype(jnp.int64)
+
+        # Compute sqrt(param_count) for normalization
+        sqrt_param_count = self._get_sqrt_param_count(params)
+
+        # Dispatch to JIT-compiled core function (Python branching outside JIT)
         if notABTrain:
-            def return_V_star_class(params, x):
-                y = extra
-                model = eqx.combine(params, statics)
-                y = y.astype(jnp.int64)
-                pred_y = jax.nn.log_softmax(jax.vmap(model)(x))
-                return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
+            return _hamiltonian_core_class_standard(
+                params, statics, x, y, exp_x, exp_y, deltax,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
         else:
-            def return_V_star_class(params, x):
-                y = extra
-                model = eqx.combine(params, statics)
-                y = y.astype(jnp.int64)
-                pred_y = jax.vmap(model.get_AWBT)(x)
-                pred_y = jax.nn.log_softmax(pred_y)
-                return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_y, y))
-
-        def norm_param(x):
-            return (-1 * x)
-
-        # Compute perturbation directions
-        xdot = deltax
-        zero_dx = jnp.zeros(xdot.shape)
-        delta_theta = jax.grad(return_V_star_class, argnums=(0))(params, x)
-        wdot = jax.tree_util.tree_map(norm_param, delta_theta)
-        zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
-
-        # Switch to experience data
-        extra = exp_y
-        grad_V = jax.grad(return_V_star_class, argnums=(0))(params, exp_x)
-
-        # Linearize
-        V, f_jvp = jax.linearize(return_V_star_class, params, exp_x)
-        grad_dV = jax.grad(f_jvp)(wdot, xdot)
-        dV_raw = f_jvp(wdot, xdot)
-
-        # Added by Claude: Normalize dV to prevent extreme magnitudes
-        dV = self._normalize_dV(dV_raw, params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dtheta = self._normalize_dV(f_jvp(wdot, zero_dx), params, normalize=normalize_dV, scale_factor=dV_scale)
-        dV_dx = self._normalize_dV(f_jvp(zero_dtheta, xdot), params, normalize=normalize_dV, scale_factor=dV_scale)
-
-        # Added by Claude: Use configurable gradient weights
-        def combine_grad(x, y, z):
-            return alpha * x + beta * y + gamma * z
-
-        grad = jax.tree_util.tree_map(combine_grad, delta_theta, grad_V, grad_dV)
-
-        return grad, (
-            (V + dV),  # H (using normalized dV)
-            V,         # V
-            dV,        # dV (normalized)
-            dV_dtheta, # dV_dtheta (normalized)
-            dV_dx      # dV_dx (normalized)
-        )
+            return _hamiltonian_core_class_awb(
+                params, statics, x, y, exp_x, exp_y, deltax,
+                jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
+                sqrt_param_count, jnp.array(dV_scale)
+            )
