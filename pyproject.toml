@@ -82,6 +82,7 @@ markers = [
     "unit: Fast unit tests for individual components",
     "training: Slow integration tests that run full training pipelines",
     "scripts: Legacy marker for training tests (backwards compatibility)",
+    "gpu: GPU performance tests (requires GPU and generates reports)",
 ]
 
 [tool.black]
