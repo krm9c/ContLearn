@@ -130,6 +130,28 @@ def simple_mlp():
     return SimpleMLP(jrandom.PRNGKey(42))
 
 
+@pytest.fixture
+def cifar_cnn():
+    """Create a CNN3D model for CIFAR-100 testing (realistic workload)."""
+    from cl.models.cnn import CNN3D
+
+    # CNN3D for CIFAR-100: 3x32x32 input, 100 classes
+    # feed_sizes: [flatten_size, hidden1, hidden2, num_classes]
+    # After 2 conv layers with pooling: 32 -> 14 -> 5, channels: 3 -> 32 -> 64
+    # Flatten size: 5 * 5 * 64 = 1600
+    feed_sizes = [1600, 512, 256, 100]
+
+    return CNN3D(
+        key=jax.random.PRNGKey(42),
+        filter_size=3,
+        feed_sizes=feed_sizes,
+        input_size=32,
+        channel_in=3,
+        channel_out=32,
+        num_classes=100
+    )
+
+
 # =============================================================================
 # GPU Environment Tests
 # =============================================================================
@@ -326,6 +348,172 @@ class TestHamiltonianJITPerformance:
         print(f"{'='*60}")
 
         generate_report('gpu_utilization', results, str(report_dir))
+
+
+@pytest.mark.gpu
+class TestCIFAR100Performance:
+    """Performance tests using CIFAR-100 CNN3D model (realistic workload)."""
+
+    def test_cifar100_jit_speedup(self, cifar_cnn, report_dir):
+        """Measure JIT compilation speedup for CIFAR-100 CNN3D.
+
+        This is a realistic workload test:
+        - 3x32x32 input images (CIFAR-100)
+        - CNN3D with 2 conv layers + FC layers
+        - 100 output classes
+        """
+        from cl.core.hamiltonian import _hamiltonian_core_class_standard
+
+        key = jax.random.PRNGKey(0)
+        batch_size = 128  # Realistic batch size for CIFAR
+
+        # CIFAR-100 input: batch x channels x height x width
+        x = jax.random.normal(key, (batch_size, 3, 32, 32))
+        y = jax.random.randint(key, (batch_size,), 0, 100)
+        exp_x = jax.random.normal(key, (batch_size, 3, 32, 32))
+        exp_y = jax.random.randint(key, (batch_size,), 0, 100)
+        deltax = jax.random.normal(key, (batch_size, 3, 32, 32)) * 0.01
+
+        params, static = eqx.partition(cifar_cnn, eqx.is_array)
+
+        # First call (includes compilation)
+        start = time.time()
+        grad, losses = _hamiltonian_core_class_standard(
+            params, static, x, y, exp_x, exp_y, deltax,
+            jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
+            jnp.array(1000.0), jnp.array(1.0)
+        )
+        jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
+        compile_time = time.time() - start
+
+        # Subsequent calls (already compiled)
+        num_iterations = 50
+        start = time.time()
+        for _ in range(num_iterations):
+            grad, losses = _hamiltonian_core_class_standard(
+                params, static, x, y, exp_x, exp_y, deltax,
+                jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
+                jnp.array(1000.0), jnp.array(1.0)
+            )
+            jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
+        exec_time = (time.time() - start) / num_iterations
+
+        speedup = compile_time / exec_time if exec_time > 0 else float('inf')
+
+        results = {
+            'model': 'CNN3D (CIFAR-100)',
+            'compile_time_seconds': compile_time,
+            'execution_time_seconds': exec_time,
+            'speedup_after_jit': speedup,
+            'batch_size': batch_size,
+            'input_shape': [batch_size, 3, 32, 32],
+            'num_classes': 100,
+            'iterations_measured': num_iterations,
+        }
+
+        print(f"\n{'='*60}")
+        print("CIFAR-100 CNN3D JIT Compilation Test")
+        print(f"{'='*60}")
+        print(f"Model:           CNN3D (2 conv + FC layers)")
+        print(f"Input shape:     {batch_size} x 3 x 32 x 32")
+        print(f"Output classes:  100")
+        print(f"{'='*60}")
+        print(f"First call (with compilation): {compile_time:.4f}s")
+        print(f"Subsequent calls (average):    {exec_time:.4f}s")
+        print(f"Speedup after JIT:             {speedup:.1f}x")
+        print(f"{'='*60}")
+
+        generate_report('cifar100_jit_speedup', results, str(report_dir))
+
+        assert speedup > 1.5, f"Expected JIT speedup > 1.5x, got {speedup:.1f}x"
+
+    def test_cifar100_gpu_utilization(self, cifar_cnn, report_dir):
+        """Measure GPU utilization during CIFAR-100 CNN3D computation."""
+        if not HAS_GPU:
+            pytest.skip("No GPU available")
+        if not NVIDIA_SMI_AVAILABLE:
+            pytest.skip("nvidia-smi not available for monitoring")
+
+        from cl.core.hamiltonian import _hamiltonian_core_class_standard
+        import threading
+
+        key = jax.random.PRNGKey(0)
+        batch_size = 256  # Larger batch for better GPU utilization
+
+        x = jax.random.normal(key, (batch_size, 3, 32, 32))
+        y = jax.random.randint(key, (batch_size,), 0, 100)
+        exp_x = jax.random.normal(key, (batch_size, 3, 32, 32))
+        exp_y = jax.random.randint(key, (batch_size,), 0, 100)
+        deltax = jax.random.normal(key, (batch_size, 3, 32, 32)) * 0.01
+
+        params, static = eqx.partition(cifar_cnn, eqx.is_array)
+
+        # Warm up JIT
+        grad, _ = _hamiltonian_core_class_standard(
+            params, static, x, y, exp_x, exp_y, deltax,
+            jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
+            jnp.array(1000.0), jnp.array(1.0)
+        )
+        jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
+
+        # Sample GPU utilization while running
+        gpu_samples = []
+        stop_sampling = threading.Event()
+
+        def sample_gpu():
+            while not stop_sampling.is_set():
+                stats = get_gpu_utilization()
+                if stats:
+                    gpu_samples.append(stats[0]['utilization'])
+                time.sleep(0.1)
+
+        sampler = threading.Thread(target=sample_gpu)
+        sampler.start()
+
+        # Run iterations (more iterations for realistic measurement)
+        start = time.time()
+        num_iterations = 200
+        for _ in range(num_iterations):
+            grad, _ = _hamiltonian_core_class_standard(
+                params, static, x, y, exp_x, exp_y, deltax,
+                jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
+                jnp.array(1000.0), jnp.array(1.0)
+            )
+            jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
+        elapsed = time.time() - start
+
+        stop_sampling.set()
+        sampler.join()
+
+        results = {
+            'model': 'CNN3D (CIFAR-100)',
+            'num_iterations': num_iterations,
+            'total_time_seconds': elapsed,
+            'time_per_iteration_ms': (elapsed / num_iterations) * 1000,
+            'batch_size': batch_size,
+            'input_shape': [batch_size, 3, 32, 32],
+            'gpu_utilization_min': min(gpu_samples) if gpu_samples else None,
+            'gpu_utilization_max': max(gpu_samples) if gpu_samples else None,
+            'gpu_utilization_mean': sum(gpu_samples) / len(gpu_samples) if gpu_samples else None,
+            'num_samples': len(gpu_samples),
+        }
+
+        print(f"\n{'='*60}")
+        print("CIFAR-100 CNN3D GPU Utilization Test")
+        print(f"{'='*60}")
+        print(f"Model:              CNN3D (2 conv + FC layers)")
+        print(f"Batch size:         {batch_size}")
+        print(f"Iterations:         {num_iterations}")
+        print(f"Total time:         {elapsed:.2f}s")
+        print(f"Time per iteration: {results['time_per_iteration_ms']:.2f}ms")
+        if gpu_samples:
+            print(f"GPU Utilization:")
+            print(f"  Min:  {results['gpu_utilization_min']:.1f}%")
+            print(f"  Max:  {results['gpu_utilization_max']:.1f}%")
+            print(f"  Mean: {results['gpu_utilization_mean']:.1f}%")
+        print(f"{'='*60}")
+
+        generate_report('cifar100_gpu_utilization', results, str(report_dir))
 
 
 @pytest.mark.gpu
