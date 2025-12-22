@@ -6,7 +6,8 @@
 
     "__comment_training": "Experimental parameters",
     "n_task": 10,
-    "epochs_per_task": 100,
+    "epochs_per_task": 10,
+    "batch_size": 1024,
 
     "__comment_arch": "Override default: 100 classes instead of 10",
     "feed_sizes": [2304, 512, 256, 100],
@@ -19,5 +20,5 @@
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
     "lr_schedule": "exponential",
-    "debug_mode": true
+    "debug_mode": false
 }
