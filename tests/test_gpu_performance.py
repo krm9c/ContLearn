@@ -172,7 +172,9 @@ class TestGPUEnvironment:
         y = x @ x
         y.block_until_ready()
 
-        device_str = str(y.device())
+        # JAX 0.6+ uses .device (property) not .device() (method)
+        device = y.device if hasattr(y, 'device') and not callable(y.device) else y.devices()[0]
+        device_str = str(device)
         print(f"\nComputation performed on: {device_str}")
         assert 'gpu' in device_str.lower() or 'cuda' in device_str.lower()
 
