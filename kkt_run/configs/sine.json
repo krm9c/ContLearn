@@ -1,0 +1,20 @@
+{
+    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
+
+    "__comment_data": "Dataset selection - auto-sets prob, problem, network, loss, metric",
+    "data": "sine",
+
+    "__comment_training": "Experimental parameters",
+    "n_task": 5,
+    "epochs_per_task": 500,
+
+    "model_path": "outputs/sine_model",
+
+    "__comment_awb": "AWB architecture morphing disabled",
+    "awb_enabled": false,
+
+    "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
+    "lr_schedule": "constant",
+    "debug_mode": true
+
+}
