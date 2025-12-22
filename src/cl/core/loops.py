@@ -317,20 +317,25 @@ class TrainingLoopsMixin:
                     data = (static, (batch, batch_ex, delta_x, delta_adj))
                 else:
                     # Vector data processing (MLP, CNN)
+                    # Use asarray for zero-copy when possible
                     (x, y) = batch
                     (exp_x, exp_y) = batch_ex
                     min_batch = min(exp_x.shape[0], x.shape[0])
-                    x = jnp.array(x.numpy()[:min_batch], dtype=jnp.float64)
-                    exp_x = jnp.array(exp_x.numpy()[:min_batch], dtype=jnp.float64)
+
+                    # Convert PyTorch tensors to JAX arrays
+                    # Note: .numpy() on CPU tensor is a view, asarray minimizes copies
+                    x = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
+                    exp_x = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
 
                     if loss_type == 'regression':
-                        y = jnp.array(y.numpy()[:min_batch], dtype=jnp.float64)
-                        exp_y = jnp.array(exp_y.numpy()[:min_batch], dtype=jnp.float64)
-                    else:  # classification - keep as int64
-                        y = jnp.array(y.numpy()[:min_batch], dtype=jnp.int64)
-                        exp_y = jnp.array(exp_y.numpy()[:min_batch], dtype=jnp.int64)
+                        y = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.float64)
+                        exp_y = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.float64)
+                    else:  # classification
+                        y = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.int64)
+                        exp_y = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.int64)
 
-                    delta_x = jnp.array(np_.random.normal(0, var_x, exp_x.shape))
+                    # Generate perturbations (numpy is fine here, small overhead)
+                    delta_x = jnp.asarray(np_.random.normal(0, var_x, exp_x.shape))
                     data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
                 # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
