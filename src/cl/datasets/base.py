@@ -252,9 +252,27 @@ class BaseDataset(ABC):
         dataset_curr = ContinualDataset(self.config, x_curr, y_curr)
         dataset_exp = ContinualDataset(self.config, x_exp, y_exp)
 
-        # Create DataLoaders
-        loader_curr = DataLoader(dataset_curr, batch_size=batch_size, shuffle=True)
-        loader_exp = DataLoader(dataset_exp, batch_size=batch_size, shuffle=True)
+        # Create DataLoaders with performance optimizations
+        # num_workers: parallel data loading (0 = main process only)
+        # pin_memory: faster CPU->GPU transfer when using CUDA
+        # persistent_workers: keep workers alive between epochs
+        num_workers = self.config.get('num_workers', 4)
+        pin_memory = self.config.get('pin_memory', True)
+
+        loader_kwargs = {
+            'batch_size': batch_size,
+            'shuffle': True,
+            'num_workers': num_workers,
+            'pin_memory': pin_memory,
+        }
+
+        # Only use persistent_workers if num_workers > 0
+        if num_workers > 0:
+            loader_kwargs['persistent_workers'] = True
+            loader_kwargs['prefetch_factor'] = 2
+
+        loader_curr = DataLoader(dataset_curr, **loader_kwargs)
+        loader_exp = DataLoader(dataset_exp, **loader_kwargs)
 
         return loader_curr, loader_exp
 
