@@ -1,0 +1,27 @@
+{
+    "__comment": "Minimal config for testing MLP architecture search",
+    "__comment_guide": "See config/TEMPLATE.md for all available options",
+
+    "data": "sine",
+
+    "n_task": 2,
+    "epochs_per_task": 10,
+    "model_path": "outputs/test_sine_awb",
+
+    "__comment_awb": "AWB with minimal epochs for testing",
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 5,
+    "awb_ab_training_epochs": 10,
+    "awb_ab_warmup_epochs": 5,
+    "awb_ab_max_iterations": 1,
+
+    "__comment_arch_search": "Minimal arch search for testing",
+    "arch_search_epochs": 10,
+    "arch_search_lr": 0.001,
+    "arch_search_max_iter": 2,
+    "arch_search_range": 2,
+
+    "lr_schedule": "constant",
+    "debug_mode": true,
+    "debug_limit": 50
+}
