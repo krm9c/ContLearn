@@ -1,0 +1,22 @@
+{
+  "test_name": "gpu_utilization",
+  "timestamp": "20251222_173613",
+  "jax_backend": "gpu",
+  "jax_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3"
+  ],
+  "nvidia_smi_available": true,
+  "results": {
+    "num_iterations": 100,
+    "total_time_seconds": 0.6886289119720459,
+    "time_per_iteration_ms": 6.886289119720459,
+    "batch_size": 256,
+    "gpu_utilization_min": 3.0,
+    "gpu_utilization_max": 4.0,
+    "gpu_utilization_mean": 3.3333333333333335,
+    "num_samples": 3
+  }
+}

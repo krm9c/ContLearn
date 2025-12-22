@@ -73,7 +73,7 @@ EOF
 
 # Activate conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate jaxss
+conda activate jax__kkt
 
 # Default values
 MODE="all"

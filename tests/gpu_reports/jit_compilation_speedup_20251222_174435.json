@@ -1,0 +1,18 @@
+{
+  "test_name": "jit_compilation_speedup",
+  "timestamp": "20251222_174435",
+  "jax_backend": "gpu",
+  "jax_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3"
+  ],
+  "nvidia_smi_available": true,
+  "results": {
+    "compile_time_seconds": 3.297229766845703,
+    "execution_time_seconds": 0.0067586183547973635,
+    "speedup_after_jit": 487.8555932227306,
+    "batch_size": 64
+  }
+}
