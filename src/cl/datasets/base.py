@@ -252,24 +252,15 @@ class BaseDataset(ABC):
         dataset_curr = ContinualDataset(self.config, x_curr, y_curr)
         dataset_exp = ContinualDataset(self.config, x_exp, y_exp)
 
-        # Create DataLoaders with performance optimizations
-        # num_workers: parallel data loading (0 = main process only)
-        # pin_memory: faster CPU->GPU transfer when using CUDA
-        # persistent_workers: keep workers alive between epochs
-        num_workers = self.config.get('num_workers', 4)
-        pin_memory = self.config.get('pin_memory', True)
-
+        # Create DataLoaders
+        # Note: num_workers=0 required when using JAX because os.fork() is incompatible
+        # with JAX's multithreaded runtime. pin_memory=False since PyTorch is CPU-only.
         loader_kwargs = {
             'batch_size': batch_size,
             'shuffle': True,
-            'num_workers': num_workers,
-            'pin_memory': pin_memory,
+            'num_workers': 0,  # Must be 0 with JAX (fork incompatibility)
+            'pin_memory': False,  # PyTorch is CPU-only, JAX handles GPU
         }
-
-        # Only use persistent_workers if num_workers > 0
-        if num_workers > 0:
-            loader_kwargs['persistent_workers'] = True
-            loader_kwargs['prefetch_factor'] = 2
 
         loader_curr = DataLoader(dataset_curr, **loader_kwargs)
         loader_exp = DataLoader(dataset_exp, **loader_kwargs)
