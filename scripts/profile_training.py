@@ -174,24 +174,39 @@ def profile_training(config_path: str, num_batches: int = 20):
         'total_batch': [],
     }
 
-    # Warm up JIT (first batch)
+    # Warm up JIT (first batch) - must use exact batch_size to avoid recompilation
     print("Warming up JIT compilation...")
     trainiter = iter(trainloader)
     expiter = iter(exploader)
+
+    # Find a batch with exact batch_size (skip partial batches)
     batch = next(trainiter)
     batch_ex = next(expiter)
+    while batch[0].shape[0] != batch_size or batch_ex[0].shape[0] != batch_size:
+        try:
+            batch = next(trainiter)
+            batch_ex = next(expiter)
+        except StopIteration:
+            print(f"ERROR: Could not find batch with size {batch_size}")
+            sys.exit(1)
 
     (x, y) = batch
     (exp_x, exp_y) = batch_ex
-    min_batch = min(exp_x.shape[0], x.shape[0])
 
-    x_jax = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
-    y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=y_dtype)
-    exp_x_jax = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
-    exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=y_dtype)
+    x_jax = jnp.asarray(x.numpy(), dtype=jnp.float64)
+    y_jax = jnp.asarray(y.numpy(), dtype=y_dtype)
+    exp_x_jax = jnp.asarray(exp_x.numpy(), dtype=jnp.float64)
+    exp_y_jax = jnp.asarray(exp_y.numpy(), dtype=y_dtype)
     delta_x = jnp.asarray(np.random.normal(0, 0.01, exp_x_jax.shape))
+    print(f"Warmup batch shape: {x_jax.shape}")
 
-    # JIT warmup call
+    # Initialize optimizer
+    import optax
+    optim = optax.adam(1e-4)
+    opt_state = optim.init(params)
+
+    # JIT warmup call - includes Hamiltonian AND optimizer
+    print("Warming up JIT (Hamiltonian + Optimizer)...")
     t0 = time.time()
     grad, losses = hamiltonian_fn(
         params, static, x_jax, y_jax, exp_x_jax, exp_y_jax, delta_x,
@@ -199,8 +214,12 @@ def profile_training(config_path: str, num_batches: int = 20):
         jnp.array(float(param_count)), jnp.array(1.0)
     )
     jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
+    # Also warm up optimizer
+    updates, opt_state = optim.update(grad, opt_state, params)
+    params = optax.apply_updates(params, updates)
+    jax.tree_util.tree_map(lambda a: a.block_until_ready(), params)
     jit_time = time.time() - t0
-    print(f"JIT compilation time: {jit_time:.2f}s")
+    print(f"JIT compilation time (total): {jit_time:.2f}s")
     print()
 
     # Profile batches
@@ -210,11 +229,6 @@ def profile_training(config_path: str, num_batches: int = 20):
     # Reinitialize iterators
     trainiter = iter(trainloader)
     expiter = iter(exploader)
-
-    # Initialize optimizer for realistic profiling
-    import optax
-    optim = optax.adam(1e-4)
-    opt_state = optim.init(params)
 
     for i in range(num_batches):
         batch_start = time.time()
