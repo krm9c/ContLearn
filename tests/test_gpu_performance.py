@@ -136,13 +136,17 @@ def cifar_cnn():
     from cl.models.cnn import CNN3D
 
     # CNN3D for CIFAR-100: 3x32x32 input, 100 classes
-    # feed_sizes must match config/cifar100.json: [2304, 512, 256, 100]
-    # Flatten size after conv layers: 6 * 6 * 64 = 2304
+    # With filter_size=3:
+    #   Conv1: 32 -> 30 -> pool -> 15
+    #   Conv2: 15 -> 13 -> pool -> 6
+    #   Flatten: 6 * 6 * 64 = 2304
+    # feed_sizes must match config/cifar100.json
+    filter_size = 3
     feed_sizes = [2304, 512, 256, 100]
 
     return CNN3D(
         key=jax.random.PRNGKey(42),
-        filter_size=3,
+        filter_size=filter_size,
         feed_sizes=feed_sizes,
         input_size=32,
         channel_in=3,
