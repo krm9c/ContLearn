@@ -6,19 +6,20 @@
 
     "__comment_training": "Experimental parameters",
     "n_task": 10,
-    "epochs_per_task": 10,
-    "batch_size": 1024,
+    "epochs_per_task": 100,
+    "batch_size": 512,
 
     "__comment_arch": "Override default: 100 classes instead of 10",
     "feed_sizes": [2304, 512, 256, 100],
     "n_class": 100,
 
     "model_path": "outputs/cifar100_model",
+    "save_iter": 10,
 
     "__comment_awb": "AWB architecture morphing disabled",
     "awb_enabled": false,
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "lr_schedule": "exponential",
+    "lr_schedule": "constant",
     "debug_mode": false
 }
