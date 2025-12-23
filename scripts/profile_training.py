@@ -54,14 +54,14 @@ def profile_training(config_path: str, num_batches: int = 20):
     print()
 
     # Import after path setup
-    from cl.config.loader import load_and_merge_config
+    from cl.config import load_config
     from cl.datasets import get_dataset
     from cl.models import get_model
     from cl.core.trainer import Trainer
     from cl.core.hamiltonian import _hamiltonian_core_class_standard
 
     # Load full config with defaults
-    config = load_and_merge_config(config_path)
+    config = load_config(config_path)
     config['debug_mode'] = False  # Ensure full dataset
 
     # Initialize dataset
