@@ -28,7 +28,13 @@
     "arch_search_lr": 0.001,
     "arch_search_max_iter": 3,
 
+    "__comment_optimizer": "AdamW with weight decay for regularization",
+    "optimizer": "adamw",
+    "lr": 1e-3,
+    "lr_min": 1e-6,
+    "lr_schedule": "cosine",
+    "weight_decay": 1e-4,
+
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "lr_schedule": "constant",
     "debug_mode": false
 }
