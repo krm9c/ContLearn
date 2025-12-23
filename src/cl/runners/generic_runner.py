@@ -793,8 +793,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     record_training=True,
                     global_iteration_offset=0
                 )
-                remaining_prelim = awb_prelim_epochs
-                # Phase 1b: Continue with full LR
+                # Subtract warmup epochs from total preliminary epochs
+                remaining_prelim = awb_prelim_epochs - warmup_iters
+                # Phase 1b: Continue with full LR for remaining preliminary epochs
                 if remaining_prelim > 0:
                     print(f"    Full LR: {remaining_prelim} epochs at LR={base_lr:.2e}")
                     opt_state = update_learning_rate(opt_state, base_lr)
@@ -864,7 +865,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 'change_reason': None,
             }
 
-            if True:
+            if change_arch:
                 print("  ARCHITECTURE CHANGE TRIGGERED!")
                 history_entry['change_reason'] = 'should_change_arch=True'
 
@@ -1011,7 +1012,10 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     base_lr = config.get('lr', DEFAULT_LR)
                     warmup_lr = base_lr * v_lr_factor
 
-                    remaining_epochs = epochs_per_task
+                    # Calculate remaining epochs: total - preliminary - AB training
+                    awb_ab_epochs = config.get('awb_ab_training_epochs', 50)
+                    remaining_epochs = epochs_per_task - awb_prelim_epochs - awb_ab_epochs
+                    remaining_epochs = max(0, remaining_epochs)  # Ensure non-negative
                     print(f"  Step 5: Train V with A/B frozen ({remaining_epochs} epochs)")
                     print(f"    Warmup: {v_warmup_epochs} epochs at LR={warmup_lr:.2e}, then LR={base_lr:.2e}")
 
@@ -1131,7 +1135,8 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 history_entry['change_reason'] = 'should_change_arch=False'
                 print(f"    No architecture change needed")
 
-                remaining_epochs = epochs_per_task
+                # Calculate remaining epochs after preliminary training
+                remaining_epochs = epochs_per_task - awb_prelim_epochs
 
                 # Added by Claude: Handle case where all epochs were used in preliminary training
                 if remaining_epochs > 0:
