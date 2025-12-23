@@ -140,7 +140,7 @@ DEFAULT_HLN = 256  # Hidden layer size
 # ============================================================================
 # CNN (Convolutional Neural Network) DEFAULTS
 # ============================================================================
-DEFAULT_FILTER_SIZE = 4
+DEFAULT_FILTER_SIZE = 3  # Changed from 4 to match DEFAULT_CNN_CIFAR_FEED
 DEFAULT_CHANNEL_OUT_CNN = 3  # For MNIST-like single channel input
 DEFAULT_CHANNEL_OUT_CNN3D = 32  # For CIFAR-like multi-channel input
 DEFAULT_CHANNEL_IN_MNIST = 1
@@ -153,7 +153,10 @@ DEFAULT_POOL_SIZE = 2
 DEFAULT_POOL_STRIDE = 2
 
 # CNN Feed-forward layer defaults (architecture-specific)
-DEFAULT_CNN_MNIST_FEED = [1875, 512, 64, 10]  # MNIST with channel_out=3, filter_size=4
+# Flatten size calculation for filter_size=3:
+#   MNIST (28x28): Conv1: 28->26->13, Conv2: 13->11->5, Flatten: 5*5*6=150
+#   CIFAR (32x32): Conv1: 32->30->15, Conv2: 15->13->6, Flatten: 6*6*64=2304
+DEFAULT_CNN_MNIST_FEED = [150, 512, 64, 10]  # MNIST with channel_out=3, filter_size=3
 DEFAULT_CNN_CIFAR_FEED = [2304, 512, 256, 10]  # CIFAR with channel_out=32, filter_size=3
 DEFAULT_CNN3D_CIFAR_ARCH = DEFAULT_CNN_CIFAR_FEED  # Backward compatibility alias
 
