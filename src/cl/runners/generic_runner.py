@@ -630,6 +630,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 warmup_config['grad_weights'] = warmup_grad_weights
 
                 # Warmup uses trainloader for both current and "experience" (new task only)
+                # Note: record_training=False - standard CL warmup is not recorded
                 params, static, opt_state_warmup, record_dict = trainer.train__CL(
                     train__=(trainloader, trainloader, valloader, testloader),  # Use trainloader as exploader
                     params=params,
@@ -644,7 +645,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     problem_type=problem_type,
                     loss_type=loss_type,
                     phase='warmup',
-                    record_training=True,
+                    record_training=False,
                     global_iteration_offset=task_id * epochs_per_task
                 )
 
