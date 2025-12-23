@@ -296,6 +296,13 @@ class TrainingLoopsMixin:
             trainloader, exploader, problem_type
         )
 
+        # JIT-compile optimizer step to avoid recompilation overhead
+        @jax.jit
+        def optimizer_step(grad, opt_state, params):
+            updates, new_opt_state = optim.update(grad, opt_state, params)
+            new_params = optax.apply_updates(params, updates)
+            return new_params, new_opt_state
+
         for epoch in pbar:
             trainiter = iter(trainloader)
             expiter = iter(exploader)
@@ -354,9 +361,8 @@ class TrainingLoopsMixin:
                 # Added by Claude: Apply gradient clipping if enabled
                 grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
-                # Update parameters
-                updates, opt_state = optim.update(grad, opt_state, params)
-                params = optax.apply_updates(params, updates)
+                # Update parameters (using JIT-compiled optimizer step)
+                params, opt_state = optimizer_step(grad, opt_state, params)
 
                 # Accumulate loss metrics
                 epoch_H.append(float(H))
