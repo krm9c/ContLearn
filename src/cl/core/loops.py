@@ -303,6 +303,30 @@ class TrainingLoopsMixin:
             new_params = optax.apply_updates(params, updates)
             return new_params, new_opt_state
 
+        # JIT-compile metric computation for vectors (classification/regression)
+        @jax.jit
+        def compute_metric_class(params, static, x, y):
+            model = eqx.combine(params, static)
+            preds = jax.vmap(model)(x)
+            if preds.ndim == 3 and preds.shape[1] == 1:
+                preds = jnp.squeeze(preds, axis=1)
+            pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
+            return jnp.mean(y == pred_y)
+
+        @jax.jit
+        def compute_metric_mse(params, static, x, y):
+            model = eqx.combine(params, static)
+            preds = jax.vmap(model)(x)
+            if preds.ndim == 3 and preds.shape[1] == 1:
+                preds = jnp.squeeze(preds, axis=1)
+            return jnp.mean(optax.l2_loss(y, preds))
+
+        # Select metric function based on loss type
+        if loss_type == 'regression':
+            compute_metric = compute_metric_mse
+        else:
+            compute_metric = compute_metric_class
+
         for epoch in pbar:
             trainiter = iter(trainloader)
             expiter = iter(exploader)
@@ -372,11 +396,13 @@ class TrainingLoopsMixin:
                 epoch_dV_dx.append(float(dV_dx))
                 epoch_grad_norm.append(float(grad_norm))
 
-                # Compute training metric
+                # Compute training metric (using JIT-compiled function for vectors)
                 if problem_type == 'graph':
+                    # Graph uses non-JIT method (different data structure)
                     train_metric = self.return_metric(params, static, data=(batch, batch_ex), notABTrain=notABTrain)
                 else:
-                    train_metric = self.return_metric(params, static, data=(x, y), notABTrain=notABTrain)
+                    # Vectors use JIT-compiled metric function
+                    train_metric = compute_metric(params, static, x, y)
                 epoch_train_metrics.append(float(train_metric))
 
             # End of epoch: log metrics (at save_iter intervals and at the last epoch)
