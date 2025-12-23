@@ -214,10 +214,17 @@ def profile_training(config_path: str, num_batches: int = 20):
     delta_x = jnp.asarray(np.random.normal(0, 0.01, exp_x_jax.shape))
     print(f"Warmup batch shape: {x_jax.shape}")
 
-    # Initialize optimizer
+    # Initialize optimizer with JIT-compiled update function
     import optax
     optim = optax.adam(1e-4)
     opt_state = optim.init(params)
+
+    # Create JIT-compiled optimizer step
+    @jax.jit
+    def optimizer_step(grad, opt_state, params):
+        updates, new_opt_state = optim.update(grad, opt_state, params)
+        new_params = optax.apply_updates(params, updates)
+        return new_params, new_opt_state
 
     # JIT warmup call - includes Hamiltonian AND optimizer
     print("Warming up JIT (Hamiltonian + Optimizer)...")
@@ -228,9 +235,8 @@ def profile_training(config_path: str, num_batches: int = 20):
         jnp.array(float(param_count)), jnp.array(1.0)
     )
     jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
-    # Also warm up optimizer
-    updates, opt_state = optim.update(grad, opt_state, params)
-    params = optax.apply_updates(params, updates)
+    # Also warm up optimizer (JIT compiled)
+    params, opt_state = optimizer_step(grad, opt_state, params)
     jax.tree_util.tree_map(lambda a: a.block_until_ready(), params)
     jit_time = time.time() - t0
     print(f"JIT compilation time (total): {jit_time:.2f}s")
@@ -290,10 +296,9 @@ def profile_training(config_path: str, num_batches: int = 20):
         hamiltonian_time = time.time() - t0
         times['hamiltonian'].append(hamiltonian_time)
 
-        # 4. Optimizer update
+        # 4. Optimizer update (using JIT-compiled function)
         t0 = time.time()
-        updates, opt_state = optim.update(grad, opt_state, params)
-        params = optax.apply_updates(params, updates)
+        params, opt_state = optimizer_step(grad, opt_state, params)
         # Force update to complete
         jax.tree_util.tree_map(lambda a: a.block_until_ready(), params)
         optimizer_time = time.time() - t0
