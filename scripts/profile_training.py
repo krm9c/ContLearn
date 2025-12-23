@@ -112,7 +112,8 @@ def profile_training(config_path: str, num_batches: int = 20):
         filter_size = config.get('filter_size', 5)
         model = CNN(key=key, filter_size=filter_size, feed_sizes=feed_sizes)
     elif network == 'cnn3d':
-        filter_size = config.get('filter_size', 3)
+        # Note: load_config sets filter_size=4 by default (from DEFAULT_FILTER_SIZE)
+        filter_size = config.get('filter_size', 4)  # Match load_config default
         channel_in = config.get('channel_in', 3)
         channel_out = config.get('channel_out', 32)
         num_classes = config.get('n_class', 100)
@@ -129,6 +130,16 @@ def profile_training(config_path: str, num_batches: int = 20):
         feed_sizes = config.get('feed_sizes', None)
         if feed_sizes is None:
             feed_sizes = [flatten_size, 512, 256, num_classes]
+        else:
+            # Validate feed_sizes[0] matches computed flatten_size
+            if feed_sizes[0] != flatten_size:
+                print(f"WARNING: feed_sizes[0]={feed_sizes[0]} != computed flatten_size={flatten_size}")
+                print(f"  This mismatch will cause shape errors!")
+                print(f"  Either add 'filter_size' to config to match feed_sizes,")
+                print(f"  or update feed_sizes[0] to match filter_size={filter_size}")
+                print(f"  Overriding feed_sizes[0] to {flatten_size}")
+                feed_sizes = [flatten_size] + feed_sizes[1:]
+
         print(f"CNN3D: input={input_size}, filter={filter_size}, flatten_size={flatten_size}")
         print(f"CNN3D: feed_sizes={feed_sizes}")
 
