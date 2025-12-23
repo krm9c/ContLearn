@@ -57,7 +57,9 @@ def _loss_mse_standard(params, static, x, y):
     """
     model = eqx.combine(params, static)
     pred_y = jax.vmap(model)(x)
-    pred_y = pred_y.squeeze(-1) if pred_y.ndim > 1 else pred_y
+    # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+    if pred_y.ndim == 3 and pred_y.shape[1] == 1:
+        pred_y = jnp.squeeze(pred_y, axis=1)
     return jnp.mean(optax.l2_loss(y, pred_y))
 
 
@@ -66,7 +68,9 @@ def _loss_mse_awb(params, static, x, y):
     """JIT-compiled MSE loss for AWB training (uses model.getAWB)."""
     model = eqx.combine(params, static)
     pred_y = jax.vmap(model.getAWB)(x)
-    pred_y = pred_y.squeeze(-1) if pred_y.ndim > 1 else pred_y
+    # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+    if pred_y.ndim == 3 and pred_y.shape[1] == 1:
+        pred_y = jnp.squeeze(pred_y, axis=1)
     return jnp.mean(optax.l2_loss(y, pred_y))
 
 
@@ -156,14 +160,18 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model)(xx)
-        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+        if pred.ndim == 3 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=1)
         return jnp.mean(optax.l2_loss(y, pred))
 
     # Loss function for experience data (closed over exp_y)
     def loss_fn_exp(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model)(xx)
-        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+        if pred.ndim == 3 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
 
     # Compute delta_theta (gradient on current task)
@@ -206,14 +214,18 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model.getAWB)(xx)
-        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+        if pred.ndim == 3 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=1)
         return jnp.mean(optax.l2_loss(y, pred))
 
     # Loss function for experience data using AWB forward (closed over exp_y)
     def loss_fn_exp(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model.getAWB)(xx)
-        pred = pred.squeeze(-1) if pred.ndim > 1 else pred
+        # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
+        if pred.ndim == 3 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
 
     delta_theta = jax.grad(loss_fn_curr)(params, x)
