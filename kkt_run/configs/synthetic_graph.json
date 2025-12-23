@@ -5,16 +5,18 @@
     "data": "synthetic",
 
     "__comment_training": "Experimental parameters",
-    "n_task": 2,
-    "epochs_per_task": 2,
+    "n_task": 10,
+    "epochs_per_task": 100,
+    "batch_size": 20,
 
     "model_path": "outputs/synthetic_graph_model",
+    "save_iter": 10,
 
     "__comment_awb": "AWB architecture morphing disabled",
     "awb_enabled": false,
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
     "optimizer": "adamw",
-    "lr_schedule": "exponential",
-    "debug_mode": true
+    "lr_schedule": "constant",
+    "debug_mode": false
 }
