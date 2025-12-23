@@ -39,17 +39,31 @@ class LossMixin:
 
     @eqx.filter_jit
     def accuracy_vectors(self, params, statics, x, y):
-        """Accuracy metric for classification (vectors)."""
+        """Accuracy metric for classification (vectors).
+
+        Args:
+            params: Model parameters
+            statics: Static model components
+            x: Input features, shape (batch, ...)
+            y: Class labels - either scalar indices shape (batch,) or one-hot shape (batch, num_classes)
+
+        Returns:
+            Accuracy as float between 0 and 1
+        """
         model = eqx.combine(params, statics)
         preds = jax.vmap(model)(x)
-        # Added by Claude: squeeze extra dimension if present (batch, 1, classes) -> (batch, classes)
+        # Squeeze extra dimension if present (batch, 1, classes) -> (batch, classes)
         if preds.ndim == 3 and preds.shape[1] == 1:
             preds = jnp.squeeze(preds, axis=1)
         pred = jnp.argmax(jax.nn.softmax(preds), axis=1)
-        # Added by Claude: squeeze y if it has extra dimension
-        if y.ndim == 3 and y.shape[1] == 1:
-            y = jnp.squeeze(y, axis=1)
-        y = jnp.argmax(y, axis=1)
+        # Handle both one-hot encoded (batch, num_classes) and scalar labels (batch,)
+        if y.ndim == 2 and y.shape[1] > 1:
+            # One-hot encoded: convert to class indices
+            y = jnp.argmax(y, axis=1)
+        elif y.ndim == 2 and y.shape[1] == 1:
+            # Shape (batch, 1): squeeze to (batch,)
+            y = jnp.squeeze(y, axis=-1)
+        # else: already shape (batch,) with scalar indices
         return jnp.mean(pred == y)
 
     @eqx.filter_jit
@@ -154,6 +168,7 @@ class LossMixin:
             params: Trainable model parameters
             statics: Static model components
             data: Input data (format depends on problem type)
+                  For vectors: (x, y) where y is scalar class indices shape (batch,)
             notABTrain: True for standard forward, False for AWB forward
 
         Returns:
@@ -164,12 +179,15 @@ class LossMixin:
         if self.problem == 'vectors':
             x, y = data
             if self.metric == 'class':
+                # Ensure y is 1D int64 array of class indices
                 y = y.astype(jnp.int64)
+                if y.ndim == 2:
+                    y = jnp.squeeze(y, axis=-1)
                 if notABTrain:
                     preds = jax.vmap(model)(x)
                 else:
                     preds = jax.vmap(model.get_AWBT)(x)
-                # Added by Claude: squeeze extra dimension if present (batch, 1, classes) -> (batch, classes)
+                # Squeeze extra dimension if present (batch, 1, classes) -> (batch, classes)
                 if preds.ndim == 3 and preds.shape[1] == 1:
                     preds = jnp.squeeze(preds, axis=1)
                 pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
