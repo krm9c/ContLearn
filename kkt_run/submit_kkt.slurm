@@ -80,7 +80,7 @@ echo ""
 
 # Run parallel jobs
 echo "Launching parallel jobs..."
-bash kkt_run/run_parallel.sh
+bash kkt_run/run_parallel_standard.sh
 
 # Print summary
 echo ""

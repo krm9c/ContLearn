@@ -7,7 +7,7 @@
     "__comment_training": "Experimental parameters",
     "n_task": 10,
     "epochs_per_task": 100,
-    "batch_size": 512,
+    "batch_size": 1024,
 
     "model_path": "outputs/mnist_model",
     "save_iter": 10,

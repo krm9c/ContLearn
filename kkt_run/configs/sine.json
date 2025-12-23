@@ -6,8 +6,8 @@
 
     "__comment_training": "Experimental parameters",
     "n_task": 10,
-    "epochs_per_task": 100,
-    "batch_size": 64,
+    "epochs_per_task": 1000,
+    "batch_size": 128,
 
     "model_path": "outputs/sine_model",
     "save_iter": 10,
