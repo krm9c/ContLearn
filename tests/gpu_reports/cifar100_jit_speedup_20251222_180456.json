@@ -1,0 +1,24 @@
+{
+  "test_name": "cifar100_jit_speedup",
+  "timestamp": "20251222_180456",
+  "jax_backend": "cpu",
+  "jax_devices": [
+    "TFRT_CPU_0"
+  ],
+  "nvidia_smi_available": false,
+  "results": {
+    "model": "CNN3D (CIFAR-100)",
+    "compile_time_seconds": 4.909308910369873,
+    "execution_time_seconds": 0.49031283378601076,
+    "speedup_after_jit": 10.012605365562312,
+    "batch_size": 128,
+    "input_shape": [
+      128,
+      3,
+      32,
+      32
+    ],
+    "num_classes": 100,
+    "iterations_measured": 50
+  }
+}
