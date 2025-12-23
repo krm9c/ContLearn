@@ -157,21 +157,24 @@ class TrainingLoopsMixin:
                         break
 
                     x_curr, y_curr = current_batch
-                    x_curr = jnp.array(x_curr.numpy().astype(np_.float64))
-                    y_curr = jnp.array(y_curr.numpy().astype(np_.float64))
-                    y_curr = jnp.squeeze(y_curr)
-                    if y_curr.ndim == 1:
-                        y_curr = jnp.expand_dims(y_curr, axis=-1)
+                    x_curr = jnp.array(x_curr.numpy(), dtype=jnp.float64)
+                    # Keep labels as int64 for classification, float64 for regression
+                    # Labels should be 1D vector of class indices, not expanded to (batch, 1)
+                    if self.metric == 'class':
+                        y_curr = jnp.array(y_curr.numpy(), dtype=jnp.int64)
+                    else:
+                        y_curr = jnp.array(y_curr.numpy(), dtype=jnp.float64)
 
                     metric_current = self.return_metric(params, static, data=(x_curr, y_curr), notABTrain=notABTrain)
                     current_metrics.append(metric_current)
 
                     x_exp, y_exp = exp_batch
-                    x_exp = jnp.array(x_exp.numpy().astype(np_.float64))
-                    y_exp = jnp.array(y_exp.numpy().astype(np_.float64))
-                    y_exp = jnp.squeeze(y_exp)
-                    if y_exp.ndim == 1:
-                        y_exp = jnp.expand_dims(y_exp, axis=-1)
+                    x_exp = jnp.array(x_exp.numpy(), dtype=jnp.float64)
+                    # Keep labels as int64 for classification, float64 for regression
+                    if self.metric == 'class':
+                        y_exp = jnp.array(y_exp.numpy(), dtype=jnp.int64)
+                    else:
+                        y_exp = jnp.array(y_exp.numpy(), dtype=jnp.float64)
 
                     metric_exp = self.return_metric(params, static, data=(x_exp, y_exp), notABTrain=notABTrain)
                     exp_metrics.append(metric_exp)
@@ -183,11 +186,12 @@ class TrainingLoopsMixin:
                     except StopIteration:
                         break
                     x, y = batch
-                    x = jnp.array(x.numpy().astype(np_.float64))
-                    y = jnp.array(y.numpy().astype(np_.float64))
-                    y = jnp.squeeze(y)
-                    if y.ndim == 1:
-                        y = jnp.expand_dims(y, axis=-1)
+                    x = jnp.array(x.numpy(), dtype=jnp.float64)
+                    # Keep labels as int64 for classification, float64 for regression
+                    if self.metric == 'class':
+                        y = jnp.array(y.numpy(), dtype=jnp.int64)
+                    else:
+                        y = jnp.array(y.numpy(), dtype=jnp.float64)
                     metric = self.return_metric(params, static, data=(x, y), notABTrain=notABTrain)
                     current_metrics.append(metric)
                     exp_metrics.append(metric)
