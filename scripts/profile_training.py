@@ -236,12 +236,15 @@ def profile_training(config_path: str, num_batches: int = 20):
         t0 = time.time()
         (x, y) = batch
         (exp_x, exp_y) = batch_ex
-        min_batch = min(exp_x.shape[0], x.shape[0])
 
-        x_jax = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
-        y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=y_dtype)
-        exp_x_jax = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
-        exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=y_dtype)
+        # Skip batches with different sizes to avoid JIT recompilation
+        if x.shape[0] != batch_size or exp_x.shape[0] != batch_size:
+            continue
+
+        x_jax = jnp.asarray(x.numpy(), dtype=jnp.float64)
+        y_jax = jnp.asarray(y.numpy(), dtype=y_dtype)
+        exp_x_jax = jnp.asarray(exp_x.numpy(), dtype=jnp.float64)
+        exp_y_jax = jnp.asarray(exp_y.numpy(), dtype=y_dtype)
         delta_x = jnp.asarray(np.random.normal(0, 0.01, exp_x_jax.shape))
         # Force transfer to complete
         x_jax.block_until_ready()

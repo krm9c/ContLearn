@@ -255,11 +255,13 @@ class BaseDataset(ABC):
         # Create DataLoaders
         # Note: num_workers=0 required when using JAX because os.fork() is incompatible
         # with JAX's multithreaded runtime. pin_memory=False since PyTorch is CPU-only.
+        # drop_last=True ensures all batches have same size, preventing JIT recompilation.
         loader_kwargs = {
             'batch_size': batch_size,
             'shuffle': True,
             'num_workers': 0,  # Must be 0 with JAX (fork incompatibility)
             'pin_memory': False,  # PyTorch is CPU-only, JAX handles GPU
+            'drop_last': True,  # Prevent JIT recompilation from variable batch sizes
         }
 
         loader_curr = DataLoader(dataset_curr, **loader_kwargs)
