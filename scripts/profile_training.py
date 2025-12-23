@@ -94,6 +94,20 @@ def profile_training(config_path: str, num_batches: int = 20):
 
     # Create dataloaders
     batch_size = config.get('batch_size', 64)
+
+    # Check if we have enough samples for profiling
+    n_samples = len(dataset.X_train)
+    n_full_batches = n_samples // batch_size
+    print(f"Batch size: {batch_size}")
+    print(f"Training samples: {n_samples}")
+    print(f"Full batches available: {n_full_batches}")
+
+    if n_full_batches < 2:
+        print(f"\nWARNING: Not enough samples for profiling!")
+        print(f"  Need at least {batch_size * 2} samples, have {n_samples}")
+        print(f"  Set debug_mode=false in config or reduce batch_size")
+        print()
+
     trainloader, exploader = dataset.generate_dataset(0, batch_size, 'training')
 
     # Model mapping based on network type
