@@ -55,19 +55,38 @@ def profile_training(config_path: str, num_batches: int = 20):
 
     # Import after path setup
     from cl.config import load_config
-    from cl.datasets import get_dataset
-    from cl.models import get_model
+    from cl.datasets import (
+        SineDataset, MNISTDataset, PermutedMNISTDataset,
+        CIFAR10Dataset, CIFAR100Dataset, SyntheticGraphDataset
+    )
+    from cl.models.mlp import MLP
+    from cl.models.cnn import CNN, CNN3D
     from cl.core.trainer import Trainer
-    from cl.core.hamiltonian import _hamiltonian_core_class_standard
+    from cl.core.hamiltonian import _hamiltonian_core_class_standard, _hamiltonian_core_mse_standard
 
     # Load full config with defaults
     config = load_config(config_path)
     config['debug_mode'] = False  # Ensure full dataset
 
+    # Dataset mapping
+    dataset_map = {
+        'sine': SineDataset,
+        'mnist': MNISTDataset,
+        'permuted_mnist': PermutedMNISTDataset,
+        'cifar10': CIFAR10Dataset,
+        'cifar100': CIFAR100Dataset,
+        'synthetic': SyntheticGraphDataset,
+    }
+
     # Initialize dataset
     print("Loading dataset...")
     t0 = time.time()
-    dataset = get_dataset(config)
+    data_name = config.get('data', 'mnist')
+    if data_name not in dataset_map:
+        print(f"Error: Unknown dataset '{data_name}'")
+        print(f"Available: {list(dataset_map.keys())}")
+        sys.exit(1)
+    dataset = dataset_map[data_name](config)
     dataset.load_task(0)
     print(f"Dataset loaded in {time.time() - t0:.2f}s")
     print(f"Training samples: {len(dataset.X_train)}")
@@ -77,14 +96,47 @@ def profile_training(config_path: str, num_batches: int = 20):
     batch_size = config.get('batch_size', 64)
     trainloader, exploader = dataset.generate_dataset(0, batch_size, 'training')
 
+    # Model mapping based on network type
+    network = config.get('network', 'cnn')
+    prob = config.get('prob', 'classification')
+
     # Initialize model
     print("Initializing model...")
-    model = get_model(config)
+    key = jax.random.PRNGKey(42)
+
+    if network == 'fcnn':
+        sizes = config.get('sizes', [784, 256, 128, 10])
+        model = MLP(sizes=sizes, key=key)
+    elif network == 'cnn':
+        feed_sizes = config.get('feed_sizes', [1152, 256, 128, 10])
+        filter_size = config.get('filter_size', 5)
+        model = CNN(key=key, filter_size=filter_size, feed_sizes=feed_sizes)
+    elif network == 'cnn3d':
+        feed_sizes = config.get('feed_sizes', [2304, 512, 256, 100])
+        filter_size = config.get('filter_size', 3)
+        channel_in = config.get('channel_in', 3)
+        channel_out = config.get('channel_out', 32)
+        num_classes = config.get('n_class', 100)
+        model = CNN3D(key=key, filter_size=filter_size, feed_sizes=feed_sizes,
+                      channel_in=channel_in, channel_out=channel_out, num_classes=num_classes)
+    else:
+        print(f"Error: Unsupported network type '{network}' for profiling")
+        print("Supported: fcnn, cnn, cnn3d")
+        sys.exit(1)
+
     params, static = eqx.partition(model, eqx.is_array)
 
     # Count parameters
     param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
     print(f"Model parameters: {param_count:,}")
+    print()
+
+    # Select Hamiltonian function based on problem type
+    is_regression = (prob == 'regression')
+    hamiltonian_fn = _hamiltonian_core_mse_standard if is_regression else _hamiltonian_core_class_standard
+    y_dtype = jnp.float64 if is_regression else jnp.int64
+    print(f"Problem type: {prob}")
+    print(f"Using: {'MSE' if is_regression else 'Classification'} Hamiltonian")
     print()
 
     # Timing accumulators
@@ -109,14 +161,14 @@ def profile_training(config_path: str, num_batches: int = 20):
     min_batch = min(exp_x.shape[0], x.shape[0])
 
     x_jax = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
-    y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.int64)
+    y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=y_dtype)
     exp_x_jax = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
-    exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.int64)
+    exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=y_dtype)
     delta_x = jnp.asarray(np.random.normal(0, 0.01, exp_x_jax.shape))
 
     # JIT warmup call
     t0 = time.time()
-    grad, losses = _hamiltonian_core_class_standard(
+    grad, losses = hamiltonian_fn(
         params, static, x_jax, y_jax, exp_x_jax, exp_y_jax, delta_x,
         jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
         jnp.array(float(param_count)), jnp.array(1.0)
@@ -162,9 +214,9 @@ def profile_training(config_path: str, num_batches: int = 20):
         min_batch = min(exp_x.shape[0], x.shape[0])
 
         x_jax = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
-        y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.int64)
+        y_jax = jnp.asarray(y.numpy()[:min_batch], dtype=y_dtype)
         exp_x_jax = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
-        exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.int64)
+        exp_y_jax = jnp.asarray(exp_y.numpy()[:min_batch], dtype=y_dtype)
         delta_x = jnp.asarray(np.random.normal(0, 0.01, exp_x_jax.shape))
         # Force transfer to complete
         x_jax.block_until_ready()
@@ -173,7 +225,7 @@ def profile_training(config_path: str, num_batches: int = 20):
 
         # 3. Hamiltonian computation
         t0 = time.time()
-        grad, losses = _hamiltonian_core_class_standard(
+        grad, losses = hamiltonian_fn(
             params, static, x_jax, y_jax, exp_x_jax, exp_y_jax, delta_x,
             jnp.array(0.01), jnp.array(0.98), jnp.array(0.1),
             jnp.array(float(param_count)), jnp.array(1.0)
