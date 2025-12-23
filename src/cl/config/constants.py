@@ -89,8 +89,8 @@ DEFAULT_MODEL_PATH = "outputs/model"
 # ============================================================================
 # EXPERIENCE REPLAY DEFAULTS
 # ============================================================================
-DEFAULT_LEN_EXP_REPLAY = 20000  # General default
-DEFAULT_REPLAY_BUFFER_VECTOR = 20000
+DEFAULT_LEN_EXP_REPLAY = 200000  # General default
+DEFAULT_REPLAY_BUFFER_VECTOR = 200000
 DEFAULT_REPLAY_BUFFER_GRAPH = 200000
 DEFAULT_TRAIN_TEST_SPLIT = 0.8
 
