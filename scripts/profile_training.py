@@ -112,13 +112,29 @@ def profile_training(config_path: str, num_batches: int = 20):
         filter_size = config.get('filter_size', 5)
         model = CNN(key=key, filter_size=filter_size, feed_sizes=feed_sizes)
     elif network == 'cnn3d':
-        feed_sizes = config.get('feed_sizes', [2304, 512, 256, 100])
         filter_size = config.get('filter_size', 3)
         channel_in = config.get('channel_in', 3)
         channel_out = config.get('channel_out', 32)
         num_classes = config.get('n_class', 100)
+        input_size = config.get('input_size', 32)
+
+        # Compute flatten size: after 2 conv+pool layers
+        # Conv1: input_size -> (input_size - filter_size + 1) -> pool /2
+        # Conv2: -> (prev - filter_size + 1) -> pool /2
+        after_conv1 = (input_size - filter_size + 1) // 2
+        after_conv2 = (after_conv1 - filter_size + 1) // 2
+        flatten_size = after_conv2 * after_conv2 * (channel_out * 2)
+
+        # Use config feed_sizes if provided, otherwise compute
+        feed_sizes = config.get('feed_sizes', None)
+        if feed_sizes is None:
+            feed_sizes = [flatten_size, 512, 256, num_classes]
+        print(f"CNN3D: input={input_size}, filter={filter_size}, flatten_size={flatten_size}")
+        print(f"CNN3D: feed_sizes={feed_sizes}")
+
         model = CNN3D(key=key, filter_size=filter_size, feed_sizes=feed_sizes,
-                      channel_in=channel_in, channel_out=channel_out, num_classes=num_classes)
+                      input_size=input_size, channel_in=channel_in,
+                      channel_out=channel_out, num_classes=num_classes)
     else:
         print(f"Error: Unsupported network type '{network}' for profiling")
         print("Supported: fcnn, cnn, cnn3d")
