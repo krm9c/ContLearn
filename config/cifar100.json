@@ -9,6 +9,7 @@
     "epochs_per_task": 2,
 
     "__comment_arch": "Override default: 100 classes instead of 10",
+    "filter_size": 3,
     "feed_sizes": [2304, 512, 256, 100],
     "n_class": 100,
 
