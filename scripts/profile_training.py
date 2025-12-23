@@ -226,8 +226,14 @@ def profile_training(config_path: str, num_batches: int = 20):
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state
 
-    # JIT warmup call - includes Hamiltonian AND optimizer
-    print("Warming up JIT (Hamiltonian + Optimizer)...")
+    # Create JIT-compiled metric computation
+    @jax.jit
+    def compute_pred(params, static, x):
+        model = eqx.combine(params, static)
+        return jax.vmap(model)(x)
+
+    # JIT warmup call - includes Hamiltonian, Optimizer, AND Metric
+    print("Warming up JIT (Hamiltonian + Optimizer + Metric)...")
     t0 = time.time()
     grad, losses = hamiltonian_fn(
         params, static, x_jax, y_jax, exp_x_jax, exp_y_jax, delta_x,
@@ -235,9 +241,12 @@ def profile_training(config_path: str, num_batches: int = 20):
         jnp.array(float(param_count)), jnp.array(1.0)
     )
     jax.tree_util.tree_map(lambda a: a.block_until_ready(), grad)
-    # Also warm up optimizer (JIT compiled)
+    # Warm up optimizer (JIT compiled)
     params, opt_state = optimizer_step(grad, opt_state, params)
     jax.tree_util.tree_map(lambda a: a.block_until_ready(), params)
+    # Warm up metric computation
+    pred = compute_pred(params, static, x_jax)
+    pred.block_until_ready()
     jit_time = time.time() - t0
     print(f"JIT compilation time (total): {jit_time:.2f}s")
     print()
@@ -304,10 +313,9 @@ def profile_training(config_path: str, num_batches: int = 20):
         optimizer_time = time.time() - t0
         times['optimizer'].append(optimizer_time)
 
-        # 5. Metric computation (simplified)
+        # 5. Metric computation (using JIT-compiled function)
         t0 = time.time()
-        model = eqx.combine(params, static)
-        pred = jax.vmap(model)(x_jax)
+        pred = compute_pred(params, static, x_jax)
         pred.block_until_ready()
         metric_time = time.time() - t0
         times['metric'].append(metric_time)
