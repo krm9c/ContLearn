@@ -15,7 +15,13 @@
     "__comment_awb": "AWB architecture morphing disabled",
     "awb_enabled": false,
 
+    "__comment_optimizer": "AdamW with weight decay for regularization",
+    "optimizer": "adamw",
+    "lr": 1e-3,
+    "lr_min": 1e-6,
+    "lr_schedule": "cosine",
+    "weight_decay": 1e-4,
+
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "lr_schedule": "constant",
     "debug_mode": false
 }

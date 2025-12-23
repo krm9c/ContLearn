@@ -280,31 +280,42 @@ def create_optimizer_with_lr(config: dict, lr: float):
 def compute_task_lr(config: Dict[str, Any], task_id: int) -> float:
     """Compute learning rate for current task based on schedule.
 
+    Added by Claude: All schedules now respect lr_min floor to prevent LR from
+    becoming too small. Supports exponential decay from lr to lr_min over tasks.
+
     Args:
-        config: Configuration dict with lr_schedule
+        config: Configuration dict with lr_schedule, lr, lr_min, lr_decay_factor
         task_id: Current task ID
 
     Returns:
-        Learning rate for this task
+        Learning rate for this task (clamped to lr_min minimum)
     """
-    base_lr = config.get('lr',DEFAULT_LR)
+    base_lr = config.get('lr', DEFAULT_LR)
+    lr_min = config.get('lr_min', 1e-6)  # Added by Claude: minimum LR floor
     schedule = config.get('lr_schedule', 'constant')
+    n_tasks = config.get('n_task', 5)
 
     if schedule == 'constant':
         return base_lr
     elif schedule == 'step':
         decay_factor = config.get('lr_decay_factor', 0.99)
-        return base_lr * (decay_factor ** task_id)
+        lr = base_lr * (decay_factor ** task_id)
+        return max(lr, lr_min)
     elif schedule == 'exponential':
-        decay_factor = config.get('lr_decay_factor', 0.95)
-        return base_lr * (decay_factor ** task_id)
+        # Added by Claude: Exponential decay from base_lr towards lr_min
+        decay_factor = config.get('lr_decay_factor', 0.5)
+        lr = base_lr * (decay_factor ** task_id)
+        return max(lr, lr_min)
     elif schedule == 'cosine':
-        # Simple cosine decay over tasks
-        n_tasks = config.get('n_task', 5)
-        return base_lr * 0.5 * (1 + jnp.cos(jnp.pi * task_id / n_tasks))
+        # Added by Claude: Cosine annealing from base_lr to lr_min
+        progress = task_id / max(n_tasks - 1, 1)
+        lr = lr_min + 0.5 * (base_lr - lr_min) * (1 + jnp.cos(jnp.pi * progress))
+        return float(max(lr, lr_min))
     elif schedule == 'linear':
-        n_tasks = config.get('n_task', 5)
-        return base_lr * (1 - task_id / n_tasks)
+        # Added by Claude: Linear decay from base_lr to lr_min
+        progress = task_id / max(n_tasks - 1, 1)
+        lr = base_lr - progress * (base_lr - lr_min)
+        return max(lr, lr_min)
     else:
         return base_lr
 
@@ -562,12 +573,14 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         trainloader, exploader = data.generate_dataset(task_id,
                                                        config.get('batch_size', 64),
                                                        phase='training')
-        valloader, _ = data.generate_dataset(task_id,
-                                             config.get('batch_size', 64),
-                                             phase='testing')
-        testloader, _ = data.generate_dataset(task_id,
-                                              config.get('batch_size', 64),
-                                              phase='testing')
+        valloader, val_exploader = data.generate_dataset(task_id,
+                                                         config.get('batch_size', 64),
+                                                         phase='testing')
+        # Keep both current and experience test loaders as tuple for proper Te/Cur vs Te/Exp metrics
+        test_curr_loader, test_exp_loader = data.generate_dataset(task_id,
+                                                                  config.get('batch_size', 64),
+                                                                  phase='testing')
+        testloader = (test_curr_loader, test_exp_loader)
 
         # Compute learning rate for this task
         task_lr = compute_task_lr(config, task_id)
