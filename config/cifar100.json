@@ -20,5 +20,6 @@
 
     "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
     "lr_schedule": "exponential",
+    "batch_size": 512,
     "debug_mode": false
 }
