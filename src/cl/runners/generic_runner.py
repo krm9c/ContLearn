@@ -32,6 +32,12 @@ from ..config.constants import (
     DEFAULT_AWB_V_WARMUP_EPOCHS,
     DEFAULT_AWB_TASK_LR_FACTOR,
     DEFAULT_AWB_TASK_WARMUP_EPOCHS,
+    # Added by Claude: Task transition warmup constants
+    DEFAULT_TASK_WARMUP_ENABLED,
+    DEFAULT_TASK_WARMUP_EPOCHS,
+    DEFAULT_TASK_WARMUP_LR_FACTOR,
+    DEFAULT_WARMUP_GRAD_WEIGHTS,
+    DEFAULT_MAIN_GRAD_WEIGHTS,
 )
 
 # ============================================================================
@@ -599,31 +605,122 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             arch_info = get_model_architecture(model)
             trainer.initialize_task(record_dict, task_id, arch_info)
 
-            # Train with standard partition
-            global_iter_offset = task_id * epochs_per_task
-            params, static, opt_state, record_dict = trainer.train__CL(
-                train__=(trainloader, exploader, valloader, testloader),
-                params=params,
-                static=static,
-                opt_state=opt_state,
-                optim=optim,
-                n_iter=epochs_per_task,
-                task_id=task_id,
-                config=config,
-                record_dict=record_dict,
-                notABTrain=True,
-                problem_type=problem_type,
-                loss_type=loss_type,
-                phase='main',
-                record_training=True,
-                global_iteration_offset=global_iter_offset
-            )
+            # Added by Claude: Task transition warmup configuration
+            warmup_enabled = config.get('task_warmup_enabled', DEFAULT_TASK_WARMUP_ENABLED)
+            warmup_epochs = config.get('task_warmup_epochs', DEFAULT_TASK_WARMUP_EPOCHS)
+            warmup_lr_factor = config.get('task_warmup_lr_factor', DEFAULT_TASK_WARMUP_LR_FACTOR)
+            warmup_grad_weights = config.get('warmup_grad_weights', DEFAULT_WARMUP_GRAD_WEIGHTS)
+            main_grad_weights = config.get('main_grad_weights', DEFAULT_MAIN_GRAD_WEIGHTS)
 
-            # Added by Claude: Update phase info
-            record_dict['tasks'][task_id]['phase_info'] = {
-                'type': 'standard',
-                'total_epochs': epochs_per_task
-            }
+            # Task 0: No warmup needed (no previous knowledge to protect)
+            # Tasks 1+: Warmup with new task samples only, then main training with experience
+            if task_id > 0 and warmup_enabled and warmup_epochs > 0:
+                # === WARMUP PHASE: New task samples only ===
+                warmup_lr = task_lr * warmup_lr_factor
+                print(f"  Warmup phase: {warmup_epochs} epochs at lr={warmup_lr:.2e}")
+                print(f"    Using new task samples only (no experience replay)")
+                print(f"    Grad weights: {warmup_grad_weights}")
+
+                # Create warmup optimizer with reduced LR
+                optim_warmup = create_optimizer_with_lr(config, warmup_lr)
+                opt_state_warmup = optim_warmup.init(params)
+
+                # Create warmup config with warmup grad weights
+                warmup_config = config.copy()
+                warmup_config['grad_weights'] = warmup_grad_weights
+
+                # Warmup uses trainloader for both current and "experience" (new task only)
+                params, static, opt_state_warmup, record_dict = trainer.train__CL(
+                    train__=(trainloader, trainloader, valloader, testloader),  # Use trainloader as exploader
+                    params=params,
+                    static=static,
+                    opt_state=opt_state_warmup,
+                    optim=optim_warmup,
+                    n_iter=warmup_epochs,
+                    task_id=task_id,
+                    config=warmup_config,
+                    record_dict=record_dict,
+                    notABTrain=True,
+                    problem_type=problem_type,
+                    loss_type=loss_type,
+                    phase='warmup',
+                    record_training=True,
+                    global_iteration_offset=task_id * epochs_per_task
+                )
+
+                # === MAIN PHASE: Full training with experience replay ===
+                main_epochs = epochs_per_task - warmup_epochs
+                print(f"  Main phase: {main_epochs} epochs at lr={task_lr:.2e}")
+                print(f"    Using experience replay")
+                print(f"    Grad weights: {main_grad_weights}")
+
+                # Create main config with main grad weights
+                main_config = config.copy()
+                main_config['grad_weights'] = main_grad_weights
+
+                # Reinitialize optimizer at full LR
+                opt_state = optim.init(params)
+                opt_state = update_learning_rate(opt_state, task_lr)
+
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params,
+                    static=static,
+                    opt_state=opt_state,
+                    optim=optim,
+                    n_iter=main_epochs,
+                    task_id=task_id,
+                    config=main_config,
+                    record_dict=record_dict,
+                    notABTrain=True,
+                    problem_type=problem_type,
+                    loss_type=loss_type,
+                    phase='main',
+                    record_training=True,
+                    global_iteration_offset=task_id * epochs_per_task + warmup_epochs
+                )
+
+                # Update phase info with warmup details
+                record_dict['tasks'][task_id]['phase_info'] = {
+                    'type': 'standard_with_warmup',
+                    'warmup_epochs': warmup_epochs,
+                    'warmup_lr': warmup_lr,
+                    'warmup_grad_weights': warmup_grad_weights,
+                    'main_epochs': main_epochs,
+                    'main_grad_weights': main_grad_weights,
+                    'total_epochs': epochs_per_task
+                }
+            else:
+                # Task 0 or warmup disabled: Standard training without warmup
+                # Use main_grad_weights for consistency (or default if not specified)
+                training_config = config.copy()
+                if task_id > 0:  # Only override grad_weights for tasks after 0
+                    training_config['grad_weights'] = main_grad_weights
+
+                global_iter_offset = task_id * epochs_per_task
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params,
+                    static=static,
+                    opt_state=opt_state,
+                    optim=optim,
+                    n_iter=epochs_per_task,
+                    task_id=task_id,
+                    config=training_config,
+                    record_dict=record_dict,
+                    notABTrain=True,
+                    problem_type=problem_type,
+                    loss_type=loss_type,
+                    phase='main',
+                    record_training=True,
+                    global_iteration_offset=global_iter_offset
+                )
+
+                # Update phase info
+                record_dict['tasks'][task_id]['phase_info'] = {
+                    'type': 'standard',
+                    'total_epochs': epochs_per_task
+                }
 
             # Added by Claude: Track architecture for this task
             model_combined = eqx.combine(params, static)
