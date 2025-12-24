@@ -120,6 +120,13 @@ DEFAULT_LR_DECAY_FACTOR = 0.9  # For step/exponential schedules
 DEFAULT_LR_DECAY_STEPS = 1  # Steps between LR decay
 DEFAULT_LR_MIN = 1e-6  # Minimum learning rate
 
+# Added by Claude: Adaptive LR minimum based on loss ratio
+# When loss increases significantly between tasks, lr_min is boosted to allow learning
+DEFAULT_ADAPTIVE_LR_MIN_ENABLED = True  # Enable adaptive lr_min
+DEFAULT_LR_MIN_BASE = 1e-6  # Base minimum LR
+DEFAULT_LR_MIN_MAX = 1e-4  # Maximum lr_min (100x boost)
+DEFAULT_LR_MIN_LOSS_RATIO_THRESHOLD = 1.5  # Loss ratio above which lr_min starts increasing
+
 # ============================================================================
 # HAMILTONIAN GRADIENT COMPUTATION DEFAULTS
 # ============================================================================
@@ -145,6 +152,14 @@ DEFAULT_TASK_WARMUP_LR_FACTOR = 0.1  # LR multiplier during warmup (0.1 = 10% of
 DEFAULT_WARMUP_GRAD_WEIGHTS = [1.0, 0.0, 0.0]
 # Gradient weights during main training: balanced between current and experience
 DEFAULT_MAIN_GRAD_WEIGHTS = [0.3, 0.6, 0.1]  # Optimized: 30% current, 60% experience, 10% regularization
+
+# Added by Claude: Adaptive gradient weights based on loss ratio between tasks
+# When loss increases, current task weight increases to allow learning; experience weight decreases
+DEFAULT_ADAPTIVE_GRAD_WEIGHTS_ENABLED = True  # Enable adaptive gradient weights
+DEFAULT_GRAD_WEIGHTS_BASE = [0.3, 0.6, 0.1]  # Base weights: 30% current, 60% experience, 10% reg
+DEFAULT_GRAD_WEIGHTS_MAX_CURRENT = 0.7  # Maximum current task weight (when loss ratio is high)
+DEFAULT_GRAD_WEIGHTS_MIN_EXPERIENCE = 0.2  # Minimum experience weight (when loss ratio is high)
+DEFAULT_GRAD_WEIGHTS_LOSS_RATIO_THRESHOLD = 1.2  # Loss ratio above which weights start shifting
 
 # ============================================================================
 # DEBUG MODE DEFAULTS
