@@ -643,3 +643,90 @@ class CNN3D(eqx.Module):
             channel_in=self.channel_in,
             channel_out=self.channel_out
         )
+
+
+# Added by Claude: AWB Operations implementation for CNN/CNN3D
+class CNNAWBOps:
+    """CNN-specific AWB operations implementation.
+
+    Implements the AWBOperations interface for CNN and CNN3D models.
+    Delegates to existing functions in awb.py and arch_search/cnn_search.py.
+
+    Args:
+        is_cnn3d: If True, use CNN3D-specific functions (for CIFAR)
+                  If False, use CNN-specific functions (for MNIST)
+    """
+
+    def __init__(self, is_cnn3d=False):
+        self.is_cnn3d = is_cnn3d
+
+    def search_architecture(self, model, task_id, baseline_loss, dataloader_curr,
+                           dataloader_exp, test_loader_curr, test_loader_exp, config, trainer=None):
+        """Search for optimal CNN architecture."""
+        from ..core.arch_search import search_architecture
+        # Extract current architecture
+        baseline_arch = (model.filter_size, list(model.feed_sizes))
+        model_type = 'cnn3d' if self.is_cnn3d else 'cnn'
+        return search_architecture(
+            model=model, baseline_arch=baseline_arch, task_id=task_id,
+            baseline_loss=baseline_loss, dataloader_curr=dataloader_curr,
+            dataloader_exp=dataloader_exp, test_loader_curr=test_loader_curr,
+            test_loader_exp=test_loader_exp, config=config, trainer=trainer,
+            model_type=model_type
+        )
+
+    def set_AB_matrices(self, model, original_arch, new_arch):
+        """Initialize A/B matrices for architecture transition."""
+        from ..core.awb import set_new_AB_matrices_cnn, set_new_AB_matrices_cnn3d
+
+        original_filter, original_feed_sizes = original_arch
+        new_filter, new_feed_sizes = new_arch
+
+        if self.is_cnn3d:
+            return set_new_AB_matrices_cnn3d(model, original_feed_sizes, new_feed_sizes,
+                                            original_filter, new_filter)
+        else:
+            return set_new_AB_matrices_cnn(model, original_feed_sizes, new_feed_sizes,
+                                          original_filter, new_filter)
+
+    def partition_for_AB_training(self, model):
+        """Partition model for AB training (freeze W, train A/B)."""
+        from ..core.awb import partition_for_AB_training_cnn, partition_for_AB_training_cnn3d
+
+        if self.is_cnn3d:
+            return partition_for_AB_training_cnn3d(model)
+        else:
+            return partition_for_AB_training_cnn(model)
+
+    def compute_V(self, model):
+        """Compute V = A @ W @ B^T."""
+        from ..core.awb import compute_V_from_AWB_cnn, compute_V_from_AWB_cnn3d
+
+        if self.is_cnn3d:
+            return compute_V_from_AWB_cnn3d(model)
+        else:
+            return compute_V_from_AWB_cnn(model)
+
+    def partition_for_standard_training(self, model):
+        """Partition model for standard training (train V, freeze A/B)."""
+        from ..core.awb import partition_for_standard_training_cnn, partition_for_standard_training_cnn3d
+
+        if self.is_cnn3d:
+            return partition_for_standard_training_cnn3d(model)
+        else:
+            return partition_for_standard_training_cnn(model)
+
+    def get_model_architecture(self, model):
+        """Extract architecture specification from model."""
+        return (model.filter_size, list(model.feed_sizes))
+
+    def save_weights(self, model):
+        """Save current model weights."""
+        from ..core.awb import save_cnn_layer_weights
+        return save_cnn_layer_weights(model)
+
+    def restore_weights(self, model, saved_weights):
+        """Restore model weights."""
+        from ..core.awb import restore_cnn_layer_weights
+        conv_weights, feed_weights, feed_biases = saved_weights
+        return restore_cnn_layer_weights(model, conv_weights, feed_weights, feed_biases)
