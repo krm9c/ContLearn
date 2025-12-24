@@ -552,3 +552,65 @@ class GCN(eqx.Module):
 
 # Alias for backward compatibility
 myNN = GCN
+
+# Added by Claude: AWB Operations implementation for GCN
+class GCNAWBOps:
+    """GCN-specific AWB operations implementation.
+
+    Implements the AWBOperations interface for GCN models.
+    Delegates to existing functions in awb.py and arch_search/gcn_search.py.
+    """
+
+    def search_architecture(self, model, task_id, baseline_loss, dataloader_curr,
+                           dataloader_exp, test_loader_curr, test_loader_exp, config, trainer=None):
+        """Search for optimal GCN architecture."""
+        from ..core.arch_search import search_architecture
+        # Extract current architecture
+        baseline_arch = (list(model.gcn_sizes), list(model.feed_sizes))
+        return search_architecture(
+            model=model, baseline_arch=baseline_arch, task_id=task_id,
+            baseline_loss=baseline_loss, dataloader_curr=dataloader_curr,
+            dataloader_exp=dataloader_exp, test_loader_curr=test_loader_curr,
+            test_loader_exp=test_loader_exp, config=config, trainer=trainer,
+            model_type='gcn'
+        )
+
+    def set_AB_matrices(self, model, original_arch, new_arch):
+        """Initialize A/B matrices for architecture transition."""
+        from ..core.awb import set_new_AB_matrices_gcn
+
+        original_gcn_sizes, original_feed_sizes = original_arch
+        new_gcn_sizes, new_feed_sizes = new_arch
+
+        return set_new_AB_matrices_gcn(model, original_gcn_sizes, original_feed_sizes,
+                                       new_gcn_sizes, new_feed_sizes)
+
+    def partition_for_AB_training(self, model):
+        """Partition model for AB training (freeze W, train A/B)."""
+        from ..core.awb import partition_for_AB_training_gnn
+        return partition_for_AB_training_gnn(model)
+
+    def compute_V(self, model):
+        """Compute V = A @ W @ B^T."""
+        from ..core.awb import compute_V_from_AWB_gcn
+        return compute_V_from_AWB_gcn(model)
+
+    def partition_for_standard_training(self, model):
+        """Partition model for standard training (train V, freeze A/B)."""
+        from ..core.awb import partition_for_standard_training_gnn
+        return partition_for_standard_training_gnn(model)
+
+    def get_model_architecture(self, model):
+        """Extract architecture specification from model."""
+        return (list(model.gcn_sizes), list(model.feed_sizes))
+
+    def save_weights(self, model):
+        """Save current model weights."""
+        from ..core.awb import save_gcn_layer_weights
+        return save_gcn_layer_weights(model)
+
+    def restore_weights(self, model, saved_weights):
+        """Restore model weights."""
+        from ..core.awb import restore_gcn_layer_weights
+        gcn_weights, gcn_biases, mlp_weights, mlp_biases = saved_weights
+        return restore_gcn_layer_weights(model, gcn_weights, gcn_biases, mlp_weights, mlp_biases)
