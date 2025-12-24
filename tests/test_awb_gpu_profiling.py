@@ -323,9 +323,10 @@ def profile_hamiltonian_computation(model, batch_size: int, num_iterations: int,
         exp_x = jax.random.normal(key, input_shape)
         deltax = jax.random.normal(key, input_shape) * 0.01
         if loss_type == 'regression':
-            # MLP outputs (batch, 1), so y needs shape (batch, 1) to match
-            y = jax.random.normal(key, (batch_size, 1))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            # Added by Claude: MLP outputs (batch, 1) but gets squeezed to (batch,) in hamiltonian
+            # So y needs shape (batch,) to match after squeezing
+            y = jax.random.normal(key, (batch_size,))
+            exp_y = jax.random.normal(key, (batch_size,))
             hamiltonian_fn = _hamiltonian_core_mse_standard
         else:
             y = jax.random.randint(key, (batch_size,), 0, model.sizes[-1])
@@ -700,9 +701,9 @@ def profile_jit_recompilation_per_architecture(base_arch: List[int],
         # Step 4: JIT Compilation (first call to Hamiltonian with this architecture)
         # Generate data matching this architecture
         x = jax.random.normal(key, (batch_size, arch[0]))
-        y = jax.random.normal(key, (batch_size, 1))
+        y = jax.random.normal(key, (batch_size,))
         exp_x = jax.random.normal(key, (batch_size, arch[0]))
-        exp_y = jax.random.normal(key, (batch_size, 1))
+        exp_y = jax.random.normal(key, (batch_size,))
         deltax = jax.random.normal(key, (batch_size, arch[0])) * 0.01
 
         start = time.time()
@@ -843,9 +844,9 @@ def profile_full_architecture_search_simulation(base_arch: List[int],
 
             # Generate training data
             x = jax.random.normal(key, (batch_size, new_arch[0]))
-            y = jax.random.normal(key, (batch_size, 1))
+            y = jax.random.normal(key, (batch_size,))
             exp_x = jax.random.normal(key, (batch_size, new_arch[0]))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size,))
             deltax = jax.random.normal(key, (batch_size, new_arch[0])) * 0.01
 
             # 5. First call (JIT Compilation)
@@ -1026,8 +1027,8 @@ def profile_full_training_epoch(model, batch_size: int, num_batches: int,
 
         if loss_type == 'regression':
             # MLP outputs (batch, 1), so y needs shape (batch, 1) to match
-            y = jax.random.normal(subkey, (batch_size, 1))
-            exp_y = jax.random.normal(subkey, (batch_size, 1))
+            y = jax.random.normal(subkey, (batch_size,))
+            exp_y = jax.random.normal(subkey, (batch_size,))
         else:
             y = jax.random.randint(subkey, (batch_size,), 0, output_dim)
             exp_y = jax.random.randint(subkey, (batch_size,), 0, output_dim)
@@ -1510,9 +1511,9 @@ class TestOptimizationOpportunities:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jax.random.normal(key, (batch_size, arch[0]))
-            y = jax.random.normal(key, (batch_size, 1))
+            y = jax.random.normal(key, (batch_size,))
             exp_x = jax.random.normal(key, (batch_size, arch[0]))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size,))
             deltax = jax.random.normal(key, (batch_size, arch[0])) * 0.01
 
             start = time.time()
@@ -1533,9 +1534,9 @@ class TestOptimizationOpportunities:
         params_fixed, static_fixed = eqx.partition(fixed_model, eqx.is_array)
 
         x_fixed = jax.random.normal(key, (batch_size, fixed_arch[0]))
-        y_fixed = jax.random.normal(key, (batch_size, 1))
+        y_fixed = jax.random.normal(key, (batch_size,))
         exp_x_fixed = jax.random.normal(key, (batch_size, fixed_arch[0]))
-        exp_y_fixed = jax.random.normal(key, (batch_size, 1))
+        exp_y_fixed = jax.random.normal(key, (batch_size,))
         deltax_fixed = jax.random.normal(key, (batch_size, fixed_arch[0])) * 0.01
 
         # First call = JIT compilation
@@ -1661,9 +1662,9 @@ class TestOptimizationOpportunities:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jax.random.normal(key, (batch_size, arch[0]))
-            y = jax.random.normal(key, (batch_size, 1))
+            y = jax.random.normal(key, (batch_size,))
             exp_x = jax.random.normal(key, (batch_size, arch[0]))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size,))
             deltax = jax.random.normal(key, (batch_size, arch[0])) * 0.01
 
             start = time.time()
@@ -1698,9 +1699,9 @@ class TestOptimizationOpportunities:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jax.random.normal(key, (batch_size, arch[0]))
-            y = jax.random.normal(key, (batch_size, 1))
+            y = jax.random.normal(key, (batch_size,))
             exp_x = jax.random.normal(key, (batch_size, arch[0]))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size,))
             deltax = jax.random.normal(key, (batch_size, arch[0])) * 0.01
 
             start = time.time()
@@ -1725,9 +1726,9 @@ class TestOptimizationOpportunities:
             params, static = eqx.partition(model, eqx.is_array)
 
             x = jax.random.normal(key, (batch_size, arch[0]))
-            y = jax.random.normal(key, (batch_size, 1))
+            y = jax.random.normal(key, (batch_size,))
             exp_x = jax.random.normal(key, (batch_size, arch[0]))
-            exp_y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size,))
             deltax = jax.random.normal(key, (batch_size, arch[0])) * 0.01
 
             start = time.time()
