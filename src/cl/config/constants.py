@@ -94,6 +94,13 @@ DEFAULT_REPLAY_BUFFER_VECTOR = 200000
 DEFAULT_REPLAY_BUFFER_GRAPH = 200000
 DEFAULT_TRAIN_TEST_SPLIT = 0.8
 
+# Added by Claude: Balanced replay settings for task-representative sampling
+# Reference: Partitioning Reservoir Sampling (Kim et al., 2020)
+DEFAULT_BALANCED_REPLAY_ENABLED = True  # Enable task-balanced experience replay
+DEFAULT_RECENT_TASK_WEIGHT = 0.1  # 10% of buffer for most recent task
+DEFAULT_OLDER_TASKS_WEIGHT = 0.8  # 80% of buffer split among older tasks
+# Remaining 10% is random sampling for diversity
+
 # ============================================================================
 # OPTIMIZER DEFAULTS
 # ============================================================================

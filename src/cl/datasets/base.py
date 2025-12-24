@@ -96,6 +96,16 @@ class BaseDataset(ABC):
         self.exp_x_test: List = []
         self.exp_y_test: List = []
 
+        # Added by Claude: Task ID tracking for balanced experience replay
+        # Each element stores the task_id of the sample at the same index
+        self.exp_task_ids_train: Optional[np.ndarray] = None
+        self.exp_task_ids_test: Optional[np.ndarray] = None
+
+        # Balanced replay settings
+        self.balanced_replay_enabled = config.get('balanced_replay_enabled', True)
+        self.recent_task_weight = config.get('recent_task_weight', 0.1)  # 10% for recent
+        self.older_tasks_weight = config.get('older_tasks_weight', 0.8)  # 80% for older
+
         # Track if experience buffer has been initialized
         self._exp_initialized = False
 
@@ -162,10 +172,85 @@ class BaseDataset(ABC):
         """Return the total number of available tasks."""
         pass
 
+    def _rebalance_buffer(self, task_id: int, is_train: bool = True) -> None:
+        """Rebalance experience buffer with task-weighted sampling.
+
+        Added by Claude: Implements balanced replay with recency weighting.
+        Allocation: 10% recent task, 80% older tasks (equal split), 10% random.
+
+        Args:
+            task_id: Current task identifier (most recent task)
+            is_train: True for training buffer, False for test buffer
+        """
+        if is_train:
+            exp_x = self.exp_x_train
+            exp_y = self.exp_y_train
+            exp_task_ids = self.exp_task_ids_train
+        else:
+            exp_x = self.exp_x_test
+            exp_y = self.exp_y_test
+            exp_task_ids = self.exp_task_ids_test
+
+        if len(exp_x) <= self.len_exp_replay:
+            return  # No rebalancing needed
+
+        n_tasks = task_id + 1
+
+        if not self.balanced_replay_enabled or n_tasks == 1:
+            # Disabled or first task: simple random sampling
+            indices = np.random.choice(len(exp_x), self.len_exp_replay, replace=False)
+        else:
+            # Weighted allocation: 10% recent, 80% older, 10% random
+            recent_quota = int(self.recent_task_weight * self.len_exp_replay)
+            older_total = int(self.older_tasks_weight * self.len_exp_replay)
+            older_quota_per_task = older_total // (n_tasks - 1) if n_tasks > 1 else 0
+
+            selected_indices = []
+
+            for task in range(n_tasks):
+                task_mask = exp_task_ids == task
+                task_indices = np.where(task_mask)[0]
+
+                if task == task_id:
+                    quota = recent_quota
+                else:
+                    quota = older_quota_per_task
+
+                # Don't exceed available samples
+                quota = min(quota, len(task_indices))
+
+                if quota > 0 and len(task_indices) > 0:
+                    selected = np.random.choice(task_indices, quota, replace=False)
+                    selected_indices.extend(selected.tolist())
+
+            # Add random samples for remaining quota (10% diversity)
+            random_quota = self.len_exp_replay - len(selected_indices)
+            if random_quota > 0:
+                remaining = set(range(len(exp_x))) - set(selected_indices)
+                if remaining:
+                    random_samples = np.random.choice(
+                        list(remaining),
+                        min(random_quota, len(remaining)),
+                        replace=False
+                    )
+                    selected_indices.extend(random_samples.tolist())
+
+            indices = np.array(selected_indices)
+
+        # Apply selection
+        if is_train:
+            self.exp_x_train = self.exp_x_train[indices]
+            self.exp_y_train = self.exp_y_train[indices]
+            self.exp_task_ids_train = self.exp_task_ids_train[indices]
+        else:
+            self.exp_x_test = self.exp_x_test[indices]
+            self.exp_y_test = self.exp_y_test[indices]
+            self.exp_task_ids_test = self.exp_task_ids_test[indices]
+
     def append_to_experience(self, task_id: int) -> None:
         """Add current task data to the experience replay buffer.
 
-        Manages buffer size by randomly sampling if it exceeds len_exp_replay.
+        Manages buffer size using task-balanced sampling when enabled.
 
         Args:
             task_id: Current task identifier
@@ -178,12 +263,18 @@ class BaseDataset(ABC):
         y_train = self.y_train if isinstance(self.y_train, np.ndarray) else np.array(self.y_train)
         y_test = self.y_test if isinstance(self.y_test, np.ndarray) else np.array(self.y_test)
 
+        # Create task ID arrays for new samples
+        new_task_ids_train = np.full(len(X_train), task_id, dtype=np.int8)
+        new_task_ids_test = np.full(len(X_test), task_id, dtype=np.int8)
+
         if not self._exp_initialized:
             # First task: initialize buffers
             self.exp_x_train = X_train.clone()
             self.exp_y_train = y_train.copy()
             self.exp_x_test = X_test.clone()
             self.exp_y_test = y_test.copy()
+            self.exp_task_ids_train = new_task_ids_train
+            self.exp_task_ids_test = new_task_ids_test
             self._exp_initialized = True
         else:
             # Subsequent tasks: concatenate
@@ -191,17 +282,12 @@ class BaseDataset(ABC):
             self.exp_y_train = np.concatenate([self.exp_y_train, y_train], axis=0)
             self.exp_x_test = torch.cat((self.exp_x_test, X_test), dim=0)
             self.exp_y_test = np.concatenate([self.exp_y_test, y_test], axis=0)
+            self.exp_task_ids_train = np.concatenate([self.exp_task_ids_train, new_task_ids_train])
+            self.exp_task_ids_test = np.concatenate([self.exp_task_ids_test, new_task_ids_test])
 
-        # Limit buffer size by random sampling
-        if len(self.exp_x_train) > self.len_exp_replay:
-            indices = np.random.choice(len(self.exp_x_train), self.len_exp_replay, replace=False)
-            self.exp_x_train = self.exp_x_train[indices]
-            self.exp_y_train = self.exp_y_train[indices]
-
-        if len(self.exp_x_test) > self.len_exp_replay:
-            indices = np.random.choice(len(self.exp_x_test), self.len_exp_replay, replace=False)
-            self.exp_x_test = self.exp_x_test[indices]
-            self.exp_y_test = self.exp_y_test[indices]
+        # Rebalance buffers with task-weighted sampling
+        self._rebalance_buffer(task_id, is_train=True)
+        self._rebalance_buffer(task_id, is_train=False)
 
     def get_task_data(self, task_id: int, phase: str) -> Tuple[Tuple, Tuple]:
         """Retrieve current and experience data for a task.
