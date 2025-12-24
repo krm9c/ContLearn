@@ -1,0 +1,40 @@
+{
+    "_comment": "AWB Test Configuration for MLP (Sine Regression)",
+    "prob": "regression",
+    "problem": "vectors",
+    "data": "sine",
+    "network": "fcnn",
+    "loss": "mse",
+    "metric": "mse",
+
+    "n_task": 3,
+    "epochs_per_task": 50,
+    "batch_size": 64,
+    "save_iter": 10,
+    "lr": 1e-4,
+    "optimizer": "adam",
+
+    "n_layers": 4,
+    "hln": 75,
+
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 20,
+    "awb_ab_training_epochs": 20,
+    "awb_ab_warmup_epochs": 5,
+    "awb_ab_max_iterations": 2,
+    "awb_averaging_window": 5,
+
+    "arch_search_method": "bayesian",
+    "arch_search_bo_trials": 3,
+    "arch_search_epochs": 5,
+    "arch_search_range": 2,
+    "arch_search_mlp_increment": 15,
+
+    "flag": [1.0, 1.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 500,
+
+    "model_path": "awb_tests/results/mlp_awb_test"
+}

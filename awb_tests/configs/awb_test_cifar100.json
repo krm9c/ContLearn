@@ -1,0 +1,53 @@
+{
+    "_comment": "AWB Test Configuration for CIFAR-100 (CNN3D - Largest Model)",
+    "_comment2": "Used for performance testing on the most computationally intensive model",
+
+    "data": "cifar100",
+    "prob": "classification",
+    "problem": "vectors",
+    "network": "cnn3d",
+    "loss": "class",
+    "metric": "class",
+
+    "n_task": 5,
+    "epochs_per_task": 50,
+    "batch_size": 256,
+    "save_iter": 10,
+
+    "feed_sizes": [2304, 512, 256, 100],
+    "awb_arch": [2304, 512, 256, 100],
+    "n_class": 100,
+    "filter_size": 3,
+    "channel_out": 32,
+
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 10,
+    "awb_ab_training_epochs": 20,
+    "awb_ab_warmup_epochs": 5,
+    "awb_ab_max_iterations": 2,
+    "awb_averaging_window": 5,
+    "awb_v_lr_factor": 0.1,
+    "awb_v_warmup_epochs": 5,
+    "awb_task_lr_factor": 0.1,
+    "awb_task_warmup_epochs": 5,
+
+    "arch_search_method": "bayesian",
+    "arch_search_bo_trials": 5,
+    "arch_search_epochs": 10,
+    "arch_search_lr": 0.001,
+    "arch_search_max_iter": 2,
+
+    "optimizer": "adamw",
+    "lr": 1e-3,
+    "lr_min": 1e-6,
+    "lr_schedule": "cosine",
+    "weight_decay": 1e-4,
+
+    "flag": [1.0, 1.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+    "main_grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": false,
+
+    "model_path": "awb_tests/results/cifar100_awb_test"
+}
