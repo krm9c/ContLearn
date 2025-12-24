@@ -1,0 +1,26 @@
+{
+    "__comment": "Full AWB (Architecture + Transfer)",
+    "__comment_": "Arch search + A/B training for knowledge transfer",
+    "data": "sine",
+    "n_task": 10,
+    "epochs_per_task": 500,
+    "batch_size": 128,
+    "awb_enabled": true,
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 50,
+    "awb_ab_training_epochs": 100,
+    "awb_loss_ratio_threshold": 1.1,
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "warmup_epochs": 0,
+    "model_path": "experiments/results/sine/condition4_awb_full",
+    "save_iter": 50,
+    "grad_weights": [
+        0.01,
+        0.98,
+        0.1
+    ],
+    "debug_mode": false,
+    "experiment_name": "sine_condition4_awb_full",
+    "per_task_eval_enabled": true
+}
