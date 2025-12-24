@@ -163,6 +163,9 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
+        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        if pred.ndim == 2 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(y, pred))
 
     # Loss function for experience data (closed over exp_y)
@@ -172,6 +175,9 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
+        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        if pred.ndim == 2 and pred.shape[1] == 1:
+            pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
 
     # Compute delta_theta (gradient on current task)
