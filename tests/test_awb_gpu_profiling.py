@@ -267,6 +267,7 @@ def awb_cnn_model():
     filter_size = 3
     feed_sizes = [2304, 512, 256, 100]
 
+    # CNN3D doesn't have awb_enabled parameter - AWB matrices are always initialized
     return CNN3D(
         key=jax.random.PRNGKey(42),
         filter_size=filter_size,
@@ -274,8 +275,7 @@ def awb_cnn_model():
         input_size=32,
         channel_in=3,
         channel_out=32,
-        num_classes=100,
-        awb_enabled=True
+        num_classes=100
     )
 
 
@@ -323,8 +323,9 @@ def profile_hamiltonian_computation(model, batch_size: int, num_iterations: int,
         exp_x = jax.random.normal(key, input_shape)
         deltax = jax.random.normal(key, input_shape) * 0.01
         if loss_type == 'regression':
-            y = jax.random.normal(key, (batch_size,))
-            exp_y = jax.random.normal(key, (batch_size,))
+            # MLP outputs (batch, 1), so y needs shape (batch, 1) to match
+            y = jax.random.normal(key, (batch_size, 1))
+            exp_y = jax.random.normal(key, (batch_size, 1))
             hamiltonian_fn = _hamiltonian_core_mse_standard
         else:
             y = jax.random.randint(key, (batch_size,), 0, model.sizes[-1])
@@ -389,7 +390,7 @@ def profile_optimizer_step(model, batch_size: int, num_iterations: int) -> Phase
     opt_state = optim.init(params)
 
     # Create dummy gradient with same structure as params
-    grad = jax.tree_map(lambda p: jnp.ones_like(p) * 0.01 if p is not None else None, params)
+    grad = jax.tree_util.tree_map(lambda p: jnp.ones_like(p) * 0.01 if p is not None else None, params)
 
     # JIT compile the optimizer step
     @jax.jit
@@ -435,13 +436,12 @@ def profile_v_transformation(model, num_iterations: int = 100) -> PhaseProfile:
 
     profile = PhaseProfile(phase_name="V Transformation (Step 4)")
 
-    if not hasattr(model, 'A') or model.A is None:
-        # Initialize A/B matrices for the test
-        original_arch = model.sizes
-        new_arch = [s + 10 for s in original_arch]  # Slightly expanded
-        new_arch[0] = original_arch[0]  # Keep input size
-        new_arch[-1] = original_arch[-1]  # Keep output size
-        model = set_new_AB_matrices(model, original_arch, new_arch)
+    # Always initialize A/B matrices properly for transformation test
+    # The default A/B matrices have wrong shapes for V = A @ W @ B.T
+    original_arch = model.sizes
+    # New arch with expanded hidden layers (input/output same)
+    new_arch = [original_arch[0]] + [s + 10 for s in original_arch[1:-1]] + [original_arch[-1]]
+    model = set_new_AB_matrices(model, original_arch, new_arch)
 
     # JIT compilation timing
     start = time.time()
@@ -480,12 +480,10 @@ def profile_ab_partitioning(model, num_iterations: int = 1000) -> PhaseProfile:
 
     profile = PhaseProfile(phase_name="Model Partitioning")
 
-    if not hasattr(model, 'A') or model.A is None:
-        original_arch = model.sizes
-        new_arch = [s + 10 for s in original_arch]
-        new_arch[0] = original_arch[0]
-        new_arch[-1] = original_arch[-1]
-        model = set_new_AB_matrices(model, original_arch, new_arch)
+    # Always initialize A/B matrices properly for partitioning test
+    original_arch = model.sizes
+    new_arch = [original_arch[0]] + [s + 10 for s in original_arch[1:-1]] + [original_arch[-1]]
+    model = set_new_AB_matrices(model, original_arch, new_arch)
 
     # Timing (partitioning is not JIT-compiled)
     start = time.time()
@@ -588,8 +586,9 @@ def profile_full_training_epoch(model, batch_size: int, num_batches: int,
             deltax = jax.random.normal(subkey, (batch_size, *input_dim)) * 0.01
 
         if loss_type == 'regression':
-            y = jax.random.normal(subkey, (batch_size,))
-            exp_y = jax.random.normal(subkey, (batch_size,))
+            # MLP outputs (batch, 1), so y needs shape (batch, 1) to match
+            y = jax.random.normal(subkey, (batch_size, 1))
+            exp_y = jax.random.normal(subkey, (batch_size, 1))
         else:
             y = jax.random.randint(subkey, (batch_size,), 0, output_dim)
             exp_y = jax.random.randint(subkey, (batch_size,), 0, output_dim)
