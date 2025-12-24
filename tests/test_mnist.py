@@ -208,8 +208,9 @@ class TestMNISTDataLoaderIntegration:
         assert train_batch is not None
 
         # Testing phase (uses same loaded task data)
+        # Added by Claude: Use smaller batch size for test data (debug_limit=50 gives ~10 test samples)
         test_loader, _ = dataset.generate_dataset(
-            task_id=0, batch_size=32, phase='testing'
+            task_id=0, batch_size=8, phase='testing'
         )
         test_batch = next(iter(test_loader))
         assert test_batch is not None

@@ -298,6 +298,13 @@ class RecordingMixin:
             losses: Loss dictionary
             model: Model for eigenvalue extraction
         """
+        # Added by Claude: Auto-initialize task and AB training if not exists
+        if task_id not in record_dict.get('tasks', {}):
+            arch_info = {'sizes': 'unknown'}
+            self.initialize_task(record_dict, task_id, arch_info)
+        if 'ab_training' not in record_dict['tasks'][task_id]:
+            self.initialize_ab_training(record_dict, task_id)
+
         # Added by Claude: Record AB training epoch
         ab = record_dict['tasks'][task_id]['ab_training']
         ab['iterations'].append(iteration)
@@ -328,6 +335,12 @@ class RecordingMixin:
             metrics: Metrics dictionary
             model: Model for eigenvalue extraction
         """
+        # Added by Claude: Auto-initialize task if not exists (for backward compatibility)
+        if task_id not in record_dict.get('tasks', {}):
+            # Get minimal architecture info from model
+            arch_info = {'sizes': 'unknown'}  # Placeholder
+            self.initialize_task(record_dict, task_id, arch_info)
+
         # Added by Claude: Record main training epoch with both global and local tracking
         task = record_dict['tasks'][task_id]['main_training']
         task['iterations'].append(global_iteration)
