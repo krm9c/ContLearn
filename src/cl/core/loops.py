@@ -217,6 +217,17 @@ class TrainingLoopsMixin:
         var_x_list, var_adj_list = [], []
         transforms = get_graph_transforms() if problem_type == 'graph' else None
 
+        # Fixed by Claude: Handle empty experience loader (Task 0 for graph datasets)
+        # Try to check if exploader has any data
+        exp_iter_test = iter(exploader)
+        try:
+            _ = next(exp_iter_test)
+            has_experience = True
+        except StopIteration:
+            # Empty experience loader - return default small variance
+            return 1e-3, 1e-3 if problem_type == 'graph' else 0.0
+
+        # Experience loader has data, proceed normally
         for batch, batch_ex in zip(iter(trainloader), iter(exploader)):
             if problem_type == 'graph':
                 batch = transforms(batch)

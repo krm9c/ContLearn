@@ -1,48 +1,21 @@
 {
-    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
-
-    "__comment_data": "Dataset selection - auto-sets prob, problem, network, loss, metric",
+    "__comment": "CONDITION 4: Full AWB (Architecture + Transfer)",
+    "__comment_": "Arch search + A/B training for knowledge transfer",
     "data": "cifar100",
-
-    "__comment_training": "Experimental parameters - same as non-AWB",
-    "n_task": 10,
-    "epochs_per_task": 100,
-    "batch_size": 512,
-
-    "__comment_arch": "Override default: 100 classes instead of 10",
-    "feed_sizes": [2304, 512, 256, 100],
-    "awb_arch": [2304, 512, 256, 100],
-    "n_class": 100,
-
-    "model_path": "outputs/cifar100_awb_model",
-    "save_iter": 10,
-
-    "__comment_awb": "AWB architecture morphing enabled",
+    "n_task": 20,
+    "epochs_per_task": 500,
+    "batch_size": 128,
     "awb_enabled": true,
-    "awb_preliminary_epochs": 10,
-    "awb_ab_training_epochs": 20,
-    "awb_ab_warmup_epochs": 5,
-    "awb_ab_max_iterations": 3,
-    "awb_v_lr_factor": 0.1,
-    "awb_v_warmup_epochs": 5,
-    "awb_task_lr_factor": 0.1,
-    "awb_task_warmup_epochs": 5,
-
-    "__comment_arch_search": "Architecture search settings",
-    "arch_search_epochs": 100,
-    "arch_search_lr": 0.001,
-    "arch_search_max_iter": 3,
-
-    "__comment_optimizer": "AdamW with weight decay for regularization",
-    "optimizer": "adamw",
-    "lr": 1e-3,
-    "lr_min": 1e-6,
-    "lr_schedule": "cosine",
-    "weight_decay": 1e-4,
-
-    "__comment_grad_weights": "Optimized gradient weights for main training",
-    "main_grad_weights": [0.3, 0.6, 0.1],
-
-    "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "debug_mode": false
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 50,
+    "awb_ab_training_epochs": 100,
+    "awb_loss_ratio_threshold": 1.1,
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "warmup_epochs": 0,
+    "model_path": "kkt_run/results/cifar100_condition4",
+    "save_iter": 50,
+    "grad_weights": [0.01, 0.98, 0.1],
+    "debug_mode": false,
+    "per_task_eval_enabled": true
 }

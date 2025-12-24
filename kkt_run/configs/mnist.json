@@ -1,34 +1,17 @@
 {
-    "__comment_guide": "See config/TEMPLATE.md for all available options and defaults",
-
-    "__comment_data": "Dataset selection - auto-sets prob, problem, network, loss, metric",
+    "__comment": "CONDITION 1: Baseline Hamiltonian (No Smoothness)",
+    "__comment_": "Fixed arch, constant LR, no warm start",
     "data": "mnist",
-
-    "__comment_training": "Experimental parameters",
     "n_task": 10,
-    "epochs_per_task": 100,
-    "batch_size": 1024,
-
-    "model_path": "outputs/mnist_model",
-    "save_iter": 10,
-
-    "__comment_awb": "AWB architecture morphing disabled",
+    "epochs_per_task": 500,
+    "batch_size": 256,
     "awb_enabled": false,
-
-    "__comment_optimizer": "AdamW with weight decay for regularization",
-    "optimizer": "adamw",
-    "lr": 1e-3,
-    "lr_min": 1e-6,
-    "lr_schedule": "cosine",
-    "weight_decay": 1e-4,
-
-    "__comment_warmup": "Task transition warmup: new task samples only, then experience replay",
-    "task_warmup_enabled": true,
-    "task_warmup_epochs": 5,
-    "task_warmup_lr_factor": 0.1,
-    "warmup_grad_weights": [1.0, 0.0, 0.0],
-    "main_grad_weights": [0.3, 0.6, 0.1],
-
-    "__comment_overrides": "Optional overrides (see TEMPLATE.md)",
-    "debug_mode": false
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "warmup_epochs": 0,
+    "model_path": "kkt_run/results/mnist_condition1",
+    "save_iter": 50,
+    "grad_weights": [0.01, 0.98, 0.1],
+    "debug_mode": false,
+    "per_task_eval_enabled": true
 }
