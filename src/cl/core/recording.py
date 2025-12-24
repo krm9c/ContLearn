@@ -215,7 +215,11 @@ class RecordingMixin:
             },
             'tasks': {},
             'architecture_history': {},
-            'iterations': {}  # Backward compatibility with existing code
+            'iterations': {},  # Backward compatibility with existing code
+            # Added by Claude: Per-task performance matrix for CL metrics
+            # Format: task_performance_matrix[j][i] = performance on task i after training task j
+            # This enables computing ACC, BWT, FWT, Forgetting metrics from literature
+            'task_performance_matrix': {}
         }
         return record_dict
 
@@ -362,6 +366,46 @@ class RecordingMixin:
                 if layer_name not in task['eigenvalues'][matrix_type]:
                     task['eigenvalues'][matrix_type][layer_name] = []
                 task['eigenvalues'][matrix_type][layer_name].append(eig_values)
+
+    def record_task_performance(self, record_dict: Dict[str, Any], current_task_id: int,
+                                task_performances: Dict[int, float]):
+        """Record performance on all tasks after training current_task_id.
+
+        This builds the performance matrix A_{i,j} needed for CL metrics:
+        - ACC (Average Accuracy)
+        - BWT (Backward Transfer)
+        - F (Average Forgetting)
+        - FWT (Forward Transfer)
+
+        Args:
+            record_dict: The recording dictionary
+            current_task_id: The task that was just trained (j in A_{i,j})
+            task_performances: Dict mapping task_id -> performance metric
+                               e.g., {0: 0.95, 1: 0.92, 2: 0.89}
+                               Performance on tasks 0,1,2 after training task 2
+
+        Example:
+            After training task 2:
+            task_performances = {
+                0: 0.93,  # accuracy on task 0 after training task 2
+                1: 0.91,  # accuracy on task 1 after training task 2
+                2: 0.95   # accuracy on task 2 after training task 2
+            }
+
+        Matrix format enables computing:
+            ACC = (1/T) Σ_{i=0}^{T-1} A[T-1][i]
+            BWT = (1/(T-1)) Σ_{i=0}^{T-2} (A[T-1][i] - A[i][i])
+            F = (1/(T-1)) Σ_{i=0}^{T-2} max_{j>=i} (A[i][i] - A[j][i])
+        """
+        # Added by Claude: Record per-task performance matrix
+        if 'task_performance_matrix' not in record_dict:
+            record_dict['task_performance_matrix'] = {}
+
+        # Store performance on all tasks after training current_task_id
+        record_dict['task_performance_matrix'][current_task_id] = {
+            str(task_id): float(performance)
+            for task_id, performance in task_performances.items()
+        }
 
     def save_record_dict(self, record_dict: Dict[str, Any], base_path: str):
         """Save the recording dictionary to file using problem/dataset name.

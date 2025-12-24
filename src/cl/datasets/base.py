@@ -355,6 +355,38 @@ class BaseDataset(ABC):
 
         return loader_curr, loader_exp
 
+    def generate_test_loader(self, task_id: int, batch_size: int = None) -> DataLoader:
+        """Generate test loader for a specific task (for CL metrics evaluation).
+
+        Added by Claude: This method enables per-task evaluation needed for computing
+        the performance matrix A[j][i] = accuracy on task i after training task j.
+
+        Args:
+            task_id: Task ID to generate test loader for
+            batch_size: Batch size for DataLoader (uses self.batch_size if None)
+
+        Returns:
+            DataLoader for task-specific test data
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        # Load task data (populates self.X_test, self.y_test)
+        self.load_task(task_id)
+
+        # Create dataset and loader for test data
+        dataset_test = ContinualDataset(self.config, self.X_test, self.y_test)
+
+        loader_kwargs = {
+            'batch_size': batch_size,
+            'shuffle': False,  # No shuffle for evaluation
+            'num_workers': 0,
+            'pin_memory': False,
+            'drop_last': False,  # Use all test samples
+        }
+
+        return DataLoader(dataset_test, **loader_kwargs)
+
     def get_model_config(self) -> Dict[str, Any]:
         """Return configuration for model initialization.
 

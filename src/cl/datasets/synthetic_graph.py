@@ -40,6 +40,9 @@ class BaseGraphDataset(ABC):
         train_data: Training graph dataset
         test_data: Test graph dataset
         memory_train: Experience replay buffer (list of graph objects)
+        _task_class_mapping: Persistent mapping of task_id -> class_list for reproducibility
+        _task_train_data: Cache of task-specific training data
+        _task_test_data: Cache of task-specific test data
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -65,6 +68,13 @@ class BaseGraphDataset(ABC):
 
         # Experience replay buffer (list of graph data objects)
         self.memory_train: List = []
+
+        # Added by Claude: Task persistence for CL metrics
+        # Maps task_id -> class_list to ensure deterministic task definition
+        self._task_class_mapping: Dict[int, np.ndarray] = {}
+        # Cache of filtered data per task for fast reload
+        self._task_train_data: Dict[int, List] = {}
+        self._task_test_data: Dict[int, List] = {}
 
     @abstractmethod
     def _load_dataset(self) -> None:
@@ -103,8 +113,8 @@ class BaseGraphDataset(ABC):
                          phase: str = 'training') -> Tuple[DataLoader, DataLoader]:
         """Generate train/memory dataloaders for a task.
 
-        Implements continuum_Graph_classification logic: randomly selects
-        classes for the current task and builds experience replay buffer.
+        Implements continuum_Graph_classification logic with deterministic task selection.
+        Uses persistent task-to-class mapping to ensure reproducibility for CL metrics.
 
         Args:
             task_id: Current task ID (0-indexed)
@@ -120,22 +130,37 @@ class BaseGraphDataset(ABC):
         n_class = self.config.get('n_class', self.num_classes)
         select = self.config.get('class_per_task', 2)
 
-        # Select random classes for this task
-        tasks = np.random.randint(0, n_class, select)
+        # Added by Claude: Use deterministic task-to-class mapping
+        # If task already defined, use cached classes; otherwise create deterministically
+        if task_id in self._task_class_mapping:
+            tasks = self._task_class_mapping[task_id]
+        else:
+            # Use task_id as seed for reproducible class selection
+            rng = np.random.RandomState(seed=task_id * 1000)
+            tasks = rng.randint(0, n_class, select)
+            self._task_class_mapping[task_id] = tasks
 
         # Choose data source based on phase
         source_data = self.train_data if phase == 'training' else self.test_data
+        cache_dict = self._task_train_data if phase == 'training' else self._task_test_data
 
-        # Filter data for selected classes
-        stack = [(source_data[j].y.numpy() in tasks) for j in range(len(source_data))]
-        datas = [source_data[k] for k, val in enumerate(stack) if val == True]
+        # Check cache first for fast reload
+        if task_id in cache_dict:
+            datas = cache_dict[task_id]
+        else:
+            # Filter data for selected classes
+            stack = [(source_data[j].y.numpy() in tasks) for j in range(len(source_data))]
+            datas = [source_data[k] for k, val in enumerate(stack) if val == True]
 
-        # Ensure n_nodes attribute is set
-        for k in range(len(datas)):
-            datas[k].n_nodes = datas[k].num_nodes
+            # Ensure n_nodes attribute is set
+            for k in range(len(datas)):
+                datas[k].n_nodes = datas[k].num_nodes
 
-        # Update memory buffer (only for training)
-        if phase == 'training':
+            # Cache for future use
+            cache_dict[task_id] = datas
+
+        # Update memory buffer (only for training, only first time)
+        if phase == 'training' and task_id not in self._task_train_data:
             self.memory_train += datas
 
         # Create DataLoaders
@@ -160,6 +185,26 @@ class BaseGraphDataset(ABC):
             batch_size = self.batch_size
 
         return DataLoader(self.test_data, batch_size=batch_size, shuffle=True)
+
+    def generate_test_loader(self, task_id: int, batch_size: int = None) -> DataLoader:
+        """Generate test loader for a specific task (for CL metrics evaluation).
+
+        Added by Claude: This method enables per-task evaluation needed for computing
+        the performance matrix A[j][i] = accuracy on task i after training task j.
+
+        Args:
+            task_id: Task ID to generate test loader for
+            batch_size: Batch size for DataLoader
+
+        Returns:
+            DataLoader for task-specific test data
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        # Use generate_dataset in test phase to get task-specific data
+        test_loader, _ = self.generate_dataset(task_id, batch_size, phase='testing')
+        return test_loader
 
     def append_to_experience(self, task_id: int) -> None:
         """No-op for graph datasets.
