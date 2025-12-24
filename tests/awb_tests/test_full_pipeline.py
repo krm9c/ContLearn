@@ -87,22 +87,26 @@ def test_full_pipeline(config_path: str = None, verbose: bool = False):
         'architecture_changes': [],
     }
 
-    # Initialize model
-    original_arch = [10, 64, 64, 5]
-    current_arch = original_arch.copy()
-
-    print(f"\nInitial architecture: {original_arch}")
-
-    model = MLP(sizes=original_arch, key=jax.random.PRNGKey(42), awb_enabled=True)
-
-    # Create dataset
-    sine_config = {
+    # Fixed by Claude: Create dataset first to determine input/output dimensions
+    dataset_config = {
         'batch_size': config.get('batch_size', 64),
         'n_task': config.get('n_task', 3),
         'debug_mode': True,
         'debug_limit': 200,
     }
-    dataset = SineDataset(sine_config)
+    dataset = SineDataset(dataset_config)
+
+    # Get dimensions from dataset
+    input_dim = dataset.input_size  # Sine: 3 features
+    output_dim = dataset.output_size  # Sine: 1 output
+
+    # Initialize model with correct dimensions
+    original_arch = [input_dim, 64, 64, output_dim]
+    current_arch = original_arch.copy()
+
+    print(f"\nInitial architecture: {original_arch}")
+
+    model = MLP(sizes=original_arch, key=jax.random.PRNGKey(42), awb_enabled=True)
 
     # Create trainer
     trainer = Trainer(loss='regression', metric='mse', problem='vectors')

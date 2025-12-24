@@ -205,7 +205,8 @@ def test_step1_preliminary(config_path: str = None, verbose: bool = False):
         results['passed'] = False
 
     # Check 5: Forward pass produces valid output
-    test_input = jnp.ones((1, 32, 32, 3))  # CIFAR input shape
+    # Fixed by Claude: CNN3D expects CHW format (3, 32, 32), not NHWC (1, 32, 32, 3)
+    test_input = jnp.ones((3, 32, 32))  # CIFAR input shape in CHW format
     try:
         output = model_after(test_input)
         check5 = jnp.isfinite(output).all()

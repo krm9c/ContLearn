@@ -6,21 +6,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 JAX/Equinox-based continual learning framework implementing Hamiltonian-based gradient computation with optional AWB (Adaptive Weight Basis) for architecture morphing during lifelong learning.
 
+## Directory Structure
+
+```
+ContLearn/
+├── src/cl/              # Core framework source code
+│   ├── arch_search/     # Architecture search modules (MLP, CNN, GCN)
+│   ├── config/          # Configuration parameters and constants
+│   ├── core/            # Core training components (mixins, trainer)
+│   ├── datasets/        # Dataset implementations
+│   ├── models/          # Neural network architectures
+│   └── runners/         # Problem-specific orchestration
+├── run_files/           # Execution scripts and utilities
+│   └── scripts/         # Main execution scripts (run.py, plot_results.py, etc.)
+├── kkt_run/             # KKT cluster-specific runs
+│   ├── configs/         # Production config files (.json)
+│   ├── logs/            # Training logs
+│   ├── results/         # Training outputs
+│   └── *.sh             # Slurm/parallel execution scripts
+├── tests/               # Test suite
+│   ├── training/        # Full pipeline training tests
+│   │   └── configs/     # Debug configs for testing
+│   └── *.py             # Unit tests
+├── data/                # Dataset storage (MNIST, CIFAR, etc.)
+└── docs/                # Documentation
+```
+
 ## Commands
 
 ### Running Experiments
 ```bash
-# Basic run
-python scripts/run.py config/sine.json
+# Basic run (using run_files/scripts/)
+python run_files/scripts/run.py kkt_run/configs/sine.json
 
 # Multiple runs with plots
-python scripts/run.py config/sine.json --runs 3
+python run_files/scripts/run.py kkt_run/configs/sine.json --runs 3
 
 # Skip plot generation
-python scripts/run.py config/sine.json --no-plots
+python run_files/scripts/run.py kkt_run/configs/sine.json --no-plots
 
 # Custom figures output directory
-python scripts/run.py config/sine.json --figures-dir outputs/figures
+python run_files/scripts/run.py kkt_run/configs/sine.json --figures-dir outputs/figures
+
+# Using convenience scripts (from run_files/scripts/)
+cd run_files/scripts/
+./run_sine.sh              # Run sine regression
+./run_mnist.sh             # Run MNIST classification
+./run_cifar10.sh           # Run CIFAR-10 classification
+./run_sine_awb.sh          # Run sine with AWB enabled
+```
+
+### KKT Cluster Runs
+```bash
+# Parallel runs on KKT cluster
+cd kkt_run/
+./run_parallel_standard.sh    # Run all standard configs in parallel
+./run_parallel_awb.sh          # Run all AWB configs in parallel
+./run_single.sh <config_name>  # Run single config
+
+# Slurm submission
+sbatch submit_kkt.slurm        # Submit standard jobs
+sbatch submit_kkt_awb_gpu.slurm # Submit AWB GPU jobs
 ```
 
 ### Testing
@@ -83,11 +129,23 @@ Filter with: `pytest -m unit` or `pytest -m training`
 pip install -e ".[dev]"
 
 # Format code
-black src/ tests/ scripts/
-isort src/ tests/ scripts/
+black src/ tests/ run_files/scripts/
+isort src/ tests/ run_files/scripts/
 
 # Type checking
 mypy src/
+```
+
+### Plotting and Analysis
+```bash
+# Generate plots from saved results
+python run_files/scripts/plot_results.py <records_file.pkl> --output-dir figures
+
+# Compare multiple runs
+python run_files/scripts/compare_runs.py <results_dir>
+
+# Profile training performance
+python run_files/scripts/profile_training.py kkt_run/configs/sine.json
 ```
 
 ## Architecture
@@ -146,8 +204,14 @@ All runners support AWB pipeline with architecture search.
 
 ## Configuration
 
-JSON config files in `config/` control all hyperparameters. Key fields:
+JSON config files in `kkt_run/configs/` control all hyperparameters. Available configs:
+- `sine.json`, `sine_awb.json` - Sine wave regression
+- `mnist.json`, `mnist_awb.json` - MNIST digit classification
+- `cifar10.json`, `cifar10_awb.json` - CIFAR-10 classification
+- `cifar100.json`, `cifar100_awb.json` - CIFAR-100 classification
+- `synthetic_graph.json`, `synthetic_graph_awb.json` - Graph classification
 
+Key config fields:
 ```json
 {
     "prob": "regression|classification",
@@ -164,7 +228,9 @@ JSON config files in `config/` control all hyperparameters. Key fields:
 }
 ```
 
-AWB-specific config fields prefixed with `awb_` (see `src/cl/config/constants.py` and `config/0_config_readme.md` for full documentation).
+AWB-specific config fields prefixed with `awb_` (see `src/cl/config/constants.py` for full documentation).
+
+**Test configs** in `tests/training/configs/` have debug settings (50 samples, 2 epochs) for fast validation.
 
 ## Code Patterns
 
@@ -199,7 +265,7 @@ After training, the framework automatically generates four types of plots:
 
 Plots can also be generated manually:
 ```bash
-python scripts/plot_results.py <records_file.pkl> --output-dir figures
+python run_files/scripts/plot_results.py <records_file.pkl> --output-dir figures
 ```
 
 ## Key Implementation Details
@@ -253,3 +319,52 @@ During training, multiple loss values are recorded:
 - **dV/dx**: Sensitivity to input perturbations
 - **dV/dtheta**: Sensitivity to parameter perturbations
 - **grad_norm**: L2 norm of total gradient
+
+## Source Code Organization
+
+### Core Framework (`src/cl/`)
+
+**`core/`** - Training pipeline components
+- `trainer.py`: Main Trainer class combining all mixins
+- `losses.py`: LossMixin - loss and metric computation
+- `hamiltonian.py`: HamiltonianMixin - Hamiltonian gradient computation
+- `loops.py`: TrainingLoopsMixin - unified training loop
+- `recording.py`: RecordingMixin - metric recording with eigenvalues
+- `awb.py`: AWB utility functions (partitioning, matrix ops)
+- `arch_search.py`: Architecture search orchestration
+
+**`models/`** - Neural network architectures
+- `mlp.py`: Fully connected networks for regression
+- `cnn.py`: Convolutional networks for image classification
+- `gcn.py`: Graph convolutional networks
+- `layers.py`: Custom layer implementations (Linear, Conv, etc.)
+
+**`datasets/`** - Data loading and preprocessing
+- `base.py`: Base dataset class with experience replay
+- `sine.py`: Sine wave regression dataset
+- `mnist.py`: MNIST digit classification
+- `cifar.py`: CIFAR-10/100 image classification
+- `synthetic_graph.py`: Synthetic graph classification
+
+**`runners/`** - Problem-specific orchestration
+- `generic_runner.py`: Base runner with common training logic
+- `regression.py`: Sine wave regression runner
+- `classification.py`: MNIST/CIFAR classification runner
+- `graph_classification.py`: Graph classification runner
+
+**`arch_search/`** - Architecture search implementations
+- `mlp_search.py`: Search for optimal MLP dimensions
+- `cnn_search.py`: Search for optimal CNN dimensions
+- `gcn_search.py`: Search for optimal GCN dimensions
+
+**`config/`** - Configuration management
+- `constants.py`: Default hyperparameters and AWB settings
+- `params.py`: Config parsing and validation
+
+### Execution Scripts (`run_files/scripts/`)
+
+- `run.py`: Main training script
+- `plot_results.py`: Plot generation from saved results
+- `compare_runs.py`: Multi-run comparison and analysis
+- `profile_training.py`: GPU/CPU profiling utilities
+- `run_*.sh`: Convenience scripts for each config
