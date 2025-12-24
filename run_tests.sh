@@ -51,6 +51,7 @@ OPTIONS:
     -r, --recording         Run recording tests only
     -i, --integration       Run integration tests only
     -g, --gpu               Run GPU performance tests (requires GPU)
+    --awb-profile           Run AWB GPU profiling tests (requires GPU)
     -v, --verbose           Run with verbose output
     -s, --stdout            Show print statements
     -k, --keyword PATTERN   Run tests matching PATTERN
@@ -62,6 +63,7 @@ EXAMPLES:
     ./run_tests.sh --training               # Training tests only (11 tests, ~5 min)
     ./run_tests.sh --fast                   # Same as --unit
     ./run_tests.sh --gpu                    # GPU performance tests (requires GPU)
+    ./run_tests.sh --awb-profile            # AWB pipeline GPU profiling (requires GPU)
     ./run_tests.sh --models --verbose       # Model tests with verbose output
     ./run_tests.sh -k regression            # Run tests with 'regression' in name
 
@@ -135,6 +137,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -g|--gpu)
             MODE="gpu"
+            shift
+            ;;
+        --awb-profile)
+            MODE="awb-profile"
             shift
             ;;
         -v|--verbose)
@@ -216,6 +222,10 @@ case $MODE in
     gpu)
         print_header "Running GPU Performance Tests"
         pytest tests/test_gpu_performance.py -m gpu $VERBOSE $STDOUT $COVERAGE $KEYWORD
+        ;;
+    awb-profile)
+        print_header "Running AWB GPU Profiling Tests"
+        pytest tests/test_awb_gpu_profiling.py -m gpu $VERBOSE $STDOUT $COVERAGE $KEYWORD
         ;;
 esac
 
