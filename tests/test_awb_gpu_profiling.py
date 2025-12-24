@@ -1760,6 +1760,141 @@ class TestOptimizationOpportunities:
         print(f"{'='*70}")
 
 
+def format_time(seconds: float) -> str:
+    """Format time in appropriate units."""
+    if seconds < 0.001:
+        return f"{seconds * 1000000:.2f}μs"
+    elif seconds < 1:
+        return f"{seconds * 1000:.2f}ms"
+    else:
+        return f"{seconds:.2f}s"
+
+
+def format_memory(mb: float) -> str:
+    """Format memory in appropriate units."""
+    if mb < 1:
+        return f"{mb * 1024:.1f}KB"
+    elif mb < 1024:
+        return f"{mb:.1f}MB"
+    else:
+        return f"{mb / 1024:.2f}GB"
+
+
+def display_gpu_report(report: dict, verbose: bool = False):
+    """Display a GPU profiling report in formatted output.
+
+    Args:
+        report: Dictionary containing the profiling report
+        verbose: If True, show detailed metrics for each phase
+    """
+    # Header
+    print(f"\n{'='*70}")
+    print(f"{'AWB GPU Profiling Report':^70}")
+    print(f"{'='*70}")
+
+    # Basic info
+    print(f"\nTest Name: {report.get('test_name', 'Unknown')}")
+    print(f"Timestamp: {report.get('timestamp', 'N/A')}")
+    print(f"JAX Backend: {report.get('jax_backend', 'N/A')}")
+    print(f"Devices: {', '.join(report.get('jax_devices', ['N/A']))}")
+    print(f"NVIDIA SMI Available: {report.get('nvidia_smi_available', False)}")
+    print(f"Total Time: {format_time(report.get('total_time_seconds', 0))}")
+
+    # Configuration (if verbose)
+    if verbose and 'config' in report:
+        print(f"\n{'-'*50}")
+        print("Configuration")
+        print(f"{'-'*50}")
+        config = report['config']
+        for key, value in sorted(config.items()):
+            print(f"  {key}: {value}")
+
+    # Phase breakdown
+    phases = report.get('phases', [])
+    if phases:
+        print(f"\n{'-'*50}")
+        print("Phase Breakdown")
+        print(f"{'-'*50}")
+
+        # Calculate total for percentage
+        total_time = sum(p.get('total_time_seconds', 0) for p in phases)
+
+        # Header row
+        print(f"{'Phase':<35} {'Time':>10} {'%':>6} {'Iter':>6} {'Per Iter':>10}")
+        print("-" * 70)
+
+        for phase in phases:
+            name = phase.get('name', 'Unknown')[:34]
+            time = phase.get('total_time_seconds', 0)
+            pct = (time / total_time * 100) if total_time > 0 else 0
+            iterations = phase.get('num_iterations', 0)
+            per_iter = phase.get('time_per_iteration_ms', 0)
+
+            print(f"{name:<35} {format_time(time):>10} {pct:>5.1f}% {iterations:>6} {per_iter:>9.2f}ms")
+
+        print("-" * 70)
+        print(f"{'TOTAL':<35} {format_time(total_time):>10} {'100.0%':>6}")
+
+    # Detailed metrics (if verbose)
+    if verbose and phases:
+        print(f"\n{'-'*50}")
+        print("Detailed Phase Metrics")
+        print(f"{'-'*50}")
+        for phase in phases:
+            print(f"\n  {phase.get('name', 'Unknown')}:")
+            print(f"    Total Time: {format_time(phase.get('total_time_seconds', 0))}")
+            print(f"    Iterations: {phase.get('num_iterations', 0)}")
+            print(f"    Time per Iteration: {phase.get('time_per_iteration_ms', 0):.3f}ms")
+
+            if phase.get('jit_compile_time_seconds', 0) > 0:
+                print(f"    JIT Compile Time: {format_time(phase.get('jit_compile_time_seconds', 0))}")
+            if phase.get('hamiltonian_time_ms', 0) > 0:
+                print(f"    Hamiltonian Time: {phase.get('hamiltonian_time_ms', 0):.3f}ms")
+            if phase.get('optimizer_time_ms', 0) > 0:
+                print(f"    Optimizer Time: {phase.get('optimizer_time_ms', 0):.3f}ms")
+            if phase.get('gpu_utilization_mean', 0) > 0:
+                print(f"    GPU Utilization: {phase.get('gpu_utilization_mean', 0):.1f}% (max: {phase.get('gpu_utilization_max', 0):.1f}%)")
+            if phase.get('gpu_memory_mean_mb', 0) > 0:
+                print(f"    GPU Memory: {format_memory(phase.get('gpu_memory_mean_mb', 0))}")
+
+    # Bottleneck analysis
+    bottlenecks = report.get('bottleneck_analysis', [])
+    if bottlenecks:
+        print(f"\n{'-'*50}")
+        print("Bottleneck Analysis (Sorted by Time)")
+        print(f"{'-'*50}")
+
+        # Header row
+        print(f"{'Rank':<5} {'Phase':<35} {'Time':>10} {'%':>7} {'Status':>10}")
+        print("-" * 70)
+
+        for i, bn in enumerate(bottlenecks, 1):
+            name = bn.get('phase', 'Unknown')[:34]
+            time = bn.get('time_seconds', 0)
+            pct = bn.get('percentage', 0)
+            is_bn = "BOTTLENECK" if bn.get('is_bottleneck', False) else ""
+
+            print(f"{i:<5} {name:<35} {format_time(time):>10} {pct:>6.1f}% {is_bn:>10}")
+
+    # Summary
+    print(f"\n{'-'*50}")
+    print("Summary")
+    print(f"{'-'*50}")
+    if bottlenecks:
+        top_bottleneck = bottlenecks[0] if bottlenecks else None
+        if top_bottleneck:
+            print(f"  Slowest Phase: {top_bottleneck.get('phase', 'N/A')} ({top_bottleneck.get('percentage', 0):.1f}%)")
+
+    gpu_phases = [p for p in phases if p.get('gpu_utilization_mean', 0) > 0]
+    if gpu_phases:
+        avg_gpu = sum(p.get('gpu_utilization_mean', 0) for p in gpu_phases) / len(gpu_phases)
+        print(f"  Average GPU Utilization: {avg_gpu:.1f}%")
+    else:
+        print(f"  GPU Utilization: Not measured (running on CPU)")
+
+    print(f"{'='*70}\n")
+
+
 @pytest.mark.gpu
 def test_generate_awb_profiling_summary(report_dir):
     """Generate summary of all AWB profiling reports."""
@@ -1778,14 +1913,67 @@ def test_generate_awb_profiling_summary(report_dir):
         with open(f) as fp:
             report = json.load(fp)
 
-        print(f"\n{report['test_name']} ({report['timestamp']})")
-        print(f"  Backend: {report['jax_backend']}")
-        print(f"  Total Time: {report['total_time_seconds']:.2f}s")
+        # Use the new display function for detailed output
+        display_gpu_report(report, verbose=False)
 
-        # Print bottlenecks
-        bottlenecks = report.get('bottleneck_analysis', [])
-        if bottlenecks:
-            print("  Bottlenecks:")
-            for b in bottlenecks[:3]:
-                marker = "***" if b.get('is_bottleneck') else ""
-                print(f"    {b['phase']}: {b['percentage']:.1f}% {marker}")
+
+# Command-line interface for displaying reports
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Display AWB GPU Profiling Reports',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python tests/test_awb_gpu_profiling.py                      # Display latest report
+  python tests/test_awb_gpu_profiling.py --verbose            # With detailed metrics
+  python tests/test_awb_gpu_profiling.py --file report.json   # Display specific file
+  python tests/test_awb_gpu_profiling.py --all                # Display all reports
+        """
+    )
+    parser.add_argument('--file', '-f', type=str, help='Path to specific report file')
+    parser.add_argument('--all', '-a', action='store_true', help='Display all reports')
+    parser.add_argument('--dir', '-d', type=str, default='tests/gpu_reports',
+                        help='Report directory (default: tests/gpu_reports)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show detailed metrics')
+
+    args = parser.parse_args()
+
+    report_dir = Path(args.dir)
+
+    if args.file:
+        # Display specific file
+        file_path = Path(args.file)
+        if not file_path.exists():
+            print(f"Report file not found: {args.file}")
+            exit(1)
+        with open(file_path) as f:
+            report = json.load(f)
+        display_gpu_report(report, verbose=args.verbose)
+
+    elif args.all:
+        # Display all reports
+        report_files = sorted(report_dir.glob('awb_*.json'))
+        if not report_files:
+            print(f"No AWB profiling reports found in {report_dir}/")
+            exit(1)
+        print(f"Found {len(report_files)} report(s)")
+        for f in report_files:
+            with open(f) as fp:
+                report = json.load(fp)
+            display_gpu_report(report, verbose=args.verbose)
+
+    else:
+        # Display latest report
+        report_files = sorted(report_dir.glob('awb_*.json'))
+        if not report_files:
+            print(f"No AWB profiling reports found in {report_dir}/")
+            print("Run AWB profiling tests first with:")
+            print("  pytest tests/test_awb_gpu_profiling.py -m gpu -v -s")
+            exit(1)
+        latest = report_files[-1]
+        print(f"Loading latest report: {latest}")
+        with open(latest) as f:
+            report = json.load(f)
+        display_gpu_report(report, verbose=args.verbose)
