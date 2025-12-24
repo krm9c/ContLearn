@@ -23,6 +23,11 @@ from ..core.awb import (
     partition_model_for_AB_training,
     partition_model_for_standard_training,
 )
+# Added by Claude: AWB pipeline refactoring
+from ..core.awb_pipeline import run_awb_task
+from ..models.mlp import MLPAWBOps
+from ..models.cnn import CNNAWBOps
+from ..models.gcn import GCNAWBOps
 
 from ..config.constants import (
     DEFAULT_OPTIMIZER,
@@ -625,6 +630,39 @@ def load_checkpoint(config: Dict[str, Any]):
         raise ValueError(f"Unknown problem configuration: problem={problem}, prob={prob}")
 
 
+def create_awb_operations(model):
+    """Create appropriate AWBOperations instance based on model type.
+
+    Added by Claude: AWB pipeline refactoring helper.
+
+    Args:
+        model: Equinox model (MLP, CNN, CNN3D, or GCN)
+
+    Returns:
+        AWBOperations instance (MLPAWBOps, CNNAWBOps, or GCNAWBOps)
+    """
+    # MLP: has 'sizes' attribute
+    if hasattr(model, 'sizes') and not hasattr(model, 'feed_sizes'):
+        return MLPAWBOps()
+
+    # CNN/CNN3D: has feed_sizes and filter_size
+    elif hasattr(model, 'feed_sizes') and hasattr(model, 'filter_size'):
+        # Detect CNN3D
+        is_cnn3d = (
+            type(model).__name__ == 'CNN3D' or
+            hasattr(model, 'A_conv1') or  # CNN3D has A_conv1, regular CNN has A_conv
+            (hasattr(model, 'channel_in') and model.channel_in > 1)
+        )
+        return CNNAWBOps(is_cnn3d=is_cnn3d)
+
+    # GCN: has gcn_sizes and feed_sizes
+    elif hasattr(model, 'gcn_sizes') and hasattr(model, 'feed_sizes'):
+        return GCNAWBOps()
+
+    else:
+        raise ValueError(f"Unknown model type: {type(model).__name__}")
+
+
 # ============================================================================
 # Generic AWB Training Pipeline
 # ============================================================================
@@ -922,520 +960,42 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 trainer.record_task_performance(record_dict, task_id, task_performances)
 
         else:
-            # AWB 5-step pipeline for tasks 1+
+            # AWB 5-step pipeline for tasks 1+ (refactored to use awb_pipeline module)
             print(f"AWB pipeline (lr={task_lr:.6f})")
 
-            # Added by Claude: Initialize task recording
+            # Initialize task recording
             model = eqx.combine(params, static)
             arch_info = get_model_architecture(model)
             trainer.initialize_task(record_dict, task_id, arch_info)
 
-            # Added by Claude: Task transition warmup to reduce loss spike between tasks
-            task_lr_factor = config.get('awb_task_lr_factor', DEFAULT_AWB_TASK_LR_FACTOR)
-            task_warmup_epochs = config.get('awb_task_warmup_epochs', DEFAULT_AWB_TASK_WARMUP_EPOCHS)
-            base_lr = config.get('lr', DEFAULT_LR)
-            warmup_lr = base_lr * task_lr_factor
-
-            # STEP 1: Preliminary training (with optional warmup)
-            awb_prelim_epochs = config.get('awb_preliminary_epochs', 50)
-            print(f"  Step 1: Preliminary training ({awb_prelim_epochs} epochs)")
-
-            # Phase 1a: Warmup with low LR at task transition
-            if task_warmup_epochs > 0:
-                print(f"    Task warmup: {task_warmup_epochs} epochs at LR={warmup_lr:.2e}")
-                optim_warmup = create_optimizer_with_lr(config, warmup_lr)
-                opt_state = optim_warmup.init(params)
-
-                warmup_iters = min(task_warmup_epochs, awb_prelim_epochs)
-                params, static, opt_state, record_dict = trainer.train__CL(
-                    train__=(trainloader, exploader, valloader, testloader),
-                    params=params,
-                    static=static,
-                    opt_state=opt_state,
-                    optim=optim_warmup,
-                    n_iter=warmup_iters,
-                    task_id=task_id,
-                    config=config,
-                    record_dict=record_dict,
-                    notABTrain=True,
-                    problem_type=problem_type,
-                    loss_type=loss_type,
-                    phase='preliminary',
-                    record_training=True,
-                    global_iteration_offset=0
-                )
-                # Subtract warmup epochs from total preliminary epochs
-                remaining_prelim = awb_prelim_epochs - warmup_iters
-                # Phase 1b: Continue with full LR for remaining preliminary epochs
-                if remaining_prelim > 0:
-                    print(f"    Full LR: {remaining_prelim} epochs at LR={base_lr:.2e}")
-                    opt_state = update_learning_rate(opt_state, base_lr)
-                    params, static, opt_state, record_dict = trainer.train__CL(
-                        train__=(trainloader, exploader, valloader, testloader),
-                        params=params,
-                        static=static,
-                        opt_state=opt_state,
-                        optim=optim_warmup,
-                        n_iter=remaining_prelim,
-                        task_id=task_id,
-                        config=config,
-                        record_dict=record_dict,
-                        notABTrain=True,
-                        problem_type=problem_type,
-                        loss_type=loss_type,
-                        phase='preliminary',
-                        record_training=True,
-                        global_iteration_offset=0
-                    )
+            # Get previous task loss for architecture change decision
+            if (task_id - 1) in record_dict.get('architecture_history', {}):
+                previous_task_loss = record_dict['architecture_history'][task_id - 1].get('optimal_loss')
             else:
-                # No warmup, run all preliminary epochs at full LR
-                params, static, opt_state, record_dict = trainer.train__CL(
-                    train__=(trainloader, exploader, valloader, testloader),
-                    params=params,
-                    static=static,
-                    opt_state=opt_state,
-                    optim=optim,
-                    n_iter=awb_prelim_epochs,
-                    task_id=task_id,
-                    config=config,
-                    record_dict=record_dict,
-                    notABTrain=True,
-                    problem_type=problem_type,
-                    loss_type=loss_type,
-                    phase='preliminary',
-                    record_training=True,
-                    global_iteration_offset=0
-                )
+                previous_task_loss = None
 
-            # STEP 2: Decide if architecture change needed
-            # Added by Claude: Use task_id=0 since preliminary training uses global_iteration_offset=0
-            trainWLoss = compute_avg_loss(record_dict['iterations'], task_id=0, epochs=awb_prelim_epochs)
-            # Added by Claude: Get previous task's optimal loss (for task 1, this is task 0)
-            # Handle case where previous task's optimal_loss might not exist
-            if (task_id - 1) in record_dict['architecture_history']:
-                end_last = record_dict['architecture_history'][task_id - 1].get('optimal_loss')
-                if end_last is None:
-                    # Fallback: use compute_avg_loss on previous task
-                    end_last = compute_avg_loss(record_dict['iterations'], task_id - 1, epochs_per_task)
-            else:
-                # Should not happen, but provide fallback
-                end_last = trainWLoss
+            # Create AWB operations for this model type
+            awb_ops = create_awb_operations(model)
 
-            change_arch = should_change_arch(trainWLoss, end_last)
-            print(f"  Step 2: Architecture change decision: {change_arch}")
-            print(f"    trainWLoss={trainWLoss:.6f}, prev_task_loss={end_last:.6f}, ratio={trainWLoss/end_last:.3f}")
+            # Run AWB 5-step pipeline
+            train_data = (trainloader, exploader, valloader, testloader)
+            model, optim, opt_state, record_dict = run_awb_task(
+                task_id=task_id,
+                trainer=trainer,
+                model=model,
+                train_data=train_data,
+                optim=optim,
+                opt_state=opt_state,
+                config=config,
+                record_dict=record_dict,
+                awb_ops=awb_ops,
+                problem_type=problem_type,
+                loss_type=loss_type,
+                previous_task_loss=previous_task_loss
+            )
 
-            # Initialize history entry for this task
-            model_temp = eqx.combine(params, static)
-            history_entry = {
-                'task_id': task_id,
-                'original_arch': get_model_architecture(model_temp),
-                'searched_candidates': [],
-                'preliminary_loss': trainWLoss,
-                'arch_changed': False,
-                'change_reason': None,
-            }
-
-            if change_arch:
-                print("  ARCHITECTURE CHANGE TRIGGERED!")
-                history_entry['change_reason'] = 'should_change_arch=True'
-
-                # Save weights before architecture search
-                model = eqx.combine(params, static)
-                saved_weights = save_model_weights(model)
-
-                # STEP 3a: Architecture search
-                print(f"  Step 3a: Architecture search")
-                original_arch, new_arch, candidates, search_time = run_architecture_search(
-                    model=model,
-                    config=config,
-                    task_id=task_id,
-                    trainWLoss=trainWLoss,
-                    preliminary_epochs=awb_prelim_epochs,
-                    trainloader=trainloader,
-                    exploader=exploader,
-                    valloader=valloader,
-                    testloader=testloader,
-                    trainer=trainer
-                )
-
-                history_entry['search_time'] = search_time
-                history_entry['searched_candidates'] = candidates
-
-                # Restore weights after search
-                model = restore_model_weights(model, saved_weights)
-
-                # Check if architecture actually changed
-                if new_arch is not None and new_arch != original_arch:
-                    # Initialize A/B matrices using model-specific functions
-                    network = config.get('network', 'fcnn')
-
-                    if network == 'fcnn':
-                        # MLP: use generic function with flat lists
-                        model = initialize_AB_matrices(model, original_arch, new_arch)
-
-                    elif network in ['cnn', 'cnn3d'] and hasattr(model, 'conv_layers'):
-                        # CNN/CNN3D: use CNN-specific function
-                        # original_arch = (feed_sizes, filter_size)
-                        # new_arch = (new_feed_sizes, new_filter_size)
-                        from .classification import set_new_AB_matrices_cnn, set_new_AB_matrices_cnn3d
-
-                        # Detect CNN3D
-                        is_cnn3d = (
-                            type(model).__name__ == 'CNN3D' or
-                            hasattr(model, 'A_conv1') or
-                            config.get('data', '') in ['cifar10', 'cifar100'] or
-                            (hasattr(model, 'channel_in') and model.channel_in > 1)
-                        )
-
-                        original_feed, original_filter = original_arch
-                        new_feed, new_filter = new_arch
-
-                        if is_cnn3d:
-                            model = set_new_AB_matrices_cnn3d(model, original_feed, new_feed,
-                                                             original_filter, new_filter)
-                        else:
-                            model = set_new_AB_matrices_cnn(model, original_feed, new_feed,
-                                                           original_filter, new_filter)
-
-                    elif network == 'gcn' and hasattr(model, 'gcn_sizes'):
-                        # GCN: use GCN-specific function
-                        # original_arch = (gcn_sizes, feed_sizes)
-                        # new_arch = (new_gcn_sizes, new_feed_sizes)
-                        from .graph_classification import set_new_AB_matrices_gcn
-
-                        original_gcn, original_feed = original_arch
-                        new_gcn, new_feed = new_arch
-
-                        model = set_new_AB_matrices_gcn(model, original_gcn, original_feed,
-                                                       new_gcn, new_feed)
-                    else:
-                        raise ValueError(f"Unknown network type for AWB: {network}")
-
-                    history_entry['arch_changed'] = True
-                    print(f"    New architecture found!")
-
-                    # Added by Claude: Check if transfer should be skipped (Condition 3)
-                    awb_skip_transfer = config.get('awb_skip_transfer', False)
-
-                    if awb_skip_transfer:
-                        # CONDITION 3: Architecture change WITHOUT knowledge transfer
-                        # Skip A/B training (Steps 3b-4), reinitialize with new architecture
-                        print(f"  awb_skip_transfer=True: Skipping A/B training and V transformation")
-                        print(f"  Reinitializing model with new architecture (random weights)")
-
-                        # Get key for random initialization
-                        key = jax.random.PRNGKey(task_id * 1000 + 42)
-
-                        # Reinitialize model with new architecture
-                        network = config.get('network', 'fcnn')
-                        if network == 'fcnn':
-                            from ..models.mlp import MLP
-                            model = MLP(new_arch, key=key)
-                        elif network in ['cnn', 'cnn3d']:
-                            # CNN/CNN3D: new_arch = (feed_sizes, filter_size)
-                            new_feed, new_filter = new_arch
-                            if network == 'cnn3d':
-                                from ..models.cnn import CNN3D
-                                channel_in = config.get('channel_in', 3)
-                                channel_out = config.get('channel_out', 10)
-                                model = CNN3D(new_feed, new_filter, channel_in, channel_out, key=key)
-                            else:
-                                from ..models.cnn import CNN
-                                channel_out = config.get('channel_out', 10)
-                                model = CNN(new_feed, new_filter, channel_out, key=key)
-                        elif network == 'gcn':
-                            # GCN: new_arch = (gcn_sizes, feed_sizes)
-                            new_gcn, new_feed = new_arch
-                            from ..models.gcn import GCN
-                            num_features = config.get('num_features', data.input_size)
-                            num_classes = config.get('num_classes', data.output_size)
-                            model = GCN(gcn_sizes=new_gcn, feed_sizes=new_feed,
-                                       num_features=num_features, num_classes=num_classes, key=key)
-                        else:
-                            raise ValueError(f"Unknown network type for reinit: {network}")
-
-                        history_entry['transfer_skipped'] = True
-                        history_entry['reinitialized_with_new_arch'] = True
-
-                        # Train with new architecture for remaining epochs
-                        remaining_epochs = epochs_per_task - awb_prelim_epochs
-                        print(f"  Training new architecture ({remaining_epochs} epochs)")
-
-                        params, static = partition_model_for_standard_training(model)
-                        opt_state = optim.init(params)
-                        global_iter_offset = task_id * epochs_per_task
-
-                        params, static, opt_state, record_dict = trainer.train__CL(
-                            train__=(trainloader, exploader, valloader, testloader),
-                            params=params,
-                            static=static,
-                            opt_state=opt_state,
-                            optim=optim,
-                            n_iter=remaining_epochs,
-                            task_id=task_id,
-                            config=config,
-                            record_dict=record_dict,
-                            notABTrain=True,
-                            problem_type=problem_type,
-                            loss_type=loss_type,
-                            phase='main',
-                            record_training=True,
-                            global_iteration_offset=global_iter_offset
-                        )
-
-                        # Record final loss
-                        optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
-                        history_entry['optimal_loss'] = optimal_loss
-
-                    else:
-                        # CONDITION 4: Full AWB with knowledge transfer
-                        # STEP 3b: Train A/B matrices
-                        awb_ab_epochs = config.get('awb_ab_training_epochs', 50)
-                        print(f"  Step 3b: Train A/B matrices ({awb_ab_epochs} epochs)")
-
-                        # Added by Claude: Initialize AB training recording
-                        trainer.initialize_ab_training(record_dict, task_id)
-
-                        diff_model, static_model = partition_model_for_AB_training(model)
-                        # Added by Claude: Use inject_hyperparams for LR scheduling support
-                        ab_optim = create_optimizer(config)
-                        ab_opt_state = ab_optim.init(diff_model)
-                        diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
-                            train__=(trainloader, exploader, valloader, testloader),
-                            params=diff_model,
-                            static=static_model,
-                            opt_state=ab_opt_state,
-                            optim=ab_optim,
-                            n_iter=awb_ab_epochs,
-                            task_id=task_id,
-                            config=config,
-                            record_dict=record_dict,
-                            notABTrain=False,
-                            problem_type=problem_type,
-                            loss_type=loss_type,
-                            phase='ab',  # Added by Claude: AB training phase
-                            record_training=True,  # Added by Claude: Record AB training
-                            global_iteration_offset=0  # Added by Claude: Reset for AB phase
-                        )
-
-                        # Record A/B training loss
-                        # Added by Claude: Use task_id=0 for AB training since global_iteration_offset=0
-                        ab_loss = compute_avg_loss(record_dict['iterations'], task_id=0, epochs=awb_ab_epochs)
-                        history_entry['ab_training_loss'] = ab_loss
-
-                        # STEP 4: Compute V = A @ W @ B.T
-                        print(f"  Step 4: Compute V transformation")
-                        model = eqx.combine(diff_model, static_model)
-
-                        # Use model-specific V transformation
-                        network = config.get('network', 'fcnn')
-                        if network == 'fcnn':
-                            model = apply_V_transformation(model)
-                        elif network in ['cnn', 'cnn3d'] and hasattr(model, 'conv_layers'):
-                            from .classification import compute_V_from_AWB_cnn, compute_V_from_AWB_cnn3d
-                            # Detect CNN3D
-                            is_cnn3d = (
-                                type(model).__name__ == 'CNN3D' or
-                                hasattr(model, 'A_conv1') or
-                                config.get('data', '') in ['cifar10', 'cifar100'] or
-                                (hasattr(model, 'channel_in') and model.channel_in > 1)
-                            )
-                            if is_cnn3d:
-                                model = compute_V_from_AWB_cnn3d(model)
-                            else:
-                                model = compute_V_from_AWB_cnn(model)
-                        elif network == 'gcn' and hasattr(model, 'gcn_sizes'):
-                            from ..core.awb import compute_V_from_AWB_gcn
-                            model = compute_V_from_AWB_gcn(model)
-                        else:
-                            raise ValueError(f"Unknown network type for AWB V transformation: {network}")
-
-                        # STEP 5: Train V with A/B frozen
-                        # Added by Claude: Use warmup with low LR to reduce loss spike after V transformation
-                        v_lr_factor = config.get('awb_v_lr_factor', DEFAULT_AWB_V_LR_FACTOR)
-                        v_warmup_epochs = config.get('awb_v_warmup_epochs', DEFAULT_AWB_V_WARMUP_EPOCHS)
-                        base_lr = config.get('lr', DEFAULT_LR)
-                        warmup_lr = base_lr * v_lr_factor
-
-                        # Calculate remaining epochs: total - preliminary - AB training
-                        awb_ab_epochs = config.get('awb_ab_training_epochs', 50)
-                        remaining_epochs = epochs_per_task - awb_prelim_epochs - awb_ab_epochs
-                        remaining_epochs = max(0, remaining_epochs)  # Ensure non-negative
-                        print(f"  Step 5: Train V with A/B frozen ({remaining_epochs} epochs)")
-                        print(f"    Warmup: {v_warmup_epochs} epochs at LR={warmup_lr:.2e}, then LR={base_lr:.2e}")
-
-                        params, static = partition_model_for_standard_training(model)
-
-                        # Phase 1: Warmup with low LR
-                        if v_warmup_epochs > 0:
-                            optim_warmup = create_optimizer_with_lr(config, warmup_lr)
-                            opt_state = optim_warmup.init(params)
-
-                            warmup_iters = min(v_warmup_epochs, remaining_epochs)
-                            global_iter_offset = task_id * epochs_per_task
-                            params, static, opt_state, record_dict = trainer.train__CL(
-                                train__=(trainloader, exploader, valloader, testloader),
-                                params=params,
-                                static=static,
-                                opt_state=opt_state,
-                                optim=optim_warmup,
-                                n_iter=warmup_iters,
-                                task_id=task_id,
-                                config=config,
-                                record_dict=record_dict,
-                                notABTrain=True,
-                                problem_type=problem_type,
-                                loss_type=loss_type,
-                                phase='main',
-                                record_training=True,
-                                global_iteration_offset=global_iter_offset
-                            )
-                            remaining_epochs -= 0
-
-                        # Phase 2: Continue with full LR (preserves optimizer momentum)
-                        if remaining_epochs > 0:
-                            if v_warmup_epochs > 0:
-                                # Update LR to full value while preserving optimizer state
-                                opt_state = update_learning_rate(opt_state, base_lr)
-                                optim_full = optim_warmup  # Reuse same optimizer (LR updated in state)
-                            else:
-                                # No warmup phase, create fresh optimizer with full LR
-                                optim_full = create_optimizer(config)
-                                opt_state = optim_full.init(params)
-                                global_iter_offset = task_id * epochs_per_task
-
-                            params, static, opt_state, record_dict = trainer.train__CL(
-                                train__=(trainloader, exploader, valloader, testloader),
-                                params=params,
-                                static=static,
-                                opt_state=opt_state,
-                                optim=optim_full,
-                                n_iter=remaining_epochs,
-                                task_id=task_id,
-                                config=config,
-                                record_dict=record_dict,
-                                notABTrain=True,
-                                problem_type=problem_type,
-                                loss_type=loss_type,
-                                phase='main',
-                                record_training=True,
-                                global_iteration_offset=global_iter_offset
-                            )
-
-                        # Record final optimal loss and architecture
-                        optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, epochs_per_task)
-                        history_entry['optimal_loss'] = optimal_loss
-                        history_entry['final_arch'] = get_model_architecture(eqx.combine(params, static))
-
-                else:
-                    # Architecture search returned same architecture
-                    history_entry['arch_changed'] = False
-                    history_entry['change_reason'] = 'search_found_same_arch'
-
-                    remaining_epochs = epochs_per_task - awb_prelim_epochs
-
-                    # Added by Claude: Handle case where all epochs were used in preliminary training
-                    if remaining_epochs > 0:
-                        print(f"    Architecture search found same architecture, continuing normal training for {remaining_epochs} epochs")
-
-                        # Added by Claude: Reinitialize optimizer state to match current params structure
-                        # This is needed because preliminary training may have used a different optimizer
-                        opt_state = optim.init(params)
-                        opt_state = update_learning_rate(opt_state, task_lr)
-
-                        # Added by Claude: Compute global iteration offset for proper recording
-                        # After preliminary training, we continue from the expected task offset
-                        global_iter_offset = task_id * epochs_per_task
-
-                        params, static, opt_state, record_dict = trainer.train__CL(
-                            train__=(trainloader, exploader, valloader, testloader),
-                            params=params,
-                            static=static,
-                            opt_state=opt_state,
-                            optim=optim,
-                            n_iter=remaining_epochs,
-                            task_id=task_id,
-                            config=config,
-                            record_dict=record_dict,
-                            notABTrain=True,
-                            problem_type=problem_type,
-                            loss_type=loss_type,
-                            phase='main',
-                            record_training=True,
-                            global_iteration_offset=global_iter_offset
-                        )
-
-                        optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
-                    else:
-                        # Added by Claude: No remaining epochs - use preliminary training loss
-                        print(f"    Architecture search found same architecture, no remaining epochs (used all {awb_prelim_epochs} in preliminary training)")
-                        optimal_loss = trainWLoss
-
-                    history_entry['optimal_loss'] = optimal_loss
-                    history_entry['final_arch'] = get_model_architecture(eqx.combine(params, static))
-                    print(f"    Final optimal_loss: {optimal_loss:.6f}")
-
-            else:
-                # No architecture change decided
-                history_entry['change_reason'] = 'should_change_arch=False'
-                print(f"    No architecture change needed")
-
-                # Calculate remaining epochs after preliminary training
-                remaining_epochs = epochs_per_task - awb_prelim_epochs
-
-                # Added by Claude: Handle case where all epochs were used in preliminary training
-                if remaining_epochs > 0:
-                    print(f"    Continuing training for {remaining_epochs} remaining epochs")
-
-                    # Added by Claude: Reinitialize optimizer state to match current params structure
-                    # This is needed because preliminary training may have used a different optimizer
-                    # (optim_warmup) which creates incompatible state with the original optim
-                    opt_state = optim.init(params)
-                    opt_state = update_learning_rate(opt_state, task_lr)
-
-                    # Added by Claude: Compute global iteration offset for proper recording
-                    global_iter_offset = task_id * epochs_per_task
-
-                    params, static, opt_state, record_dict = trainer.train__CL(
-                        train__=(trainloader, exploader, valloader, testloader),
-                        params=params,
-                        static=static,
-                        opt_state=opt_state,
-                        optim=optim,
-                        n_iter=remaining_epochs,
-                        task_id=task_id,
-                        config=config,
-                        record_dict=record_dict,
-                        notABTrain=True,
-                        problem_type=problem_type,
-                        loss_type=loss_type,
-                        phase='main',
-                        record_training=True,
-                        global_iteration_offset=global_iter_offset
-                    )
-
-                    optimal_loss = compute_avg_loss(record_dict['iterations'], task_id, remaining_epochs)
-                else:
-                    # Added by Claude: No remaining epochs - use preliminary training loss
-                    print(f"    No remaining epochs (used all {awb_prelim_epochs} in preliminary training)")
-                    optimal_loss = trainWLoss
-
-                history_entry['optimal_loss'] = optimal_loss
-                history_entry['final_arch'] = history_entry['original_arch']
-                print(f"    Final optimal_loss: {optimal_loss:.6f}")
-
-            # Added by Claude: Add loss ratio and adaptive values to history entry
-            history_entry['loss_ratio'] = loss_ratio
-            history_entry['adaptive_lr_min'] = compute_adaptive_lr_min(config, loss_ratio)
-            history_entry['adaptive_grad_weights'] = compute_adaptive_grad_weights(config, loss_ratio)
-
-            # Save history entry for this task
-            record_dict['architecture_history'][task_id] = history_entry
-
-            # Added by Claude: Save optimal loss for next task's loss ratio computation
-            if history_entry.get('optimal_loss') is not None:
-                previous_task_loss = history_entry['optimal_loss']
+            # Extract final params and static
+            params, static = eqx.partition(model, eqx.is_array)
 
             # Append to experience replay
             data.append_to_experience(task_id)
