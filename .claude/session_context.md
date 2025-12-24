@@ -1,5 +1,30 @@
 # ContLearn - JAX/Equinox Continual Learning Framework
 
+## ⚠️ RECENT CHANGES (Dec 24, 2025)
+
+**AWB Pipeline Refactored** - See `.claude/awb_refactoring_context.md` for full details.
+
+**What Changed:**
+- AWB logic consolidated from 4 files into strategy pattern implementation
+- New files: `awb_operations.py`, `awb_pipeline.py`
+- `generic_runner.py`: 1523 → 1083 lines (-440 lines)
+- Deprecated: `classification.py`, `regression.py`, `graph_classification.py` (→ `.deprecated`)
+- **Only `generic_runner.py` is used** - confirmed by user
+
+**Testing Status:** NEEDS TESTING
+- ✅ Code committed and pushed
+- ⚠️ Standard CL path unchanged but untested
+- ⚠️ AWB path refactored, needs validation
+
+**Quick Test:**
+```bash
+# Verify standard CL works
+python run_files/scripts/run.py kkt_run/configs/sine.json
+
+# Verify AWB works
+python run_files/scripts/run.py kkt_run/configs/sine_awb.json
+```
+
 ## Directory Structure
 
 ```
