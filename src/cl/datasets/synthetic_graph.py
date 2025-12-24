@@ -156,12 +156,13 @@ class BaseGraphDataset(ABC):
             for k in range(len(datas)):
                 datas[k].n_nodes = datas[k].num_nodes
 
+            # Fixed by Claude: Update memory BEFORE caching to avoid logic bug
+            # Update memory buffer (only for training, only first time)
+            if phase == 'training':
+                self.memory_train += datas
+
             # Cache for future use
             cache_dict[task_id] = datas
-
-        # Update memory buffer (only for training, only first time)
-        if phase == 'training' and task_id not in self._task_train_data:
-            self.memory_train += datas
 
         # Create DataLoaders
         train_loader = DataLoader(datas, batch_size=batch_size, shuffle=False)
