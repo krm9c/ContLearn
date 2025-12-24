@@ -156,6 +156,9 @@ def test_full_pipeline(config_path: str = None, verbose: bool = False):
     baseline_loss = 0.0
     for batch in tl_curr:
         x, y = batch
+        # Added by Claude: Convert PyTorch tensors to JAX arrays
+        x = jnp.array(x.numpy() if hasattr(x, 'numpy') else x)
+        y = jnp.array(y.numpy() if hasattr(y, 'numpy') else y)
         pred = jax.vmap(model)(x)
         baseline_loss += float(jnp.mean((pred - y) ** 2))
     baseline_loss /= len(list(tl_curr))
@@ -206,6 +209,9 @@ def test_full_pipeline(config_path: str = None, verbose: bool = False):
         preliminary_loss = 0.0
         for batch in tl_curr:
             x, y = batch
+            # Added by Claude: Convert PyTorch tensors to JAX arrays
+            x = jnp.array(x.numpy() if hasattr(x, 'numpy') else x)
+            y = jnp.array(y.numpy() if hasattr(y, 'numpy') else y)
             pred = jax.vmap(model)(x)
             preliminary_loss += float(jnp.mean((pred - y) ** 2))
         preliminary_loss /= len(list(tl_curr))
@@ -323,6 +329,9 @@ def test_full_pipeline(config_path: str = None, verbose: bool = False):
         count = 0
         for batch in tl_curr:
             x, y = batch
+            # Added by Claude: Convert PyTorch tensors to JAX arrays
+            x = jnp.array(x.numpy() if hasattr(x, 'numpy') else x)
+            y = jnp.array(y.numpy() if hasattr(y, 'numpy') else y)
             pred = jax.vmap(model)(x)
             task_loss += float(jnp.mean((pred - y) ** 2))
             count += 1
