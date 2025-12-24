@@ -1,0 +1,32 @@
+{
+    "_comment": "Self-contained test config for MNIST classification (unit tests)",
+    "prob": "classification",
+    "problem": "vectors",
+    "data": "mnist",
+    "network": "cnn",
+    "loss": "class",
+    "metric": "class",
+
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "batch_size": 32,
+    "save_iter": 1,
+    "lr": 1e-3,
+    "optimizer": "adam",
+
+    "filter_size": 4,
+    "channel_out": 3,
+    "channel_in": 1,
+    "input_size": 28,
+    "feed_sizes": [432, 64, 10],
+
+    "awb_enabled": false,
+    "flag": [1.0, 0.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 50,
+    "len_exp_replay": 100,
+
+    "model_path": "outputs/test/test_mnist_model"
+}

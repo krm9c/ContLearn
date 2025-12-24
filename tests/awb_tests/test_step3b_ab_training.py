@@ -67,9 +67,24 @@ def test_step3b_ab_training(config_path: str = None, verbose: bool = False):
         'checks': {},
     }
 
-    # Create model with AWB enabled
-    original_arch = [10, 64, 64, 5]
-    new_arch = [10, 96, 96, 5]
+    # Fixed by Claude: Create dataset first to determine input/output dimensions
+    dataset_config = {
+        'batch_size': config.get('batch_size', 64),
+        'n_task': 3,
+        'debug_mode': True,
+        'debug_limit': 200,
+    }
+    dataset = SineDataset(dataset_config)
+    dl_curr, dl_exp = dataset.generate_dataset(task_id=1, batch_size=64, phase='training')
+    tl_curr, tl_exp = dataset.generate_dataset(task_id=1, batch_size=64, phase='testing')
+
+    # Get input/output dimensions from dataset
+    input_dim = dataset.input_size  # Sine: 3 features
+    output_dim = dataset.output_size  # Sine: 1 output
+
+    # Create model with AWB enabled - use dataset-appropriate dimensions
+    original_arch = [input_dim, 64, 64, output_dim]
+    new_arch = [input_dim, 96, 96, output_dim]  # Keep input/output, expand hidden
 
     print(f"\nOriginal architecture: {original_arch}")
     print(f"New architecture: {new_arch}")
@@ -81,17 +96,6 @@ def test_step3b_ab_training(config_path: str = None, verbose: bool = False):
 
     # Store original W weights for comparison
     original_weights = [layer.weight.copy() for layer in model_with_ab.layers]
-
-    # Create dataset
-    sine_config = {
-        'batch_size': config.get('batch_size', 64),
-        'n_task': 3,
-        'debug_mode': True,
-        'debug_limit': 200,
-    }
-    dataset = SineDataset(sine_config)
-    dl_curr, dl_exp = dataset.generate_dataset(task_id=1, batch_size=64, phase='training')
-    tl_curr, tl_exp = dataset.generate_dataset(task_id=1, batch_size=64, phase='testing')
 
     train_data = (dl_curr, dl_exp, (tl_curr, tl_exp), (tl_curr, tl_exp))
 

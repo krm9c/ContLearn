@@ -116,9 +116,11 @@ class MLP(eqx.Module):
             # V = A @ W @ B.T
             # bias_transformed = bias @ A.T
             weight_transformed = self.A[i] @ self.layers[i].weight @ jnp.transpose(self.B[i])
-            bias_transformed = (self.layers[i].bias @ self.A[i].T).T.squeeze(1)
+            # Fixed by Claude: Keep bias shape as (1, new_out) for proper broadcasting
+            # Don't squeeze - bias should match the shape used in compute_V_from_AWB
+            bias_transformed = self.layers[i].bias @ self.A[i].T
 
-            x = weight_transformed @ x + bias_transformed
+            x = weight_transformed @ x + bias_transformed.squeeze(0)
             x = jax.nn.tanh(x)
 
         return x

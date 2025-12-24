@@ -315,6 +315,10 @@ class TrainingLoopsMixin:
             if preds.ndim == 3 and preds.shape[1] == 1:
                 preds = jnp.squeeze(preds, axis=1)
             pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
+            # Fixed by Claude: Handle both one-hot encoded and index labels
+            # If y is one-hot encoded (2D), convert to class indices
+            if y.ndim == 2:
+                y = jnp.argmax(y, axis=1)
             return jnp.mean(y == pred_y)
 
         @jax.jit

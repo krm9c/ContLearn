@@ -1,0 +1,40 @@
+{
+    "_comment": "Self-contained test config for synthetic graph classification with GCN and AWB (unit tests)",
+    "prob": "classification",
+    "problem": "graph",
+    "data": "synthetic",
+    "network": "gcn",
+    "loss": "class",
+    "metric": "class",
+
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "batch_size": 10,
+    "save_iter": 1,
+    "lr": 1e-3,
+    "optimizer": "adam",
+
+    "gcn_sizes": [5, 64],
+    "feed_sizes": [64, 32, 10],
+    "n_class": 10,
+    "class_per_task": 2,
+
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 1,
+    "awb_ab_warmup_epochs": 1,
+    "awb_averaging_window": 2,
+
+    "flag": [1.0, 1.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 50,
+    "num_graphs": 100,
+    "num_channels": 5,
+    "avg_num_nodes": 3,
+    "num_classes": 10,
+    "len_exp_replay": 100,
+
+    "model_path": "outputs/test/test_graph_awb_model"
+}

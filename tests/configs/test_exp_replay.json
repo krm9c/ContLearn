@@ -1,0 +1,30 @@
+{
+    "_comment": "Self-contained test config for experience replay testing",
+    "prob": "regression",
+    "problem": "vectors",
+    "data": "sine",
+    "network": "fcnn",
+    "loss": "mse",
+    "metric": "mse",
+
+    "n_task": 3,
+    "epochs_per_task": 2,
+    "batch_size": 16,
+    "save_iter": 1,
+    "lr": 1e-4,
+    "optimizer": "adam",
+
+    "n_layers": 3,
+    "hln": 16,
+    "delta": 0.001,
+
+    "awb_enabled": false,
+    "flag": [1.0, 1.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 30,
+    "len_exp_replay": 50,
+
+    "model_path": "outputs/test/test_exp_replay_model"
+}

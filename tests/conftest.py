@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 
-# Path to test config files (moved from config/ to config_old/)
-TEST_CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config_old', 'test')
+# Path to test config files (self-contained in tests/configs/)
+TEST_CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'configs')
 
 
 def load_test_config(config_name):
@@ -241,28 +241,36 @@ def graph_dataset_config():
 
 @pytest.fixture
 def test_graph_awb_config():
-    """Configuration for graph classification with AWB testing."""
-    return {
-        'data': 'synthetic',
-        'problem': 'graph',
-        'loss': 'class',
-        'metric': 'class',
-        'lr': 1e-3,
-        'batch_size': 10,
-        'epochs_per_task': 2,
-        'n_task': 2,
-        'n_class': 10,
-        'class_per_task': 2,
-        'save_iter': 1,
-        'gcn_sizes': [5, 64],
-        'feed_sizes': [64, 32, 10],
-        'model_path': 'outputs/test/test_gcn_model',
-        'awb_enabled': True,
-        'awb_preliminary_epochs': 1,
-        'awb_ab_training_epochs': 1,
-        'awb_ab_warmup_epochs': 1,
-        'debug_mode': True,
-        'debug_limit': 50,
-        'num_graphs': 100,
-        'num_channels': 5,
-    }
+    """Load test_synthetic_graph_awb.json configuration."""
+    return load_test_config('test_synthetic_graph_awb.json')
+
+
+# Added by Claude: Additional test config fixtures for all network types
+@pytest.fixture
+def test_cifar10_config():
+    """Load test_cifar10.json configuration (CNN3D without AWB)."""
+    return load_test_config('test_cifar10.json')
+
+
+@pytest.fixture
+def test_cifar100_config():
+    """Load test_cifar100.json configuration (CNN3D without AWB)."""
+    return load_test_config('test_cifar100.json')
+
+
+@pytest.fixture
+def test_synthetic_graph_config():
+    """Load test_synthetic_graph.json configuration (GCN without AWB)."""
+    return load_test_config('test_synthetic_graph.json')
+
+
+@pytest.fixture
+def test_cifar10_awb_config():
+    """Load test_cifar10_awb.json configuration (CNN3D with AWB)."""
+    return load_test_config('test_cifar10_awb.json')
+
+
+@pytest.fixture
+def test_mnist_awb_config():
+    """Load test_mnist_awb.json configuration (CNN with AWB)."""
+    return load_test_config('test_mnist_awb.json')

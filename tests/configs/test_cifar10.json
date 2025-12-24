@@ -1,0 +1,33 @@
+{
+    "_comment": "Self-contained test config for CIFAR-10 with CNN3D (unit tests)",
+    "prob": "classification",
+    "problem": "vectors",
+    "data": "cifar10",
+    "network": "cnn3d",
+    "loss": "class",
+    "metric": "class",
+
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "batch_size": 32,
+    "save_iter": 1,
+    "lr": 1e-3,
+    "optimizer": "adam",
+
+    "filter_size": 3,
+    "channel_out": 32,
+    "channel_in": 3,
+    "input_size": 32,
+    "feed_sizes": [2304, 256, 10],
+    "n_class": 10,
+
+    "awb_enabled": false,
+    "flag": [1.0, 0.0],
+    "grad_weights": [0.3, 0.6, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 50,
+    "len_exp_replay": 100,
+
+    "model_path": "outputs/test/test_cifar10_model"
+}
