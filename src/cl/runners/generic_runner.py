@@ -38,6 +38,16 @@ from ..config.constants import (
     DEFAULT_TASK_WARMUP_LR_FACTOR,
     DEFAULT_WARMUP_GRAD_WEIGHTS,
     DEFAULT_MAIN_GRAD_WEIGHTS,
+    # Added by Claude: Adaptive LR and gradient weight constants (loss-based)
+    DEFAULT_ADAPTIVE_LR_MIN_ENABLED,
+    DEFAULT_LR_MIN_BASE,
+    DEFAULT_LR_MIN_MAX,
+    DEFAULT_LR_MIN_LOSS_RATIO_THRESHOLD,
+    DEFAULT_ADAPTIVE_GRAD_WEIGHTS_ENABLED,
+    DEFAULT_GRAD_WEIGHTS_BASE,
+    DEFAULT_GRAD_WEIGHTS_MAX_CURRENT,
+    DEFAULT_GRAD_WEIGHTS_MIN_EXPERIENCE,
+    DEFAULT_GRAD_WEIGHTS_LOSS_RATIO_THRESHOLD,
 )
 
 # ============================================================================
@@ -283,21 +293,105 @@ def create_optimizer_with_lr(config: dict, lr: float):
         raise ValueError(f"Unknown optimizer: {optimizer_name}")
 
 
-def compute_task_lr(config: Dict[str, Any], task_id: int) -> float:
-    """Compute learning rate for current task based on schedule.
+def compute_adaptive_lr_min(config: Dict[str, Any], loss_ratio: float = 1.0) -> float:
+    """Compute adaptive minimum learning rate based on loss ratio.
 
-    Added by Claude: All schedules now respect lr_min floor to prevent LR from
-    becoming too small. Supports exponential decay from lr to lr_min over tasks.
+    Added by Claude: When the loss ratio (current_loss / previous_loss) is high,
+    it indicates the model is struggling with the new task. We boost lr_min to
+    ensure sufficient learning capacity even when the LR schedule has decayed.
+
+    The lr_min scales linearly from lr_min_base to lr_min_max as loss_ratio
+    increases from threshold to 2*threshold.
+
+    Args:
+        config: Configuration dict with adaptive_lr_min settings
+        loss_ratio: Ratio of current task loss to previous task loss
+
+    Returns:
+        Adaptive lr_min based on loss ratio
+    """
+    adaptive_enabled = config.get('adaptive_lr_min_enabled', DEFAULT_ADAPTIVE_LR_MIN_ENABLED)
+
+    if not adaptive_enabled:
+        return config.get('lr_min', 1e-6)
+
+    lr_min_base = config.get('lr_min_base', DEFAULT_LR_MIN_BASE)
+    lr_min_max = config.get('lr_min_max', DEFAULT_LR_MIN_MAX)
+    threshold = config.get('lr_min_loss_ratio_threshold', DEFAULT_LR_MIN_LOSS_RATIO_THRESHOLD)
+
+    # If loss ratio is below threshold, use base lr_min
+    if loss_ratio <= threshold:
+        return lr_min_base
+
+    # Linear interpolation from lr_min_base to lr_min_max
+    # as loss_ratio goes from threshold to 2*threshold (capped)
+    progress = min((loss_ratio - threshold) / threshold, 1.0)
+    lr_min = lr_min_base + progress * (lr_min_max - lr_min_base)
+
+    return float(lr_min)
+
+
+def compute_adaptive_grad_weights(config: Dict[str, Any], loss_ratio: float = 1.0) -> list:
+    """Compute adaptive gradient weights based on loss ratio.
+
+    Added by Claude: When the loss ratio (current_loss / previous_loss) is high,
+    it indicates the model is struggling with the new task. We shift weights
+    toward the current task (increase alpha, decrease beta) to allow the model
+    to learn the new distribution.
+
+    The weights shift linearly from base weights toward max_current/min_experience
+    as loss_ratio increases from threshold to 2*threshold.
+
+    Args:
+        config: Configuration dict with adaptive_grad_weights settings
+        loss_ratio: Ratio of current task loss to previous task loss
+
+    Returns:
+        Adaptive gradient weights [alpha, beta, gamma] for this task
+    """
+    adaptive_enabled = config.get('adaptive_grad_weights_enabled', DEFAULT_ADAPTIVE_GRAD_WEIGHTS_ENABLED)
+
+    if not adaptive_enabled:
+        return config.get('main_grad_weights', DEFAULT_MAIN_GRAD_WEIGHTS)
+
+    base_weights = config.get('grad_weights_base', DEFAULT_GRAD_WEIGHTS_BASE)
+    max_current = config.get('grad_weights_max_current', DEFAULT_GRAD_WEIGHTS_MAX_CURRENT)
+    min_experience = config.get('grad_weights_min_experience', DEFAULT_GRAD_WEIGHTS_MIN_EXPERIENCE)
+    threshold = config.get('grad_weights_loss_ratio_threshold', DEFAULT_GRAD_WEIGHTS_LOSS_RATIO_THRESHOLD)
+
+    # If loss ratio is below threshold, use base weights
+    if loss_ratio <= threshold:
+        return list(base_weights)
+
+    # Linear interpolation as loss_ratio goes from threshold to 2*threshold (capped)
+    progress = min((loss_ratio - threshold) / threshold, 1.0)
+
+    # Shift from base weights toward [max_current, min_experience, base_reg]
+    alpha = base_weights[0] + progress * (max_current - base_weights[0])
+    beta = base_weights[1] + progress * (min_experience - base_weights[1])
+    gamma = base_weights[2]  # Regularization stays constant
+
+    return [alpha, beta, gamma]
+
+
+def compute_task_lr(config: Dict[str, Any], task_id: int, loss_ratio: float = 1.0) -> float:
+    """Compute learning rate for current task based on schedule and loss ratio.
+
+    Added by Claude: All schedules now respect adaptive lr_min floor that is
+    computed based on the loss ratio between current and previous task. When
+    the loss ratio is high, lr_min is boosted to ensure sufficient learning.
 
     Args:
         config: Configuration dict with lr_schedule, lr, lr_min, lr_decay_factor
         task_id: Current task ID
+        loss_ratio: Ratio of current task loss to previous task loss (default 1.0)
 
     Returns:
-        Learning rate for this task (clamped to lr_min minimum)
+        Learning rate for this task (clamped to adaptive lr_min minimum)
     """
     base_lr = config.get('lr', DEFAULT_LR)
-    lr_min = config.get('lr_min', 1e-6)  # Added by Claude: minimum LR floor
+    # Added by Claude: Use adaptive lr_min based on loss ratio
+    lr_min = compute_adaptive_lr_min(config, loss_ratio)
     schedule = config.get('lr_schedule', 'constant')
     n_tasks = config.get('n_task', 5)
 
@@ -313,7 +407,7 @@ def compute_task_lr(config: Dict[str, Any], task_id: int) -> float:
         lr = base_lr * (decay_factor ** task_id)
         return max(lr, lr_min)
     elif schedule == 'cosine':
-        # Added by Claude: Cosine annealing from base_lr to lr_min
+        # Added by Claude: Cosine annealing from base_lr to adaptive lr_min
         progress = task_id / max(n_tasks - 1, 1)
         lr = lr_min + 0.5 * (base_lr - lr_min) * (1 + jnp.cos(jnp.pi * progress))
         return float(max(lr, lr_min))
@@ -569,6 +663,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     # Added by Claude: Initialize architecture history tracking
     record_dict['architecture_history'] = {}
 
+    # Added by Claude: Track loss from previous task for adaptive LR and grad weights
+    previous_task_loss = None
+
     # Training loop over tasks
     for task_id in range(n_tasks):
         print(f"\n{'='*60}")
@@ -588,15 +685,51 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                                                                   phase='testing')
         testloader = (test_curr_loader, test_exp_loader)
 
-        # Compute learning rate for this task
-        task_lr = compute_task_lr(config, task_id)
+        # Added by Claude: Compute loss ratio for adaptive LR and gradient weights
+        # For task 0, loss_ratio = 1.0 (no previous task)
+        # For tasks 1+, compute initial loss on current task and compare to previous
+        loss_ratio = 1.0
+        if task_id > 0 and previous_task_loss is not None and previous_task_loss > 0:
+            # Compute initial loss on new task before training
+            model_temp = eqx.combine(params, static)
+            initial_loss = 0.0
+            n_batches = 0
+            for batch in trainloader:
+                if problem_type == 'graph':
+                    # Graph data - use batch directly
+                    pass  # Skip for now, handled differently
+                else:
+                    x, y = batch
+                    x = jnp.asarray(x.numpy(), dtype=jnp.float64)
+                    if loss_type == 'classification':
+                        y = jnp.asarray(y.numpy(), dtype=jnp.int64)
+                        preds = jax.vmap(model_temp)(x)
+                        if preds.ndim == 3 and preds.shape[1] == 1:
+                            preds = jnp.squeeze(preds, axis=1)
+                        loss = -jnp.mean(jnp.sum(jax.nn.log_softmax(preds) * jax.nn.one_hot(y, preds.shape[-1]), axis=-1))
+                    else:
+                        y = jnp.asarray(y.numpy(), dtype=jnp.float64)
+                        preds = jax.vmap(model_temp)(x)
+                        loss = jnp.mean((preds - y) ** 2)
+                    initial_loss += float(loss)
+                    n_batches += 1
+                if n_batches >= 5:  # Sample first 5 batches for speed
+                    break
+            initial_loss = initial_loss / max(n_batches, 1)
+            loss_ratio = initial_loss / previous_task_loss
+            print(f"Initial loss on new task: {initial_loss:.4f}, previous: {previous_task_loss:.4f}, ratio: {loss_ratio:.2f}")
+
+        # Compute learning rate for this task with loss-based adaptive lr_min
+        task_lr = compute_task_lr(config, task_id, loss_ratio)
 
         # Added by Claude: Update optimizer state with task-specific learning rate
         opt_state = update_learning_rate(opt_state, task_lr)
 
         # Task 0 or AWB disabled: Standard CL training
         if task_id == 0 or not awb_enabled:
-            print(f"Standard CL training (lr={task_lr:.6f})")
+            # Added by Claude: Show adaptive lr_min and loss ratio for this task
+            adaptive_lr_min = compute_adaptive_lr_min(config, loss_ratio)
+            print(f"Standard CL training (lr={task_lr:.6f}, adaptive_lr_min={adaptive_lr_min:.2e}, loss_ratio={loss_ratio:.2f})")
 
             # Recombine model
             model = eqx.combine(params, static)
@@ -610,7 +743,8 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             warmup_epochs = config.get('task_warmup_epochs', DEFAULT_TASK_WARMUP_EPOCHS)
             warmup_lr_factor = config.get('task_warmup_lr_factor', DEFAULT_TASK_WARMUP_LR_FACTOR)
             warmup_grad_weights = config.get('warmup_grad_weights', DEFAULT_WARMUP_GRAD_WEIGHTS)
-            main_grad_weights = config.get('main_grad_weights', DEFAULT_MAIN_GRAD_WEIGHTS)
+            # Added by Claude: Use adaptive gradient weights based on loss ratio
+            main_grad_weights = compute_adaptive_grad_weights(config, loss_ratio)
 
             # Task 0: No warmup needed (no previous knowledge to protect)
             # Tasks 1+: Warmup with new task samples only, then main training with experience
@@ -653,7 +787,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 main_epochs = epochs_per_task - warmup_epochs
                 print(f"  Main phase: {main_epochs} epochs at lr={task_lr:.2e}")
                 print(f"    Using experience replay")
-                print(f"    Grad weights: {main_grad_weights}")
+                # Added by Claude: Format adaptive grad weights for display
+                grad_weights_str = f"[{main_grad_weights[0]:.2f}, {main_grad_weights[1]:.2f}, {main_grad_weights[2]:.2f}]"
+                print(f"    Adaptive grad weights: {grad_weights_str} (current, experience, regularization)")
 
                 # Create main config with main grad weights
                 main_config = config.copy()
@@ -745,7 +881,14 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 'arch_changed': False,
                 'change_reason': 'baseline_task' if task_id == 0 else 'awb_disabled',
                 'search_time': 0.0,
+                'loss_ratio': loss_ratio,
+                'adaptive_lr_min': compute_adaptive_lr_min(config, loss_ratio),
+                'adaptive_grad_weights': main_grad_weights if task_id > 0 else None,
             }
+
+            # Added by Claude: Save optimal loss for next task's loss ratio computation
+            if optimal_loss is not None:
+                previous_task_loss = optimal_loss
 
             # Append to experience replay
             data.append_to_experience(task_id)
@@ -1179,8 +1322,17 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 history_entry['final_arch'] = history_entry['original_arch']
                 print(f"    Final optimal_loss: {optimal_loss:.6f}")
 
+            # Added by Claude: Add loss ratio and adaptive values to history entry
+            history_entry['loss_ratio'] = loss_ratio
+            history_entry['adaptive_lr_min'] = compute_adaptive_lr_min(config, loss_ratio)
+            history_entry['adaptive_grad_weights'] = compute_adaptive_grad_weights(config, loss_ratio)
+
             # Save history entry for this task
             record_dict['architecture_history'][task_id] = history_entry
+
+            # Added by Claude: Save optimal loss for next task's loss ratio computation
+            if history_entry.get('optimal_loss') is not None:
+                previous_task_loss = history_entry['optimal_loss']
 
             # Append to experience replay
             data.append_to_experience(task_id)
