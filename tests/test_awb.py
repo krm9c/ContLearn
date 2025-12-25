@@ -89,13 +89,14 @@ class TestShouldChangeArch:
         assert result == True
 
     def test_should_change_arch_high_ratio_loss_not_increased(self):
-        """Test: high ratio but loss didn't increase significantly -> no change."""
-        # Added by Claude: Updated to compare trainWLoss to end_last (not end_last0)
+        """Test: high ratio triggers change (simplified logic without min_delta)."""
+        # Fixed by Claude: Updated for simplified should_change_arch logic
+        # New logic: only checks ratio > threshold, not loss increase
         trainWLoss = 0.82
-        end_last = 0.82   # ratio = 0.82/0.82 = 1.0 > 0.45, but end_last + 0.01 = 0.83 > 0.82
+        end_last = 0.82   # ratio = 0.82/0.82 = 1.0 > 0.45 -> should change
 
         result = should_change_arch(trainWLoss, end_last)
-        assert result == False
+        assert result == True  # Changed from False - simplified logic triggers change
 
     def test_should_change_arch_low_ratio(self):
         """Test: low ratio -> no change regardless of other conditions."""
