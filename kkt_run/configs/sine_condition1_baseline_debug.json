@@ -1,0 +1,21 @@
+{
+    "__comment": "DEBUG CONFIG - Condition 1: Baseline Hamiltonian",
+    "__comment_": "For local testing only - 2 tasks, 50 samples, 2 epochs",
+    "data": "sine",
+    "prob": "regression",
+    "problem": "vectors",
+    "network": "fcnn",
+    "n_task": 2,
+    "epochs_per_task": 2,
+    "batch_size": 16,
+    "awb_enabled": false,
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "warmup_epochs": 0,
+    "model_path": "kkt_run/results/sine_condition1_debug",
+    "save_iter": 1,
+    "grad_weights": [0.01, 0.98, 0.1],
+    "debug_mode": true,
+    "debug_limit": 50,
+    "per_task_eval_enabled": true
+}

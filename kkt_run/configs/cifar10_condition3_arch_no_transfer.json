@@ -1,0 +1,20 @@
+{
+    "__comment": "CONDITION 3: Architecture Change, No Transfer",
+    "__comment_": "Arch search enabled, skip A/B training, random init after arch change",
+    "data": "cifar10",
+    "n_task": 10,
+    "epochs_per_task": 500,
+    "batch_size": 128,
+    "awb_enabled": true,
+    "awb_skip_transfer": true,
+    "awb_preliminary_epochs": 50,
+    "awb_loss_ratio_threshold": 1.1,
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "warmup_epochs": 0,
+    "model_path": "kkt_run/results/cifar10_condition3",
+    "save_iter": 50,
+    "grad_weights": [0.01, 0.98, 0.1],
+    "debug_mode": false,
+    "per_task_eval_enabled": true
+}
