@@ -21,7 +21,9 @@ import os
 import warnings
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# Add run_files/scripts to path for plot_results import
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts'))
 
 import jax
 from cl.config import Params, load_config

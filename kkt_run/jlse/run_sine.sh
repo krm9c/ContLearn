@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all 4 conditions for CIFAR-100
+# Run all 4 conditions for SINE regression
 # Output directed to kkt_run/jlse/logs/
 
 # >>> conda initialize >>>
@@ -16,54 +16,39 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
-
 conda activate jax__kkt
-
 # Get the directory of this script and repo root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
-RUN_SCRIPT="$REPO_ROOT/run_files/scripts/run.py"
-
+REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+RUN_SCRIPT="$REPO_ROOT/run.py"
+CONFIG_DIR="$SCRIPT_DIR/../configs"
 # Create output directories
 mkdir -p "$SCRIPT_DIR/logs"
-
 # Function to run a config
 run_config() {
     local config=$1
     local condition=$2
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local logfile="$SCRIPT_DIR/logs/cifar100_${condition}_${timestamp}.log"
-
+    local logfile="$SCRIPT_DIR/logs/sine_${condition}_${timestamp}.log"
     echo "========================================"
-    echo "Running: CIFAR-100 - $condition"
+    echo "Running: SINE - $condition"
     echo "Config: $config"
     echo "Log: $logfile"
     echo "Started at: $(date)"
-    echo "========================================"
-
-    python "$RUN_SCRIPT" "$SCRIPT_DIR/configs/$config" > "$logfile" 2>&1
-
+    python "$RUN_SCRIPT" "$CONFIG_DIR/$config" > "$logfile" 2>&1
     if [ $? -eq 0 ]; then
-        echo "✓ SUCCESS: CIFAR-100 - $condition ($(date))"
-    else
-        echo "✗ FAILED: CIFAR-100 - $condition ($(date))"
+        echo "✓ SUCCESS: SINE - $condition ($(date))"
+        echo "✗ FAILED: SINE - $condition ($(date))"
         echo "  Check log: $logfile"
-    fi
     echo ""
 }
-
 echo "========================================"
-echo "CIFAR-100 - All Conditions"
+echo "SINE REGRESSION - All Conditions"
 echo "Started at: $(date)"
-echo "========================================"
 echo ""
-
-run_config "cifar100_condition1_baseline.json" "condition1_baseline"
-run_config "cifar100_condition2_heuristics.json" "condition2_heuristics"
-run_config "cifar100_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
-run_config "cifar100_condition4_awb_full.json" "condition4_awb_full"
-
-echo "========================================"
-echo "CIFAR-100 - All conditions completed"
+run_config "sine_condition1_baseline.json" "condition1_baseline"
+run_config "sine_condition2_heuristics.json" "condition2_heuristics"
+run_config "sine_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
+run_config "sine_condition4_awb_full.json" "condition4_awb_full"
+echo "SINE - All conditions completed"
 echo "Finished at: $(date)"
-echo "========================================"

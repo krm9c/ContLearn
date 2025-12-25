@@ -11,8 +11,8 @@ if [ -z "${CONFIG_FILE}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_PATH="${SCRIPT_DIR}/configs/${CONFIG_FILE}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+CONFIG_PATH="${SCRIPT_DIR}/../configs/${CONFIG_FILE}"
 CONFIG_BASE=$(basename "${CONFIG_FILE}" .json)
 LOG_DIR="${SCRIPT_DIR}/logs"
 
@@ -69,7 +69,7 @@ fi
 # Run the experiment
 cd "${PROJECT_ROOT}"
 
-python scripts/run.py "${CONFIG_PATH}" \
+python run.py "${CONFIG_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --model-suffix "${CONFIG_BASE}" \
     --figures-dir "${OUTPUT_DIR}/figures"

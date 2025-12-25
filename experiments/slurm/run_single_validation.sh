@@ -35,7 +35,7 @@ echo "  Config: ${CONFIG_PATH}"
 echo "  Output: ${OUTPUT_DIR}"
 echo "  Seed: ${SEED}"
 
-python run_files/scripts/run.py \
+python run.py \
     "${CONFIG_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --seed ${SEED} \
