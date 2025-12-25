@@ -35,6 +35,12 @@ run_config() {
     echo "Config: $config"
     echo "Log: $logfile"
     echo "Started at: $(date)"
+
+    # GPU optimization flags (conservative, deterministic)
+    export JAX_PLATFORMS=cuda
+    export XLA_PYTHON_CLIENT_PREALLOCATE=true
+    export XLA_PYTHON_CLIENT_ALLOCATOR=platform
+
     python "$RUN_SCRIPT" "$CONFIG_DIR/$config" > "$logfile" 2>&1
     if [ $? -eq 0 ]; then
         echo "✓ SUCCESS: CIFAR-100 - $condition ($(date))"

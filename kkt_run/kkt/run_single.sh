@@ -69,6 +69,11 @@ fi
 # Run the experiment
 cd "${PROJECT_ROOT}"
 
+# GPU optimization flags (conservative, deterministic)
+export JAX_PLATFORMS=cuda
+export XLA_PYTHON_CLIENT_PREALLOCATE=true
+export XLA_PYTHON_CLIENT_ALLOCATOR=platform
+
 python run.py "${CONFIG_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --model-suffix "${CONFIG_BASE}" \
