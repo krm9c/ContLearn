@@ -14,13 +14,19 @@ GPU_ID="$3"
 
 # Get config name without extension
 CONFIG_NAME=$(basename "${CONFIG_PATH}" .json)
-DATASET=$(basename $(dirname "${CONFIG_PATH}"))
+# Extract dataset from flat config name (e.g., sine_condition1_baseline -> sine)
+DATASET=$(echo "${CONFIG_NAME}" | sed -E 's/_(condition[0-9]|awb).*//')
 
 # Set CUDA device
 export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
-# Output directory
-OUTPUT_DIR="experiments/results/${DATASET}/${CONFIG_NAME}/run_${RUN_ID}"
+# GPU optimization flags (conservative, deterministic)
+export JAX_PLATFORMS=cuda
+export XLA_PYTHON_CLIENT_PREALLOCATE=true
+export XLA_PYTHON_CLIENT_ALLOCATOR=platform
+
+# Output directory (use kkt_run/experiments/results)
+OUTPUT_DIR="kkt_run/experiments/results/${DATASET}/${CONFIG_NAME}/run_${RUN_ID}"
 mkdir -p "${OUTPUT_DIR}"
 
 # Copy config to output dir for reproducibility

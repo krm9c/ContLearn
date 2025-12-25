@@ -13,7 +13,8 @@ NUM_RUNS="$2"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${SCRIPT_DIR}/../.."
-CONFIG_DIR="${SCRIPT_DIR}/../configs/${DATASET}"
+# Use shared kkt_run/configs/ folder (flat structure)
+CONFIG_DIR="${SCRIPT_DIR}/../../configs"
 LOG_DIR="${SCRIPT_DIR}/../logs"
 
 cd "${PROJECT_DIR}"
@@ -43,7 +44,8 @@ echo ""
 EXPERIMENTS=()
 for condition in "${CONDITIONS[@]}"; do
     for run_id in $(seq 0 $((NUM_RUNS - 1))); do
-        config_path="${CONFIG_DIR}/${condition}.json"
+        # Use flat config naming: dataset_condition.json
+        config_path="${CONFIG_DIR}/${DATASET}_${condition}.json"
         if [ -f "${config_path}" ]; then
             EXPERIMENTS+=("${condition}:${run_id}:${config_path}")
         fi
