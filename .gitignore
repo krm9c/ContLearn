@@ -60,6 +60,9 @@ saved_models/
 # Added by Claude: Use /models/ to only ignore root-level models directory, not src/cl/models/
 /models/
 
+# Archive directory (deprecated/old code)
+archive/
+
 # Generated test results
 *_TEST_RESULTS.md
 SCRIPT_TEST_RESULTS.md

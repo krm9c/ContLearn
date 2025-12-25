@@ -18,6 +18,7 @@ Arguments:
 import argparse
 import sys
 import os
+import warnings
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -30,6 +31,9 @@ from cl.core.recording import RecordingMixin
 
 # Added by Claude: Import plotting module for post-training visualization
 from plot_results import generate_plots
+
+# Suppress JAX MaxPool gradient warning (expected behavior for second-order derivatives)
+warnings.filterwarnings('ignore', message='.*reduce-window min/max.*')
 
 
 def main():
