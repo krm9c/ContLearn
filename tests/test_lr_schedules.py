@@ -16,8 +16,7 @@ import numpy as np
 # Mark all tests in this file as unit tests
 pytestmark = pytest.mark.unit
 
-from cl.runners.regression import compute_task_lr
-from cl.runners.generic_runner import compute_adaptive_lr_min, compute_adaptive_grad_weights
+from cl.runners.generic_runner import compute_task_lr, compute_adaptive_lr_min, compute_adaptive_grad_weights
 
 
 class TestLearningRateSchedules:

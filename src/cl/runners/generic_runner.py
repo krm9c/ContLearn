@@ -705,36 +705,84 @@ def load_checkpoint(config: Dict[str, Any]):
         })
         model = create_mlp(model_config)
     elif network == 'cnn':
-        # CNN for image classification
+        # CNN for image classification (MNIST) - from old classification.py
+        from ..config.constants import DEFAULT_INPUT_SIZE_MNIST
+        channel_out = config.get('channel_out', 3)
+        filter_size = config.get('filter_size', 4)  # Integer, not list
+        input_size = config.get('input_size', DEFAULT_INPUT_SIZE_MNIST)  # Image dimension, not flattened
+        num_classes = model_config['output_size']
+
+        # Calculate flatten_size based on conv/pool output
+        # After conv: (input_size - filter_size + 1)
+        # After MaxPool2d(kernel_size=2, stride=2): conv_out // 2
+        conv_output = (input_size - filter_size + 1)
+        pool_output = conv_output // 2
+        flatten_size = channel_out * pool_output * pool_output
+
+        # Default feed sizes: [flatten_size, 512, 64, num_classes]
+        feed_sizes = config.get('feed_sizes', [flatten_size, 512, 64, num_classes])
+        feed_sizes[0] = flatten_size  # Always use calculated flatten size
+
         model = CNN(
-            input_size=model_config['input_size'],
-            output_size=model_config['output_size'],
-            feed_sizes=config.get('feed_sizes', [100, 100]),
-            filter_size=config.get('filter_size', [3, 3, 3]),
+            key=jax.random.PRNGKey(0),
+            filter_size=filter_size,
+            feed_sizes=feed_sizes,
+            input_size=input_size,
             channel_in=config.get('channel_in', 1),
-            awb_enabled=model_config['awb_enabled'],
-            key=jax.random.PRNGKey(0)
+            channel_out=channel_out,
+            awb_arch=config.get('awb_arch', None)
         )
     elif network == 'cnn3d':
-        # CNN3D for multi-channel images
+        # CNN3D for multi-channel images (CIFAR) - from old classification.py
+        from ..config.constants import DEFAULT_INPUT_SIZE_CIFAR, DEFAULT_CHANNEL_OUT_CNN3D
+        channel_out = config.get('channel_out', DEFAULT_CHANNEL_OUT_CNN3D)
+        channel_in = config.get('channel_in', 3)
+        input_size = config.get('input_size', DEFAULT_INPUT_SIZE_CIFAR)
+        filter_size = config.get('filter_size', 4)  # Integer, not list
+        num_classes = model_config['output_size']
+
+        # Calculate feed layer input size for CNN3D (two conv+pool layers)
+        # After conv1: (input_size - filter_size + 1)
+        # After pool1 (stride=2): conv1_out // 2
+        # After conv2: (pool1_out - filter_size + 1)
+        # After pool2 (stride=2): conv2_out // 2
+        conv1_out = input_size - filter_size + 1
+        pool1_out = conv1_out // 2
+        conv2_out = pool1_out - filter_size + 1
+        pool2_out = conv2_out // 2
+        flatten_size = pool2_out * pool2_out * channel_out * 2  # channel_out * 2 after second conv
+
+        # Default feed sizes for CIFAR
+        feed_sizes = config.get('feed_sizes', [flatten_size, 512, 256, num_classes])
+        feed_sizes[0] = flatten_size  # Always use calculated flatten size
+
         model = CNN3D(
-            input_size=model_config['input_size'],
-            output_size=model_config['output_size'],
-            feed_sizes=config.get('feed_sizes', [100, 100]),
-            filter_size=config.get('filter_size', [3, 3, 3]),
-            channel_in=config.get('channel_in', 3),
-            awb_enabled=model_config['awb_enabled'],
-            key=jax.random.PRNGKey(0)
+            key=jax.random.PRNGKey(0),
+            filter_size=filter_size,
+            feed_sizes=feed_sizes,
+            input_size=input_size,
+            channel_in=channel_in,
+            channel_out=channel_out,
+            num_classes=num_classes
         )
     elif network == 'gcn':
-        # GCN for graph data
+        # GCN for graph data - from old graph_classification.py
+        gcn_sizes = config.get('gcn_sizes', [model_config['input_size'], 128])
+        feed_sizes = config.get('feed_sizes', [128, 128, 128, model_config['output_size']])
+        num_classes = model_config['output_size']
+
+        # Get node_num from a sample batch
+        sample_batch = next(iter(dataset.get_test_loader()))
+        node_num = sample_batch.x.shape[0]
+
         model = GCN(
-            input_size=model_config['input_size'],
-            output_size=model_config['output_size'],
-            gcn_sizes=config.get('gcn_sizes', [64, 64]),
-            feed_sizes=config.get('feed_sizes', [100, 100]),
-            awb_enabled=model_config['awb_enabled'],
-            key=jax.random.PRNGKey(0)
+            in_size=model_config['input_size'],
+            feed_sizes=feed_sizes,
+            gcn_sizes=gcn_sizes,
+            node_num=node_num,
+            SEED=config.get('seed', 1234),
+            out_size=num_classes,
+            graph=True
         )
     else:
         raise ValueError(f"Unknown network: {network}")
@@ -1118,6 +1166,37 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
             # Extract final params and static
             params, static = eqx.partition(model, eqx.is_array)
+
+            # Added by Claude: Extract architecture history from AWB task
+            # The AWB pipeline stores architecture info in record_dict['tasks'][task_id]
+            main_training = record_dict['tasks'][task_id]['main_training']
+            optimal_loss = main_training['V'][-1] if main_training['V'] else None
+
+            # Update architecture history
+            if task_id in record_dict.get('tasks', {}):
+                task_info = record_dict['tasks'][task_id]
+                prev_arch = None
+                if task_id > 0 and (task_id - 1) in record_dict['architecture_history']:
+                    prev_arch = record_dict['architecture_history'][task_id - 1]['final_arch']
+
+                record_dict['architecture_history'][task_id] = {
+                    'task_id': task_id,
+                    'original_arch': prev_arch,
+                    'searched_candidates': task_info.get('searched_architectures', []),
+                    'final_arch': get_model_architecture(model),
+                    'preliminary_loss': task_info.get('preliminary_loss'),
+                    'optimal_loss': optimal_loss,
+                    'arch_changed': task_info.get('architecture_changed', False),
+                    'change_reason': task_info.get('change_reason', 'unknown'),
+                    'search_time': task_info.get('search_time', 0.0),
+                    'loss_ratio': task_info.get('loss_ratio'),
+                    'adaptive_lr_min': None,  # AWB uses different LR strategy
+                    'adaptive_grad_weights': None,  # AWB uses different grad weight strategy
+                }
+
+            # Save optimal loss for next task's loss ratio computation
+            if optimal_loss is not None:
+                previous_task_loss = optimal_loss
 
             # Append to experience replay
             data.append_to_experience(task_id)
