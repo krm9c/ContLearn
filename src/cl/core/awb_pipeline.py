@@ -93,22 +93,53 @@ def run_awb_task(
 
     trainloader, exploader, valloader, testloader = train_data
 
+    # Added by Claude: Initialize task metadata for architecture history
+    task_metadata = {
+        'preliminary_loss': None,
+        'architecture_changed': False,
+        'change_reason': 'no_change',
+        'searched_architectures': [],
+        'loss_ratio': None,
+        'search_time': 0.0,
+    }
+
     # STEP 1: Preliminary Training
-    print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - NOT recorded")
+    print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
     params, static = awb_ops.partition_for_standard_training(model)
+
+    # Added by Claude: Store current iteration count to compute preliminary offset
+    current_iterations = len(record_dict.get('iterations', {}))
+
     params, static, opt_state, record_dict = trainer.train__CL(
         train__=(trainloader, exploader, valloader, testloader),
         params=params, static=static, opt_state=opt_state, optim=optim,
         n_iter=preliminary_epochs, save_iter=save_iter,
         task_id=task_id, config=config, record_dict=record_dict,
         problem_type=problem_type, loss_type=loss_type,
-        phase='preliminary', record_training=False, global_iteration_offset=0
+        phase='preliminary', record_training=True, global_iteration_offset=current_iterations
     )
 
     model = eqx.combine(params, static)
-    trainWLoss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
-                                   epochs=preliminary_epochs, window=averaging_window)
+
+    # Added by Claude: Get preliminary loss from last recorded iteration
+    iterations_dict = record_dict.get('iterations', {})
+    last_prelim_iter = current_iterations + preliminary_epochs - 1
+    if last_prelim_iter in iterations_dict:
+        last_record = iterations_dict[last_prelim_iter]
+        trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
+    else:
+        # Fallback: try to find the most recent iteration
+        available_iters = sorted([k for k in iterations_dict.keys() if k >= current_iterations])
+        if available_iters:
+            last_record = iterations_dict[available_iters[-1]]
+            trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
+        else:
+            trainWLoss = 0.0
+
     print(f"  Preliminary loss: {trainWLoss:.6f}")
+
+    # Added by Claude: Store preliminary loss in metadata
+    task_metadata['preliminary_loss'] = trainWLoss
 
     # STEP 2: Decision
     print(f"\n[STEP 2] Architecture change decision")
@@ -116,8 +147,16 @@ def run_awb_task(
         previous_task_loss = trainWLoss
         print(f"  WARNING: No previous task loss, using preliminary loss")
 
+    # Added by Claude: Store loss ratio in metadata
+    task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
+
     print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
-    change_arch = should_change_arch(trainWLoss, previous_task_loss)
+
+    # Added by Claude: Read threshold from config
+    threshold_high = config.get('awb_loss_ratio_threshold')
+
+    change_arch = should_change_arch(trainWLoss, previous_task_loss,
+                                     threshold_high=threshold_high)
     print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
 
     original_arch = awb_ops.get_model_architecture(model)
@@ -136,6 +175,10 @@ def run_awb_task(
         model = awb_ops.restore_weights(model, saved_weights)
 
         if new_arch != original_arch:
+            # Added by Claude: Update metadata for architecture change
+            task_metadata['architecture_changed'] = True
+            task_metadata['change_reason'] = 'loss_ratio_threshold'
+
             # STEP 3b: Train A/B
             print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
             model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
@@ -185,7 +228,7 @@ def run_awb_task(
 
             # STEP 5: Train V
             print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
-            from ..utils.optimizer import create_optimizer
+            from ..runners.generic_runner import create_optimizer
             optim = create_optimizer(config)
             opt_state = optim.init(params)
 
@@ -212,10 +255,14 @@ def run_awb_task(
             model = eqx.combine(params, static)
 
         else:
+            # Added by Claude: Same architecture found by search
+            task_metadata['architecture_changed'] = False
+            task_metadata['change_reason'] = 'search_found_same'
+
             # Same architecture, standard training
             print(f"  Same architecture - standard training")
             params, static = awb_ops.partition_for_standard_training(model)
-            from ..utils.optimizer import create_optimizer
+            from ..runners.generic_runner import create_optimizer
             optim = create_optimizer(config)
             opt_state = optim.init(params)
 
@@ -231,10 +278,14 @@ def run_awb_task(
             )
             model = eqx.combine(params, static)
     else:
+        # Added by Claude: No architecture change needed
+        task_metadata['architecture_changed'] = False
+        task_metadata['change_reason'] = 'loss_ratio_below_threshold'
+
         # No change, standard training
         print(f"  No change - standard training")
         params, static = awb_ops.partition_for_standard_training(model)
-        from ..utils.optimizer import create_optimizer
+        from ..runners.generic_runner import create_optimizer
         optim = create_optimizer(config)
         opt_state = optim.init(params)
 
@@ -254,6 +305,13 @@ def run_awb_task(
                                    epochs=epochs_per_task, window=averaging_window)
     print(f"\n[AWB COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
     print(f"{'='*70}\n")
+
+    # Added by Claude: Store task metadata for architecture history tracking
+    if 'tasks' not in record_dict:
+        record_dict['tasks'] = {}
+    if task_id not in record_dict['tasks']:
+        record_dict['tasks'][task_id] = {}
+    record_dict['tasks'][task_id].update(task_metadata)
 
     return model, optim, opt_state, record_dict
 

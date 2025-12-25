@@ -168,7 +168,15 @@ class TrainingLoopsMixin:
                     metric_current = self.return_metric(params, static, data=(x_curr, y_curr), notABTrain=notABTrain)
                     current_metrics.append(metric_current)
 
-                    x_exp, y_exp = exp_batch
+                    # Added by Claude: Handle variable-length batch formats
+                    if len(exp_batch) == 2:
+                        x_exp, y_exp = exp_batch
+                    elif len(exp_batch) == 3:
+                        x_exp, y_exp, _ = exp_batch  # Ignore task_id or other metadata
+                    else:
+                        # Assume first two elements are (x, y)
+                        x_exp, y_exp = exp_batch[0], exp_batch[1]
+
                     x_exp = jnp.array(x_exp.numpy(), dtype=jnp.float64)
                     # Keep labels as int64 for classification, float64 for regression
                     if self.metric == 'class':

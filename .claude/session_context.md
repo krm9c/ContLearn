@@ -11,18 +11,40 @@
 - Deprecated: `classification.py`, `regression.py`, `graph_classification.py` (→ `.deprecated`)
 - **Only `generic_runner.py` is used** - confirmed by user
 
-**Testing Status:** NEEDS TESTING
-- ✅ Code committed and pushed
-- ⚠️ Standard CL path unchanged but untested
-- ⚠️ AWB path refactored, needs validation
+## 🔧 DEBUGGING SESSION (Dec 25, 2025)
+
+**Issues Fixed:**
+
+1. **AWB Import Errors** - Fixed 3 incorrect imports in `awb_pipeline.py`:
+   - `from ..utils.optimizer import create_optimizer` → `from ..runners.generic_runner import create_optimizer`
+
+2. **AWB Decision Logic** - Simplified `should_change_arch()` in `awb.py`:
+   - Removed `min_delta` requirement (was blocking architecture changes when loss decreased)
+   - Now uses only ratio threshold: `return ratio > threshold_high`
+
+3. **AWB Metadata Tracking** - Added task metadata:
+   - `awb_pipeline.py`: Store preliminary_loss, architecture_changed, change_reason, etc.
+   - `generic_runner.py`: Extract architecture history from AWB tasks
+
+4. **Model Initializations** - Fixed `generic_runner.py` to match old working code:
+   - **CNN (MNIST)**: Calculate flatten_size from conv/pool output, use `input_size=28` (not 784), `filter_size=4` (integer not list)
+   - **CNN3D (CIFAR)**: Calculate flatten_size from two conv/pool layers
+   - **GCN (Graphs)**: Get node_num from sample batch, use correct parameter names
+
+**Testing Status:**
+- ✅ Standard CL + MLP (sine regression) - WORKING
+- ✅ Standard CL + CNN (MNIST) - WORKING
+- ⚠️ AWB architecture search - needs batch format debugging (experience replay batches during search)
+
+**Key Lesson:** Always check deprecated/old working code before adding new logic - refactoring introduced several parameter mismatches.
 
 **Quick Test:**
 ```bash
-# Verify standard CL works
+# Standard CL (working)
 python run_files/scripts/run.py kkt_run/configs/sine.json
 
-# Verify AWB works
-python run_files/scripts/run.py kkt_run/configs/sine_awb.json
+# AWB (in progress)
+./kkt_run/test_awb_forced.sh
 ```
 
 ## Directory Structure
