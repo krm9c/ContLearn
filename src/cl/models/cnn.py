@@ -474,22 +474,39 @@ class CNN3D(eqx.Module):
         return x
 
     def get_AWBT(self, x):
-        """Forward pass using AWB transformation."""
-        # AWB transformation on first conv layer (channel_in -> channel_out)
-        # For each output filter i, apply AWB to each input channel c: A[i][c] @ W[i][c] @ B[i][c].T
-        weights_list1 = [[(self.A_conv1[i][c] @ self.conv_layers[0].weight[i][c] @ jnp.transpose(self.B_conv1[i][c]))
-                          for c in range(self.channel_in)] for i in range(self.channel_out)]
+        """Forward pass using AWB transformation.
+
+        Fixed by Claude: Optimize AWB transformation using vectorized operations
+        instead of nested list comprehensions to reduce JIT compilation time.
+        """
+        # AWB transformation on first conv layer (channel_out, channel_in, filter, filter)
+        # Vectorized computation: A @ W @ B.T for all (i, c) pairs
+        # Convert nested lists to JAX arrays for efficient computation
+        A_conv1_arr = jnp.array([[self.A_conv1[i][c] for c in range(self.channel_in)] for i in range(self.channel_out)])
+        B_conv1_arr = jnp.array([[self.B_conv1[i][c] for c in range(self.channel_in)] for i in range(self.channel_out)])
+
+        # Compute transformed weights using vmap: (channel_out, channel_in, new_filter, new_filter)
+        def transform_filter(A, W, B):
+            return A @ W @ B.T
+
+        # Vmap over channel_out and channel_in dimensions
+        transform_vmap = jax.vmap(jax.vmap(transform_filter, in_axes=(0, 0, 0)), in_axes=(0, 0, 0))
+        weights_transformed1 = transform_vmap(A_conv1_arr, self.conv_layers[0].weight, B_conv1_arr)
+
         x = jnp.expand_dims(x, axis=0)
-        x = jax.lax.conv_general_dilated(lhs=x, rhs=jnp.array(weights_list1), window_strides=(1, 1), padding="VALID")
+        x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed1, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
         x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
 
-        # AWB transformation on second conv layer (channel_out -> channel_out * 2)
-        weights_list2 = [[(self.A_conv2[i][c] @ self.conv_layers[1].weight[i][c] @ jnp.transpose(self.B_conv2[i][c]))
-                          for c in range(self.channel_out)] for i in range(self.channel_out * 2)]
+        # AWB transformation on second conv layer
+        A_conv2_arr = jnp.array([[self.A_conv2[i][c] for c in range(self.channel_out)] for i in range(self.channel_out * 2)])
+        B_conv2_arr = jnp.array([[self.B_conv2[i][c] for c in range(self.channel_out)] for i in range(self.channel_out * 2)])
+
+        weights_transformed2 = transform_vmap(A_conv2_arr, self.conv_layers[1].weight, B_conv2_arr)
+
         x = jnp.expand_dims(x, axis=0)
-        x = jax.lax.conv_general_dilated(lhs=x, rhs=jnp.array(weights_list2), window_strides=(1, 1), padding="VALID")
+        x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed2, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
         x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
