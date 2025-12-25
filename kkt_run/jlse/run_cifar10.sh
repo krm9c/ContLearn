@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all 4 conditions for Synthetic Graph
+# Run all 4 conditions for CIFAR-10
 # Output directed to kkt_run/jlse/logs/
 
 # >>> conda initialize >>>
@@ -16,54 +16,39 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
-
 conda activate jax__kkt
-
 # Get the directory of this script and repo root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
-RUN_SCRIPT="$REPO_ROOT/run_files/scripts/run.py"
-
+REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
+RUN_SCRIPT="$REPO_ROOT/run.py"
+CONFIG_DIR="$SCRIPT_DIR/../configs"
 # Create output directories
 mkdir -p "$SCRIPT_DIR/logs"
-
 # Function to run a config
 run_config() {
     local config=$1
     local condition=$2
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local logfile="$SCRIPT_DIR/logs/synthetic_graph_${condition}_${timestamp}.log"
-
+    local logfile="$SCRIPT_DIR/logs/cifar10_${condition}_${timestamp}.log"
     echo "========================================"
-    echo "Running: Synthetic Graph - $condition"
+    echo "Running: CIFAR-10 - $condition"
     echo "Config: $config"
     echo "Log: $logfile"
     echo "Started at: $(date)"
-    echo "========================================"
-
-    python "$RUN_SCRIPT" "$SCRIPT_DIR/configs/$config" > "$logfile" 2>&1
-
+    python "$RUN_SCRIPT" "$CONFIG_DIR/$config" > "$logfile" 2>&1
     if [ $? -eq 0 ]; then
-        echo "✓ SUCCESS: Synthetic Graph - $condition ($(date))"
-    else
-        echo "✗ FAILED: Synthetic Graph - $condition ($(date))"
+        echo "✓ SUCCESS: CIFAR-10 - $condition ($(date))"
+        echo "✗ FAILED: CIFAR-10 - $condition ($(date))"
         echo "  Check log: $logfile"
-    fi
     echo ""
 }
-
 echo "========================================"
-echo "SYNTHETIC GRAPH - All Conditions"
+echo "CIFAR-10 - All Conditions"
 echo "Started at: $(date)"
-echo "========================================"
 echo ""
-
-run_config "synthetic_graph_condition1_baseline.json" "condition1_baseline"
-run_config "synthetic_graph_condition2_heuristics.json" "condition2_heuristics"
-run_config "synthetic_graph_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
-run_config "synthetic_graph_condition4_awb_full.json" "condition4_awb_full"
-
-echo "========================================"
-echo "Synthetic Graph - All conditions completed"
+run_config "cifar10_condition1_baseline.json" "condition1_baseline"
+run_config "cifar10_condition2_heuristics.json" "condition2_heuristics"
+run_config "cifar10_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
+run_config "cifar10_condition4_awb_full.json" "condition4_awb_full"
+echo "CIFAR-10 - All conditions completed"
 echo "Finished at: $(date)"
-echo "========================================"
