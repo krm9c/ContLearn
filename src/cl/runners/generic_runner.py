@@ -949,6 +949,8 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             # Added by Claude: Task transition warmup configuration
             warmup_enabled = config.get('task_warmup_enabled', DEFAULT_TASK_WARMUP_ENABLED)
             warmup_epochs = config.get('task_warmup_epochs', DEFAULT_TASK_WARMUP_EPOCHS)
+            # Added by Claude: Cap warmup to leave at least 1 epoch for main training
+            warmup_epochs = min(warmup_epochs, max(0, epochs_per_task - 1))
             warmup_lr_factor = config.get('task_warmup_lr_factor', DEFAULT_TASK_WARMUP_LR_FACTOR)
             warmup_grad_weights = config.get('warmup_grad_weights', DEFAULT_WARMUP_GRAD_WEIGHTS)
             # Added by Claude: Use adaptive gradient weights based on loss ratio
