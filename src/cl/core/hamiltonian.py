@@ -267,14 +267,15 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
 def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
                                       alpha, beta, gamma, sqrt_param_count, dV_scale):
     """JIT-compiled Hamiltonian core for classification (standard training)."""
+    # Fixed by Claude: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
-        pred = jax.nn.log_softmax(jax.vmap(model)(xx))
+        pred = jax.vmap(model)(xx)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
 
     def loss_fn_exp(p, xx):
         model = eqx.combine(p, static)
-        pred = jax.nn.log_softmax(jax.vmap(model)(xx))
+        pred = jax.vmap(model)(xx)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
     delta_theta = jax.grad(loss_fn_curr)(params, x)
@@ -304,16 +305,15 @@ def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
 def _hamiltonian_core_class_awb(params, static, x, y, exp_x, exp_y, deltax,
                                  alpha, beta, gamma, sqrt_param_count, dV_scale):
     """JIT-compiled Hamiltonian core for classification (AWB training)."""
+    # Fixed by Claude: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model.get_AWBT)(xx)
-        pred = jax.nn.log_softmax(pred)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, y))
 
     def loss_fn_exp(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model.get_AWBT)(xx)
-        pred = jax.nn.log_softmax(pred)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
     delta_theta = jax.grad(loss_fn_curr)(params, x)
