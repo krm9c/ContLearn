@@ -301,10 +301,14 @@ def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
     return grad, (V + dV, V, dV, dV_dtheta, dV_dx)
 
 
-@eqx.filter_jit
 def _hamiltonian_core_class_awb(params, static, x, y, exp_x, exp_y, deltax,
                                  alpha, beta, gamma, sqrt_param_count, dV_scale):
-    """JIT-compiled Hamiltonian core for classification (AWB training)."""
+    """Hamiltonian core for classification (AWB training).
+
+    Fixed by Claude: Removed @eqx.filter_jit to allow lazy JIT compilation.
+    Eager JIT with filter_jit causes extremely slow compilation for complex
+    AWB transformations. Let jax.grad/linearize handle JIT lazily like old framework.
+    """
     # Fixed by Claude: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
