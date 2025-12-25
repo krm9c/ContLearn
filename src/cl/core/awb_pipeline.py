@@ -25,6 +25,9 @@ Recording control ensures clean separation of training phases:
 from typing import Dict, Any, Tuple
 import equinox as eqx
 import optax
+import torch
+from torch.utils.data import DataLoader, TensorDataset, Subset
+import numpy as np
 
 from .awb_operations import AWBOperations
 from .awb import (
@@ -40,6 +43,64 @@ from ..config.constants import (
     DEFAULT_AWB_AVERAGING_WINDOW,
     DEFAULT_LR,
 )
+
+
+def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
+    """Create a balanced validation set from a data loader.
+
+    Samples validation_ratio% of data from each class to ensure balanced representation.
+    This is used for AWB architecture search to avoid using full training data.
+
+    Args:
+        loader: PyTorch DataLoader to sample from
+        validation_ratio: Fraction of data to use for validation (default 0.2 = 20%)
+        batch_size: Batch size for validation loader
+
+    Returns:
+        DataLoader with balanced validation set
+    """
+    # Collect all data from the loader
+    all_x, all_y = [], []
+    for batch_x, batch_y in loader:
+        all_x.append(batch_x)
+        all_y.append(batch_y)
+
+    all_x = torch.cat(all_x, dim=0)
+    all_y = torch.cat(all_y, dim=0)
+
+    # Group indices by class
+    unique_classes = torch.unique(all_y)
+    val_indices = []
+
+    for cls in unique_classes:
+        cls_indices = torch.where(all_y == cls)[0]
+        n_samples = len(cls_indices)
+        n_val = max(1, int(n_samples * validation_ratio))  # At least 1 sample per class
+
+        # Randomly sample indices for this class
+        perm = torch.randperm(n_samples)
+        val_idx = cls_indices[perm[:n_val]]
+        val_indices.append(val_idx)
+
+    # Combine all validation indices
+    val_indices = torch.cat(val_indices)
+
+    # Create validation dataset
+    val_x = all_x[val_indices]
+    val_y = all_y[val_indices]
+
+    val_dataset = TensorDataset(val_x, val_y)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=False,
+        drop_last=False  # Keep all validation samples
+    )
+
+    print(f"  Created balanced validation set: {len(val_indices)} samples from {len(unique_classes)} classes")
+    return val_loader
 
 
 def run_awb_task(
@@ -165,10 +226,21 @@ def run_awb_task(
     if change_arch:
         # STEP 3a: Architecture Search
         print(f"\n[STEP 3a] Architecture search - NOT recorded")
+
+        # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
+        # This is more efficient than using full training data and prevents overfitting
+        validation_ratio = config.get('awb_validation_ratio', 0.2)
+        val_batch_size = config.get('batch_size', 64)
+
+        val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
+        val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+
         # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
         test_curr, test_exp = testloader
+
+        # Use validation sets for architecture search instead of full training data
         new_arch = awb_ops.search_architecture(
-            model, task_id, trainWLoss, trainloader, exploader,
+            model, task_id, trainWLoss, val_trainloader, val_exploader,
             test_curr, test_exp, config, trainer
         )
         print(f"  Original: {original_arch}")
