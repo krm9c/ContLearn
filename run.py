@@ -14,7 +14,6 @@ Arguments:
     --no-plots: Skip plot generation (default: generate plots)
     --figures-dir: Output directory for figures (default: figures)
 """
-
 import argparse
 import sys
 import os
@@ -44,10 +43,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python scripts/run.py config/sine.json
-    python scripts/run.py config/sine.json --runs 3
-    python scripts/run.py config/sine.json --no-plots
-    python scripts/run.py config/sine.json --figures-dir outputs/figures
+    python run.py kkt_run/config/sine.json
+    python run.py kkt_run/config/sine.json --runs 3
+    python run.py kkt_run/config/sine.json --no-plots
+    python run.py kkt_run/config/sine.json --figures-dir outputs/figures
         """
     )
     parser.add_argument('config', type=str, help='Path to JSON configuration file')
@@ -80,7 +79,7 @@ Examples:
     print(f"AWB enabled: {config.get('awb_enabled', False)}")
     print()
 
-    # Added by Claude: Construct base path with AWB suffix if enabled and not already present
+    #Construct base path with AWB suffix if enabled and not already present
     if args.output_dir:
         # Use custom output directory (for Polaris runs)
         base_model_path = os.path.join(args.output_dir, args.model_suffix or 'model')
@@ -110,7 +109,7 @@ Examples:
 
         all_records[f'run_{run_id}'] = record_dict
 
-        # Added by Claude: Generate plots for each run (unless --no-plots)
+        # Generate plots for each run (unless --no-plots)
         # Use AWB-aware figures directory
         if not args.no_plots:
             figures_dir = args.figures_dir if args.figures_dir != 'figures' or args.output_dir else args.figures_dir
