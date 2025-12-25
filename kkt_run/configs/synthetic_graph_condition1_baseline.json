@@ -9,6 +9,7 @@
     "lr_schedule": "constant",
     "lr": 0.0001,
     "warmup_epochs": 0,
+    "task_warmup_enabled": false,
     "model_path": "kkt_run/results/synthetic_graph_condition1",
     "save_iter": 50,
     "grad_weights": [0.01, 0.98, 0.1],
