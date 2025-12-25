@@ -19,6 +19,11 @@ unset __conda_setup
 
 conda activate jax__kkt
 
+# Get the directory of this script and repo root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+RUN_SCRIPT="$REPO_ROOT/run_files/scripts/run.py"
+
 # Create output directories
 mkdir -p jlse/logs
 
@@ -36,7 +41,7 @@ run_config() {
     echo "Started at: $(date)"
     echo "========================================"
 
-    python ../run_files/scripts/run.py configs/$config > $logfile 2>&1
+    python "$RUN_SCRIPT" configs/$config > $logfile 2>&1
 
     if [ $? -eq 0 ]; then
         echo "✓ SUCCESS: Synthetic Graph - $condition ($(date))"
