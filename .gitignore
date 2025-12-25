@@ -96,6 +96,11 @@ temp/
 *.pyc
 *.pyo
 *.pyd
+*.cobaltlog
+*.output
+*.error
+*.err
+*.out
 
 # OS specific
 .DS_Store
