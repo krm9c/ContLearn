@@ -25,9 +25,13 @@ from ..core.awb import (
 )
 # Added by Claude: AWB pipeline refactoring
 from ..core.awb_pipeline import run_awb_task
-from ..models.mlp import MLPAWBOps
-from ..models.cnn import CNNAWBOps
-from ..models.gcn import GCNAWBOps
+from ..models.mlp import MLPAWBOps, create_mlp
+from ..models.cnn import CNNAWBOps, CNN, CNN3D
+from ..models.gcn import GCNAWBOps, GCN
+from ..datasets.sine import SineDataset
+from ..datasets.mnist import MNISTDataset, PermutedMNISTDataset
+from ..datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
+from ..datasets.synthetic_graph import SyntheticGraphDataset
 
 from ..config.constants import (
     DEFAULT_OPTIMIZER,
@@ -598,10 +602,10 @@ def run_architecture_search(model, config, task_id, trainWLoss, preliminary_epoc
 # ============================================================================
 
 def load_checkpoint(config: Dict[str, Any]):
-    """Load model, dataset, trainer, and optimizer based on config.
+    """Initialize model, dataset, trainer, and optimizer based on config.
 
-    Dispatches to appropriate loaders based on config['problem'] (data structure)
-    and config['prob'] (task type).
+    Note: Despite the name "load_checkpoint", this function initializes fresh components
+    (checkpoint loading is not yet implemented).
 
     Args:
         config: Configuration dict
@@ -609,25 +613,100 @@ def load_checkpoint(config: Dict[str, Any]):
     Returns:
         Tuple of (trainer, optimizer, dataset, model)
     """
-    # Added by Claude: Check 'problem' field first to distinguish graph vs vector data
-    problem = config.get('problem', 'vectors')  # 'graph' or 'vectors'
-    prob = config.get('prob', 'regression')      # 'regression' or 'classification'
+    # Added by Claude: Unified initialization for all problem types
+    from ..config.constants import DEFAULT_BATCH_SIZE_VECTOR, DEFAULT_REPLAY_BUFFER_VECTOR, DEFAULT_AWB_ENABLED
 
-    # Dispatch based on data structure type (problem field)
-    if problem == 'graph':
-        # Graph-structured data (GCN)
-        from .graph_classification import load_graph_checkpoint
-        return load_graph_checkpoint(config)
-    elif prob == 'regression':
-        # Vector regression (MLP)
-        from .regression import load_regression_checkpoint
-        return load_regression_checkpoint(config)
-    elif prob == 'classification':
-        # Vector classification (CNN/MLP)
-        from .classification import load_classification_checkpoint
-        return load_classification_checkpoint(config)
+    problem = config.get('problem', 'vectors')  # 'graph' or 'vectors'
+    data_type = config.get('data', 'sine')      # Dataset name
+    network = config.get('network', 'fcnn')     # Network architecture
+
+    # Create dataset based on data type
+    dataset_config = {
+        'delta': config.get('delta', 0.001),
+        'batch_size': config.get('batch_size', DEFAULT_BATCH_SIZE_VECTOR),
+        'len_exp_replay': config.get('len_exp_replay', DEFAULT_REPLAY_BUFFER_VECTOR),
+        'debug_mode': config.get('debug_mode', False),
+        'debug_limit': config.get('debug_limit', 100),
+        'n_task': config.get('n_task', 10),
+        'problem': problem,
+        'network': network,
+    }
+
+    if data_type == 'sine':
+        dataset = SineDataset(dataset_config)
+    elif data_type == 'mnist':
+        dataset = MNISTDataset(dataset_config)
+    elif data_type == 'permuted_mnist':
+        dataset = PermutedMNISTDataset(dataset_config)
+    elif data_type == 'cifar10':
+        dataset = CIFAR10Dataset(dataset_config)
+    elif data_type == 'cifar100':
+        dataset = CIFAR100Dataset(dataset_config)
+    elif data_type == 'synthetic':
+        dataset = SyntheticGraphDataset(dataset_config)
     else:
-        raise ValueError(f"Unknown problem configuration: problem={problem}, prob={prob}")
+        raise ValueError(f"Unknown dataset: {data_type}")
+
+    # Create model based on network type
+    model_config = {
+        'input_size': dataset.input_size,
+        'output_size': dataset.output_size,
+        'awb_enabled': config.get('awb_enabled', DEFAULT_AWB_ENABLED),
+    }
+
+    if network == 'fcnn':
+        # MLP for regression or vectors
+        model_config.update({
+            'n_layers': config.get('n_layers', 4),
+            'hln': config.get('hln', 75),
+        })
+        model = create_mlp(model_config)
+    elif network == 'cnn':
+        # CNN for image classification
+        model = CNN(
+            input_size=model_config['input_size'],
+            output_size=model_config['output_size'],
+            feed_sizes=config.get('feed_sizes', [100, 100]),
+            filter_size=config.get('filter_size', [3, 3, 3]),
+            channel_in=config.get('channel_in', 1),
+            awb_enabled=model_config['awb_enabled'],
+            key=jax.random.PRNGKey(0)
+        )
+    elif network == 'cnn3d':
+        # CNN3D for multi-channel images
+        model = CNN3D(
+            input_size=model_config['input_size'],
+            output_size=model_config['output_size'],
+            feed_sizes=config.get('feed_sizes', [100, 100]),
+            filter_size=config.get('filter_size', [3, 3, 3]),
+            channel_in=config.get('channel_in', 3),
+            awb_enabled=model_config['awb_enabled'],
+            key=jax.random.PRNGKey(0)
+        )
+    elif network == 'gcn':
+        # GCN for graph data
+        model = GCN(
+            input_size=model_config['input_size'],
+            output_size=model_config['output_size'],
+            gcn_sizes=config.get('gcn_sizes', [64, 64]),
+            feed_sizes=config.get('feed_sizes', [100, 100]),
+            awb_enabled=model_config['awb_enabled'],
+            key=jax.random.PRNGKey(0)
+        )
+    else:
+        raise ValueError(f"Unknown network: {network}")
+
+    # Create trainer
+    trainer = Trainer(
+        loss=config.get('loss', 'mse' if problem == 'regression' else 'cross_entropy'),
+        metric=config.get('metric', 'mse' if problem == 'regression' else 'accuracy'),
+        problem=problem,
+    )
+
+    # Create optimizer
+    optimizer = create_optimizer(config)
+
+    return trainer, optimizer, dataset, model
 
 
 def create_awb_operations(model):
@@ -945,12 +1024,11 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     test_loader = data.generate_test_loader(prev_task_id, config.get('batch_size', 64))
 
                     # Evaluate model on this task
-                    test_metric = trainer.compute_test_metric(
+                    test_metric = trainer.return_metric(
                         params=params,
-                        static=static,
-                        testloader=test_loader,
-                        problem_type=problem_type,
-                        loss_type=loss_type
+                        statics=static,
+                        data=test_loader,
+                        notABTrain=True
                     )
 
                     task_performances[prev_task_id] = float(test_metric)
@@ -1013,12 +1091,11 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     test_loader = data.generate_test_loader(prev_task_id, config.get('batch_size', 64))
 
                     # Evaluate model on this task
-                    test_metric = trainer.compute_test_metric(
+                    test_metric = trainer.return_metric(
                         params=params,
-                        static=static,
-                        testloader=test_loader,
-                        problem_type=problem_type,
-                        loss_type=loss_type
+                        statics=static,
+                        data=test_loader,
+                        notABTrain=True
                     )
 
                     task_performances[prev_task_id] = float(test_metric)
