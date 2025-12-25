@@ -64,6 +64,10 @@ for i in {0..3}; do
     # Run in background with dedicated GPU
     (
         export CUDA_VISIBLE_DEVICES=${GPU_ID}
+        # GPU optimization flags (conservative, deterministic)
+        export JAX_PLATFORMS=cuda
+        export XLA_PYTHON_CLIENT_PREALLOCATE=true
+        export XLA_PYTHON_CLIENT_ALLOCATOR=platform
         python "${PROJECT_ROOT}/run.py" "${CONFIG_PATH}" \
             --output-dir "${RESULTS_DIR}/${DATASET}" \
             --figures-dir "${RESULTS_DIR}/${DATASET}/figures" \
