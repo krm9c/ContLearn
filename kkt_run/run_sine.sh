@@ -25,14 +25,14 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 RUN_SCRIPT="$REPO_ROOT/run_files/scripts/run.py"
 
 # Create output directories
-mkdir -p jlse/logs
+mkdir -p "$SCRIPT_DIR/logs"
 
 # Function to run a config
 run_config() {
     local config=$1
     local condition=$2
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local logfile="jlse/logs/sine_${condition}_${timestamp}.log"
+    local logfile="$SCRIPT_DIR/logs/sine_${condition}_${timestamp}.log"
 
     echo "========================================"
     echo "Running: SINE - $condition"
@@ -41,7 +41,7 @@ run_config() {
     echo "Started at: $(date)"
     echo "========================================"
 
-    python "$RUN_SCRIPT" configs/$config > $logfile 2>&1
+    python "$RUN_SCRIPT" "$SCRIPT_DIR/configs/$config" > "$logfile" 2>&1
 
     if [ $? -eq 0 ]; then
         echo "✓ SUCCESS: SINE - $condition ($(date))"
