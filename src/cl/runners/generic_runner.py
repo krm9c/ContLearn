@@ -722,6 +722,7 @@ def load_checkpoint(config: Dict[str, Any]):
         # Default feed sizes: [flatten_size, 512, 64, num_classes]
         feed_sizes = config.get('feed_sizes', [flatten_size, 512, 64, num_classes])
         feed_sizes[0] = flatten_size  # Always use calculated flatten size
+        feed_sizes[-1] = num_classes  # Fixed by Claude: Always use correct num_classes
 
         model = CNN(
             key=jax.random.PRNGKey(0),
@@ -755,6 +756,7 @@ def load_checkpoint(config: Dict[str, Any]):
         # Default feed sizes for CIFAR
         feed_sizes = config.get('feed_sizes', [flatten_size, 512, 256, num_classes])
         feed_sizes[0] = flatten_size  # Always use calculated flatten size
+        feed_sizes[-1] = num_classes  # Fixed by Claude: Always use correct num_classes (important for CIFAR-100)
 
         model = CNN3D(
             key=jax.random.PRNGKey(0),
