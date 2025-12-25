@@ -598,6 +598,49 @@ def run_architecture_search(model, config, task_id, trainWLoss, preliminary_epoc
 
 
 # ============================================================================
+# Evaluation Helpers
+# ============================================================================
+
+def evaluate_on_loader(trainer, params, static, loader, problem_type='vectors'):
+    """Evaluate model on a full DataLoader and return average metric.
+
+    Added by Claude: Helper to properly iterate through DataLoader for evaluation.
+
+    Args:
+        trainer: Trainer instance with return_metric method
+        params: Model parameters
+        static: Static model components
+        loader: DataLoader to evaluate on
+        problem_type: 'vectors' or 'graph'
+
+    Returns:
+        float: Average metric across all batches
+    """
+    metrics = []
+
+    for batch in loader:
+        # Convert PyTorch tensors to JAX arrays for vectors
+        if problem_type == 'vectors':
+            x, y = batch
+            # Convert to numpy first, then to JAX
+            x = jnp.array(x.numpy() if hasattr(x, 'numpy') else x)
+            y = jnp.array(y.numpy() if hasattr(y, 'numpy') else y)
+            batch = (x, y)
+        # For graphs: batch is more complex, handled in return_metric
+
+        metric_value = trainer.return_metric(
+            params=params,
+            statics=static,
+            data=batch,
+            notABTrain=True
+        )
+        metrics.append(float(metric_value))
+
+    # Return average metric across all batches
+    return sum(metrics) / len(metrics) if metrics else 0.0
+
+
+# ============================================================================
 # Model and Dataset Loading (Config-based Dispatch)
 # ============================================================================
 
@@ -1024,11 +1067,12 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     test_loader = data.generate_test_loader(prev_task_id, config.get('batch_size', 64))
 
                     # Evaluate model on this task
-                    test_metric = trainer.return_metric(
+                    test_metric = evaluate_on_loader(
+                        trainer=trainer,
                         params=params,
-                        statics=static,
-                        data=test_loader,
-                        notABTrain=True
+                        static=static,
+                        loader=test_loader,
+                        problem_type=problem_type
                     )
 
                     task_performances[prev_task_id] = float(test_metric)
@@ -1091,11 +1135,12 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     test_loader = data.generate_test_loader(prev_task_id, config.get('batch_size', 64))
 
                     # Evaluate model on this task
-                    test_metric = trainer.return_metric(
+                    test_metric = evaluate_on_loader(
+                        trainer=trainer,
                         params=params,
-                        statics=static,
-                        data=test_loader,
-                        notABTrain=True
+                        static=static,
+                        loader=test_loader,
+                        problem_type=problem_type
                     )
 
                     task_performances[prev_task_id] = float(test_metric)
