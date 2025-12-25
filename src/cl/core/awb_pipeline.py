@@ -28,6 +28,8 @@ import optax
 import torch
 from torch.utils.data import DataLoader, TensorDataset, Subset
 import numpy as np
+from torch_geometric.loader import DataLoader as GeometricDataLoader
+from torch_geometric.data import Batch
 
 from .awb_operations import AWBOperations
 from .awb import (
@@ -51,56 +53,101 @@ def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
     Samples validation_ratio% of data from each class to ensure balanced representation.
     This is used for AWB architecture search to avoid using full training data.
 
+    Handles both vector datasets (MNIST, CIFAR) and graph datasets (synthetic graphs).
+
     Args:
-        loader: PyTorch DataLoader to sample from
+        loader: PyTorch DataLoader or torch_geometric DataLoader to sample from
         validation_ratio: Fraction of data to use for validation (default 0.2 = 20%)
         batch_size: Batch size for validation loader
 
     Returns:
         DataLoader with balanced validation set
     """
-    # Collect all data from the loader
-    all_x, all_y = [], []
-    for batch_x, batch_y in loader:
-        all_x.append(batch_x)
-        all_y.append(batch_y)
+    # Detect if this is a graph dataset or vector dataset
+    # Check the first batch to determine loader type
+    first_batch = next(iter(loader))
+    is_graph = isinstance(first_batch, Batch)
 
-    all_x = torch.cat(all_x, dim=0)
-    all_y = torch.cat(all_y, dim=0)
+    if is_graph:
+        # Handle graph datasets (torch_geometric)
+        all_graphs = []
+        for batch in loader:
+            # Extract individual graphs from the batch
+            all_graphs.extend(batch.to_data_list())
 
-    # Group indices by class
-    unique_classes = torch.unique(all_y)
-    val_indices = []
+        # Group graphs by class
+        class_to_graphs = {}
+        for graph in all_graphs:
+            label = int(graph.y.item())
+            if label not in class_to_graphs:
+                class_to_graphs[label] = []
+            class_to_graphs[label].append(graph)
 
-    for cls in unique_classes:
-        cls_indices = torch.where(all_y == cls)[0]
-        n_samples = len(cls_indices)
-        n_val = max(1, int(n_samples * validation_ratio))  # At least 1 sample per class
+        # Sample validation graphs from each class
+        val_graphs = []
+        for cls, graphs in class_to_graphs.items():
+            n_samples = len(graphs)
+            n_val = max(1, int(n_samples * validation_ratio))
+            # Randomly sample graphs for this class
+            perm = torch.randperm(n_samples)
+            val_graphs.extend([graphs[i] for i in perm[:n_val]])
 
-        # Randomly sample indices for this class
-        perm = torch.randperm(n_samples)
-        val_idx = cls_indices[perm[:n_val]]
-        val_indices.append(val_idx)
+        # Create validation loader
+        val_loader = GeometricDataLoader(
+            val_graphs,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False,
+            drop_last=False
+        )
 
-    # Combine all validation indices
-    val_indices = torch.cat(val_indices)
+        print(f"  Created balanced validation set: {len(val_graphs)} graphs from {len(class_to_graphs)} classes")
+        return val_loader
 
-    # Create validation dataset
-    val_x = all_x[val_indices]
-    val_y = all_y[val_indices]
+    else:
+        # Handle vector datasets (MNIST, CIFAR)
+        all_x, all_y = [], []
+        for batch_x, batch_y in loader:
+            all_x.append(batch_x)
+            all_y.append(batch_y)
 
-    val_dataset = TensorDataset(val_x, val_y)
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=False,
-        drop_last=False  # Keep all validation samples
-    )
+        all_x = torch.cat(all_x, dim=0)
+        all_y = torch.cat(all_y, dim=0)
 
-    print(f"  Created balanced validation set: {len(val_indices)} samples from {len(unique_classes)} classes")
-    return val_loader
+        # Group indices by class
+        unique_classes = torch.unique(all_y)
+        val_indices = []
+
+        for cls in unique_classes:
+            cls_indices = torch.where(all_y == cls)[0]
+            n_samples = len(cls_indices)
+            n_val = max(1, int(n_samples * validation_ratio))  # At least 1 sample per class
+
+            # Randomly sample indices for this class
+            perm = torch.randperm(n_samples)
+            val_idx = cls_indices[perm[:n_val]]
+            val_indices.append(val_idx)
+
+        # Combine all validation indices
+        val_indices = torch.cat(val_indices)
+
+        # Create validation dataset
+        val_x = all_x[val_indices]
+        val_y = all_y[val_indices]
+
+        val_dataset = TensorDataset(val_x, val_y)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False,
+            drop_last=False  # Keep all validation samples
+        )
+
+        print(f"  Created balanced validation set: {len(val_indices)} samples from {len(unique_classes)} classes")
+        return val_loader
 
 
 def run_awb_task(

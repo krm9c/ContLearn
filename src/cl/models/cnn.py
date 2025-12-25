@@ -270,14 +270,22 @@ class CNN(eqx.Module):
         candidates = []
 
         # Grid search over filter and hidden dimensions
+        # Fixed by Claude: Center search around current best with expanding radius
+        # - At iteration=0: search around x,y with baseline radius
+        # - At later iterations: expand search radius
+        # - Always has variety (doesn't multiply by 0 at iteration=0)
         for p in range(search_filter_min, search_filter_max):
             for n in range(0, search_hidden_range):
                 for j in range(0, search_hidden_range):
                     candidate_filter = p
+                    # Center offsets around 0 using (j - range//2) and (n - range//2)
+                    # Scale by (iteration + 1) to expand radius in later iterations
+                    offset_j = (j - search_hidden_range // 2) * step_mlp
+                    offset_n = (n - search_hidden_range // 2) * step_mlp
                     candidate_feed = [
                         calc_feed_input_size(candidate_filter, self.input_size, self.channel_out),
-                        x + iteration * (j + 1) * step_mlp,
-                        y + iteration * (n + 1) * step_mlp,
+                        x + (iteration + 1) * offset_j,
+                        y + (iteration + 1) * offset_n,
                         num_classes
                     ]
                     candidates.append((candidate_filter, candidate_feed))
@@ -581,14 +589,22 @@ class CNN3D(eqx.Module):
         candidates = []
 
         # Grid search over filter and hidden dimensions
+        # Fixed by Claude: Center search around current best with expanding radius
+        # - At iteration=0: search around x,y with baseline radius
+        # - At later iterations: expand search radius
+        # - Always has variety (doesn't multiply by 0 at iteration=0)
         for p in range(search_filter_min, search_filter_max):
             for n in range(0, search_hidden_range):
                 for j in range(0, search_hidden_range):
                     candidate_filter = p
+                    # Center offsets around 0 using (j - range//2) and (n - range//2)
+                    # Scale by (iteration + 1) to expand radius in later iterations
+                    offset_j = (j - search_hidden_range // 2) * step_mlp
+                    offset_n = (n - search_hidden_range // 2) * step_mlp
                     candidate_feed = [
                         calc_feed_input_size(candidate_filter, self.input_size, self.channel_out),
-                        x + iteration * (j + 1) * step_mlp,
-                        y + iteration * (n + 1) * step_mlp,
+                        x + (iteration + 1) * offset_j,
+                        y + (iteration + 1) * offset_n,
                         num_classes
                     ]
                     candidates.append((candidate_filter, candidate_feed))
