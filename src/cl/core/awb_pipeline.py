@@ -165,9 +165,11 @@ def run_awb_task(
     if change_arch:
         # STEP 3a: Architecture Search
         print(f"\n[STEP 3a] Architecture search - NOT recorded")
+        # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
+        test_curr, test_exp = testloader
         new_arch = awb_ops.search_architecture(
             model, task_id, trainWLoss, trainloader, exploader,
-            valloader, testloader, config, trainer
+            test_curr, test_exp, config, trainer
         )
         print(f"  Original: {original_arch}")
         print(f"  Optimal: {new_arch}")
