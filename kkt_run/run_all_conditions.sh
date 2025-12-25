@@ -25,8 +25,7 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 RUN_SCRIPT="$REPO_ROOT/run_files/scripts/run.py"
 
 # Create output directories
-mkdir -p jlse/logs
-mkdir -p jlse/results
+mkdir -p "$SCRIPT_DIR/logs"
 
 # Function to run a config
 run_config() {
@@ -34,7 +33,7 @@ run_config() {
     local dataset=$2
     local condition=$3
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local logfile="jlse/logs/${dataset}_${condition}_${timestamp}.log"
+    local logfile="$SCRIPT_DIR/logs/${dataset}_${condition}_${timestamp}.log"
 
     echo "========================================"
     echo "Running: $dataset - $condition"
@@ -43,7 +42,7 @@ run_config() {
     echo "Started at: $(date)"
     echo "========================================"
 
-    python "$RUN_SCRIPT" configs/$config > $logfile 2>&1
+    python "$RUN_SCRIPT" "$SCRIPT_DIR/configs/$config" > "$logfile" 2>&1
 
     if [ $? -eq 0 ]; then
         echo "✓ SUCCESS: $dataset - $condition ($(date))"
