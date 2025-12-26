@@ -27,7 +27,7 @@ from .base import BaseDataset
 from ..config.constants import DEFAULT_SINE_TIME_STEP
 
 
-def generate_sine_data(delta: float, n_tasks: int = 40, output_path: str = 'Incremental_Sine1e^4.p',
+def generate_sine_data(delta: float, n_tasks: int = 40, output_path: str = 'data/Incremental_Sine1e^4.p',
                        seed: int = 1) -> str:
     """Generate sine data for continual learning tasks.
 
