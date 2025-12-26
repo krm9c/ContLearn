@@ -7,7 +7,7 @@
     "network": "fcnn",
     "n_task": 2,
     "epochs_per_task": 2,
-    "batch_size": 16,
+    "batch_size": 4096,
     "awb_enabled": false,
     "lr_schedule": "cosine",
     "lr": 0.0001,
@@ -15,7 +15,11 @@
     "lr_warmup_factor": 0.1,
     "model_path": "kkt_run/results/sine_condition2_debug",
     "save_iter": 1,
-    "grad_weights": [0.01, 0.98, 0.1],
+    "grad_weights": [
+        0.01,
+        0.98,
+        0.1
+    ],
     "debug_mode": true,
     "debug_limit": 50,
     "per_task_eval_enabled": true

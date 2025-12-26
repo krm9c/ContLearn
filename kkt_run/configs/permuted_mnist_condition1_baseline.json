@@ -4,14 +4,18 @@
     "data": "permuted_mnist",
     "n_task": 10,
     "epochs_per_task": 250,
-    "batch_size": 1024,
+    "batch_size": 2048,
     "awb_enabled": false,
     "lr_schedule": "constant",
     "lr": 0.0001,
     "warmup_epochs": 0,
     "model_path": "kkt_run/results/permuted_mnist_condition1",
     "save_iter": 50,
-    "grad_weights": [0.01, 0.98, 0.1],
+    "grad_weights": [
+        0.01,
+        0.98,
+        0.1
+    ],
     "debug_mode": false,
     "per_task_eval_enabled": true
 }
