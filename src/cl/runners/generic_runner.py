@@ -620,6 +620,11 @@ def evaluate_on_loader(trainer, params, static, loader, problem_type='vectors'):
     """
     metrics = []
 
+    # Added by Claude: Get graph transforms if needed (converts edge_index to adj)
+    if problem_type == 'graph':
+        from ..core.loops import get_graph_transforms
+        transforms = get_graph_transforms()
+
     for batch in loader:
         # Convert PyTorch tensors to JAX arrays for vectors
         if problem_type == 'vectors':
@@ -634,7 +639,9 @@ def evaluate_on_loader(trainer, params, static, loader, problem_type='vectors'):
             y_dtype = jnp.int64 if y_np.dtype.kind in ('i', 'u') else jnp.float64
             y = jnp.asarray(y_np, dtype=y_dtype)
             batch = (x, y)
-        # For graphs: batch is more complex, handled in return_metric
+        else:
+            # For graphs: apply transforms to convert edge_index to adj
+            batch = transforms(batch)
 
         metric_value = trainer.return_metric(
             params=params,
