@@ -289,17 +289,17 @@ git clean -fd  # if needed
 
 ✅ **GPU Utilization Optimization (Dec 25, 2024)**:
 - Diagnosed root cause: batch_size=1024 too small for H200 (processes in 0.14ms)
-- Increased dataset capacities:
-  - Sine: 4,000 → 100,000 samples
-  - Synthetic Graph: 1,000 → 100,000 graphs
-- Optimized batch sizes for all configs:
-  - MNIST/Permuted MNIST: 1024 → 2048 (2x)
-  - CIFAR-10: 1024 → 2048 (2x)
-  - CIFAR-100: 1024 (kept conservative, 20 tasks)
-  - Sine: 1024 → 4096 (4x)
-  - Synthetic Graph: 1024 → 8192 (8x)
-- Expected improvement: 0-8% → 20-40% GPU utilization
-- No gradient accumulation needed (<2GB memory used vs 144GB available)
+- **REVISED** to conservative settings after OOM errors:
+  - Initial attempt (100x dataset increase) caused CPU RAM exhaustion
+  - Synthetic graphs OOM killed, CIFAR-100 took 60s/iteration
+- **Final conservative configuration**:
+  - Dataset sizes (10x original):
+    - Sine: 4,000 → 40,000 samples
+    - Synthetic Graph: 1,000 → 10,000 graphs
+  - Batch sizes (uniform 2x improvement):
+    - All datasets: 2,048 (was 1,024)
+- Expected improvement: 8% → 15-25% GPU utilization
+- Tradeoff: Conservative but stable (avoids OOM, fast iterations)
 
 ## Next Steps / TODO
 
