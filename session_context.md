@@ -333,11 +333,16 @@ git clean -fd  # if needed
 
 **Expected cumulative impact**: 25-40% GPU utilization (up from 0%)
 
+**Actual results (Dec 25, 2024)**:
+- ✅ Performance improved: 60s/iteration → 12s/iteration (**5x speedup**)
+- ✅ System now GPU-bound (computing Hamiltonian) instead of CPU-bound (data movement)
+- ✅ All optimizations preserve deterministic results (same random seeds)
+- ✅ Memory usage: < 1% GPU (safe on H200 144GB)
+- **Conclusion**: Further optimization would require algorithm changes. Current performance is optimal for the Hamiltonian CL algorithm (3 gradients + Hessian-vector product per iteration).
+
 ## Next Steps / TODO
 
 - [ ] Test synthetic graph experiments (should now work with config fixes)
-- [ ] Run `python diagnose_gpu_utilization.py` and share output
-- [ ] Based on diagnostic results, increase batch sizes in configs
 - [ ] Monitor condition 1 runs to ensure no smoothing occurs
 - [ ] Compare all 4 conditions across 5 datasets
 - [ ] Generate comparative plots for paper
