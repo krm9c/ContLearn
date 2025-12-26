@@ -327,6 +327,11 @@ class TrainingLoopsMixin:
             trainloader, exploader, problem_type
         )
 
+        # Added by Claude: Initialize JAX PRNG key for GPU-accelerated random generation
+        # Use deterministic seed based on task_id for reproducibility
+        rng_seed = config.get('random_seed', 42) + task_id * 1000
+        rng_key = jax.random.PRNGKey(rng_seed)
+
         # JIT-compile optimizer step to avoid recompilation overhead
         @jax.jit
         def optimizer_step(grad, opt_state, params):
@@ -378,8 +383,10 @@ class TrainingLoopsMixin:
                     # Graph data processing
                     batch = transforms(batch)
                     batch_ex = transforms(batch_ex)
-                    delta_x = np_.random.normal(0, var_x, batch_ex.x.numpy().shape)
-                    delta_adj = np_.random.normal(0, var_adj, batch_ex.adj.shape)
+                    # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
+                    rng_key, subkey1, subkey2 = jax.random.split(rng_key, 3)
+                    delta_x = jax.random.normal(subkey1, batch_ex.x.numpy().shape) * var_x
+                    delta_adj = jax.random.normal(subkey2, batch_ex.adj.shape) * var_adj
                     data = (static, (batch, batch_ex, delta_x, delta_adj))
                 else:
                     # Vector data processing (MLP, CNN)
@@ -400,8 +407,9 @@ class TrainingLoopsMixin:
                         y = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.int64)
                         exp_y = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.int64)
 
-                    # Generate perturbations (numpy is fine here, small overhead)
-                    delta_x = jnp.asarray(np_.random.normal(0, var_x, exp_x.shape))
+                    # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
+                    rng_key, subkey = jax.random.split(rng_key)
+                    delta_x = jax.random.normal(subkey, exp_x.shape) * var_x
                     data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
                 # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
