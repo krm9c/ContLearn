@@ -10,6 +10,7 @@
     "awb_preliminary_epochs": 3,
     "awb_ab_training_epochs": 5,
     "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": true,
     "debug_mode": true,
     "debug_limit": 1000,
     "profiling_enabled": true,

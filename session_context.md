@@ -340,11 +340,51 @@ git clean -fd  # if needed
 - ✅ Memory usage: < 1% GPU (safe on H200 144GB)
 - **Conclusion**: Further optimization would require algorithm changes. Current performance is optimal for the Hamiltonian CL algorithm (3 gradients + Hessian-vector product per iteration).
 
+## 🔴 ACTIVE: CIFAR-10 AWB Performance Issue (Dec 26, 2024)
+
+**Problem**: CIFAR-10 Conditions 3 & 4 with AWB enabled take ~2 hours for first epoch of A/B training (0% GPU utilization).
+- Condition 3: Takes ~25 hours (should be ~5 hours)
+- Condition 4: Takes ~50+ hours (should be ~10-15 hours)
+
+**Root Causes**:
+1. `awb_skip_transfer` flag exists in configs but NOT implemented in code
+   - Condition 3 runs 100 epochs of A/B training when it should skip entirely
+2. JAX JIT compilation hang during A/B training first epoch
+   - Takes ~7200s (2 hours) instead of expected 30-180s
+   - Likely in `hamiltonian.py:305` (_hamiltonian_core_class_awb)
+
+**Solution Plan** (see `PROFILING_PLAN.md` for full details):
+- **Part 1**: Implement `awb_skip_transfer` flag check in `awb_pipeline.py:302`
+- **Part 2**: Create non-intrusive profiling system with progressive testing
+  - Profiling decorator module: `src/cl/core/profiling.py`
+  - Debug configs: `kkt_run/configs/debug/*.json` (Sine, MNIST, CIFAR-10)
+  - Test progression: Simple → Complex to isolate bottleneck
+- **Part 3**: Apply targeted optimization based on profiling data
+  - Hypothesis 1: Phase 3 pre-conversion causing memory pressure
+  - Hypothesis 2: Experience replay (200k samples) overwhelming GPU
+  - Hypothesis 3: Complex Hamiltonian causing excessive JIT compilation
+  - Hypothesis 4: A/B matrix structure incompatible with JIT
+
+**Status**: Implementation ready to begin. See `PROFILING_PLAN.md` for complete handoff documentation.
+
+**Files**:
+- `PROFILING_PLAN.md` - Comprehensive implementation plan with code snippets
+- `/Users/kraghavan/.claude/plans/synthetic-stargazing-lighthouse.md` - Original plan
+
 ## Next Steps / TODO
 
+**PRIORITY: CIFAR-10 AWB Performance Fix**
+- [ ] Implement Part 1: `awb_skip_transfer` flag + profiling system (see `PROFILING_PLAN.md`)
+- [ ] Run progressive profiling tests (Sine → MNIST → CIFAR-10)
+- [ ] Analyze profiling data to identify bottleneck
+- [ ] Implement targeted optimization (Part 3)
+- [ ] Verify Condition 3 completes in ~5 hours (not 25)
+- [ ] Verify Condition 4 completes in ~10-15 hours (not 50+)
+
+**Experimental Validation**
 - [ ] Test synthetic graph experiments (should now work with config fixes)
 - [ ] Monitor condition 1 runs to ensure no smoothing occurs
-- [ ] Compare all 4 conditions across 5 datasets
+- [ ] Run all 4 conditions across 5 datasets (after AWB fix)
 - [ ] Generate comparative plots for paper
 
 ## References

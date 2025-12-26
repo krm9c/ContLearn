@@ -271,6 +271,12 @@ def run_awb_task(
 
     change_arch = should_change_arch(trainWLoss, previous_task_loss,
                                      threshold_high=threshold_high)
+
+    # Added by Claude: DEBUG HACK - Force architecture change for profiling
+    if config.get('force_arch_change', False):
+        print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
+        change_arch = True
+
     print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
 
     original_arch = awb_ops.get_model_architecture(model)
@@ -380,8 +386,9 @@ def run_awb_task(
 
                 # Added by Claude: Report A/B training time
                 if config.get('profiling_enabled'):
+                    from .profiling import format_memory_stats
                     ab_elapsed = time.time() - ab_training_start
-                    print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s")
+                    print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
 
                 # STEP 4: Compute V
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")

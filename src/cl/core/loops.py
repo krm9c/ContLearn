@@ -341,7 +341,8 @@ class TrainingLoopsMixin:
         # Added by Claude: Profile JAX pre-conversion (Phase 3 optimization)
         profiling_enabled = config.get('profiling_enabled', False)
         if profiling_enabled:
-            print(f"\n[PROFILE] JAX pre-conversion starting...")
+            from .profiling import format_memory_stats
+            print(f"\n[PROFILE] JAX pre-conversion starting... | {format_memory_stats()}")
             preconv_start = time.time()
 
         # Added by Claude: Phase 3 - Pre-convert train/exp loaders to JAX (ONCE per task)
@@ -369,7 +370,7 @@ class TrainingLoopsMixin:
 
             if profiling_enabled:
                 preconv_elapsed = time.time() - preconv_start
-                print(f"[PROFILE] JAX pre-conversion complete: {preconv_elapsed:.2f}s")
+                print(f"[PROFILE] JAX pre-conversion complete: {preconv_elapsed:.2f}s | {format_memory_stats()}")
                 print(f"[PROFILE]   Train batches: {len(train_batches_jax)}")
                 print(f"[PROFILE]   Exp batches: {len(exp_batches_jax)}")
 
@@ -498,7 +499,7 @@ class TrainingLoopsMixin:
                 # Added by Claude: Report first batch time
                 if epoch == 0 and batch_idx == 0 and profiling_enabled and not first_batch_done:
                     first_batch_elapsed = time.time() - first_batch_start
-                    print(f"[PROFILE] First batch complete: {first_batch_elapsed:.2f}s")
+                    print(f"[PROFILE] First batch complete: {first_batch_elapsed:.2f}s | {format_memory_stats()}")
                     first_batch_done = True
 
                 batch_idx += 1
