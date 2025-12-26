@@ -2,6 +2,8 @@
     "__comment": "CONDITION 3: Architecture Change, No Transfer",
     "__comment_": "Arch search enabled, skip A/B training, random init after arch change",
     "data": "synthetic",
+    "problem": "graph",
+    "network": "gcn",
     "n_task": 10,
     "epochs_per_task": 250,
     "batch_size": 1024,

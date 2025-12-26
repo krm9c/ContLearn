@@ -200,12 +200,24 @@ class LossMixin:
                 return jnp.mean(optax.l2_loss(y, preds))
 
         elif self.problem == 'graph':
-            batch, batch_ex = data
-            x_tog = [batch.x.numpy(), batch_ex.x.numpy()]
-            y_tog = [batch.y.numpy(), batch_ex.y.numpy()]
-            adj_tog = [batch.adj.numpy(), batch_ex.adj.numpy()]
-            b_tog = [batch.batch.numpy(), batch_ex.batch.numpy()]
-            n_tog = [batch.n_nodes.numpy(), batch_ex.n_nodes.numpy()]
+            # Added by Claude: Handle both tuple (batch, batch_ex) for training
+            # and single batch for evaluation
+            if isinstance(data, tuple) and len(data) == 2:
+                # Training mode: both current and experience batches
+                batch, batch_ex = data
+                x_tog = [batch.x.numpy(), batch_ex.x.numpy()]
+                y_tog = [batch.y.numpy(), batch_ex.y.numpy()]
+                adj_tog = [batch.adj.numpy(), batch_ex.adj.numpy()]
+                b_tog = [batch.batch.numpy(), batch_ex.batch.numpy()]
+                n_tog = [batch.n_nodes.numpy(), batch_ex.n_nodes.numpy()]
+            else:
+                # Evaluation mode: single batch (per-task evaluation)
+                batch = data
+                x_tog = [batch.x.numpy()]
+                y_tog = [batch.y.numpy()]
+                adj_tog = [batch.adj.numpy()]
+                b_tog = [batch.batch.numpy()]
+                n_tog = [batch.n_nodes.numpy()]
 
             if self.loss == 'class':
                 if notABTrain:
