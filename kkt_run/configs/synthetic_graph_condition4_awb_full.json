@@ -6,7 +6,7 @@
     "network": "gcn",
     "n_task": 10,
     "epochs_per_task": 250,
-    "batch_size": 8192,
+    "batch_size": 2048,
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 50,
