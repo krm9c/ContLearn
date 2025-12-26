@@ -54,7 +54,8 @@ def generate_sine_data(delta: float, n_tasks: int = 40, output_path: str = 'Incr
     # Added by Claude: use constant for time step
     time = np.arange(0, 1, DEFAULT_SINE_TIME_STEP)  # Time points based on step size
     data = {}
-    total_samples = 4000
+    # Increased from 4000 to 100000 to support larger batch sizes (e.g., 8192)
+    total_samples = 100000
     np.random.seed(seed)
     frequency = (np.random.random([total_samples, 1]) * 60) * np.ones([total_samples, 1])
     amplitude = (np.random.random() * 1) * np.ones([total_samples, 1])

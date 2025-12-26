@@ -6,7 +6,7 @@
     "network": "gcn",
     "n_task": 10,
     "epochs_per_task": 250,
-    "batch_size": 1024,
+    "batch_size": 8192,
     "awb_enabled": true,
     "awb_skip_transfer": true,
     "awb_preliminary_epochs": 50,
@@ -16,7 +16,11 @@
     "warmup_epochs": 0,
     "model_path": "kkt_run/results/synthetic_graph_condition3",
     "save_iter": 50,
-    "grad_weights": [0.01, 0.98, 0.1],
+    "grad_weights": [
+        0.01,
+        0.98,
+        0.1
+    ],
     "debug_mode": false,
     "per_task_eval_enabled": true
 }
