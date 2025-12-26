@@ -30,6 +30,10 @@ from torch.utils.data import DataLoader, TensorDataset, Subset
 import numpy as np
 from torch_geometric.loader import DataLoader as GeometricDataLoader
 from torch_geometric.data import Batch
+import time
+
+# Added by Claude: Profiling support
+from .profiling import profile, profile_section
 
 from .awb_operations import AWBOperations
 from .awb import (
@@ -150,6 +154,8 @@ def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
         return val_loader
 
 
+# Added by Claude: Profile entire AWB task pipeline
+@profile("AWB Task Pipeline")
 def run_awb_task(
     task_id: int,
     trainer,
@@ -285,11 +291,13 @@ def run_awb_task(
         # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
         test_curr, test_exp = testloader
 
+        # Added by Claude: Profile architecture search
         # Use validation sets for architecture search instead of full training data
-        new_arch = awb_ops.search_architecture(
-            model, task_id, trainWLoss, val_trainloader, val_exploader,
-            test_curr, test_exp, config, trainer
-        )
+        with profile_section("Architecture Search"):
+            new_arch = awb_ops.search_architecture(
+                model, task_id, trainWLoss, val_trainloader, val_exploader,
+                test_curr, test_exp, config, trainer
+            )
         print(f"  Original: {original_arch}")
         print(f"  Optimal: {new_arch}")
 
@@ -300,34 +308,44 @@ def run_awb_task(
             task_metadata['architecture_changed'] = True
             task_metadata['change_reason'] = 'loss_ratio_threshold'
 
-            # STEP 3b: Train A/B
-            print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
-            model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
-            diff_model, static_model = awb_ops.partition_for_AB_training(model)
-            trainer.initialize_ab_training(record_dict, task_id)
+            # Added by Claude: Check if we should skip A/B transfer (Condition 3)
+            skip_transfer = config.get('awb_skip_transfer', False)
 
-            ab_lr = config.get('awb_ab_lr', DEFAULT_LR)
-            ab_optim = optax.adam(ab_lr)
-            ab_opt_state = ab_optim.init(diff_model)
+            if skip_transfer:
+                # CONDITION 3: Skip A/B training, use random init
+                print(f"\n[STEP 3b] Skipping A/B training (awb_skip_transfer=True)")
+                print(f"  Using random initialization for new architecture")
 
-            diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
-                train__=(trainloader, exploader, valloader, testloader),
-                params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
-                n_iter=ab_training_epochs, save_iter=save_iter,
-                task_id=task_id, config=config, record_dict=record_dict,
-                notABTrain=False, problem_type=problem_type, loss_type=loss_type,
-                phase='ab', record_training=True, global_iteration_offset=0
-            )
+                # Set AB matrices (random init) and compute V = A @ W @ B.T
+                model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
 
-            ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
-                                       epochs=ab_training_epochs, window=averaging_window)
-            print(f"  AB loss: {ab_loss:.6f}")
+                # STEP 4: Compute V
+                print(f"\n[STEP 4] Compute V = A @ W @ B^T (random A/B)")
+                model = awb_ops.compute_V(model)
+                params, static = awb_ops.partition_for_standard_training(model)
 
-            # Optional: Continue AB training
-            ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
-            ab_iter = 1
-            while (trainWLoss * ab_threshold < ab_loss) and (ab_iter < ab_max_iterations):
-                print(f"  Continuing AB training (iter {ab_iter + 1})")
+                # STEP 5: Train V with random initialization
+                print(f"\n[STEP 5] Train V (random init): warmup {ab_warmup_epochs} + main {epochs_per_task}")
+                from ..runners.generic_runner import create_optimizer
+                optim = create_optimizer(config)
+                opt_state = optim.init(params)
+
+            else:
+                # CONDITION 4: Run full A/B training pipeline
+                # STEP 3b: Train A/B
+                print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
+
+                # Added by Claude: Profile A/B training
+                ab_training_start = time.time()
+
+                model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
+                diff_model, static_model = awb_ops.partition_for_AB_training(model)
+                trainer.initialize_ab_training(record_dict, task_id)
+
+                ab_lr = config.get('awb_ab_lr', DEFAULT_LR)
+                ab_optim = optax.adam(ab_lr)
+                ab_opt_state = ab_optim.init(diff_model)
+
                 diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
                     train__=(trainloader, exploader, valloader, testloader),
                     params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
@@ -336,22 +354,45 @@ def run_awb_task(
                     notABTrain=False, problem_type=problem_type, loss_type=loss_type,
                     phase='ab', record_training=True, global_iteration_offset=0
                 )
+
                 ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
                                            epochs=ab_training_epochs, window=averaging_window)
-                ab_iter += 1
+                print(f"  AB loss: {ab_loss:.6f}")
 
-            model = eqx.combine(diff_model, static_model)
+                # Optional: Continue AB training
+                ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
+                ab_iter = 1
+                while (trainWLoss * ab_threshold < ab_loss) and (ab_iter < ab_max_iterations):
+                    print(f"  Continuing AB training (iter {ab_iter + 1})")
+                    diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
+                        train__=(trainloader, exploader, valloader, testloader),
+                        params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
+                        n_iter=ab_training_epochs, save_iter=save_iter,
+                        task_id=task_id, config=config, record_dict=record_dict,
+                        notABTrain=False, problem_type=problem_type, loss_type=loss_type,
+                        phase='ab', record_training=True, global_iteration_offset=0
+                    )
+                    ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
+                                               epochs=ab_training_epochs, window=averaging_window)
+                    ab_iter += 1
 
-            # STEP 4: Compute V
-            print(f"\n[STEP 4] Compute V = A @ W @ B^T")
-            model = awb_ops.compute_V(model)
-            params, static = awb_ops.partition_for_standard_training(model)
+                model = eqx.combine(diff_model, static_model)
 
-            # STEP 5: Train V
-            print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
-            from ..runners.generic_runner import create_optimizer
-            optim = create_optimizer(config)
-            opt_state = optim.init(params)
+                # Added by Claude: Report A/B training time
+                if config.get('profiling_enabled'):
+                    ab_elapsed = time.time() - ab_training_start
+                    print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s")
+
+                # STEP 4: Compute V
+                print(f"\n[STEP 4] Compute V = A @ W @ B^T")
+                model = awb_ops.compute_V(model)
+                params, static = awb_ops.partition_for_standard_training(model)
+
+                # STEP 5: Train V
+                print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
+                from ..runners.generic_runner import create_optimizer
+                optim = create_optimizer(config)
+                opt_state = optim.init(params)
 
             if ab_warmup_epochs > 0:
                 params, static, opt_state, record_dict = trainer.train__CL(

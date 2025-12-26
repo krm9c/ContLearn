@@ -19,6 +19,10 @@ import jax.numpy as jnp
 import numpy as np_
 import optax
 from tqdm import tqdm
+import time
+
+# Added by Claude: Profiling support
+from .profiling import profile, profile_section
 
 
 # Graph transform pipeline (lazy import to avoid dependency when not needed)
@@ -270,6 +274,8 @@ class TrainingLoopsMixin:
         var_adj = 1e-3 * (sum(var_adj_list) / max(len(var_adj_list), 1)) if var_adj_list else 0.0
         return var_x, var_adj
 
+    # Added by Claude: Profile training loop
+    @profile("Training Loop")
     def train__CL(self, train__, params, static, opt_state, optim,
                   n_iter=1000, save_iter=10, task_id=0, config={},
                   record_dict={}, notABTrain=True,
@@ -332,6 +338,12 @@ class TrainingLoopsMixin:
         rng_seed = config.get('random_seed', 42) + task_id * 1000
         rng_key = jax.random.PRNGKey(rng_seed)
 
+        # Added by Claude: Profile JAX pre-conversion (Phase 3 optimization)
+        profiling_enabled = config.get('profiling_enabled', False)
+        if profiling_enabled:
+            print(f"\n[PROFILE] JAX pre-conversion starting...")
+            preconv_start = time.time()
+
         # Added by Claude: Phase 3 - Pre-convert train/exp loaders to JAX (ONCE per task)
         # Eliminates 10,000+ PyTorch→JAX conversions per task (only for vector data)
         if problem_type == 'vectors':
@@ -354,6 +366,12 @@ class TrainingLoopsMixin:
                 else:
                     y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
                 exp_batches_jax.append((x_jax, y_jax))
+
+            if profiling_enabled:
+                preconv_elapsed = time.time() - preconv_start
+                print(f"[PROFILE] JAX pre-conversion complete: {preconv_elapsed:.2f}s")
+                print(f"[PROFILE]   Train batches: {len(train_batches_jax)}")
+                print(f"[PROFILE]   Exp batches: {len(exp_batches_jax)}")
 
         # JIT-compile optimizer step to avoid recompilation overhead
         @jax.jit
@@ -391,6 +409,12 @@ class TrainingLoopsMixin:
             compute_metric = compute_metric_class
 
         for epoch in pbar:
+            # Added by Claude: Profile first epoch first batch
+            if epoch == 0 and profiling_enabled:
+                print(f"\n[PROFILE] Starting first epoch...")
+                first_batch_start = time.time()
+                first_batch_done = False
+
             # Added by Claude: Use pre-converted JAX data for vectors, original loaders for graphs
             if problem_type == 'vectors':
                 trainiter = iter(train_batches_jax)
@@ -406,6 +430,7 @@ class TrainingLoopsMixin:
             epoch_grad_norm, epoch_train_metrics = [], []
 
             # Inner loop: iterate over batches
+            batch_idx = 0
             for batch, batch_ex in zip(trainiter, expiter):
                 if problem_type == 'graph':
                     # Graph data processing
@@ -469,6 +494,14 @@ class TrainingLoopsMixin:
                     # Vectors use JIT-compiled metric function
                     train_metric = compute_metric(params, static, x, y)
                 epoch_train_metrics.append(float(train_metric))
+
+                # Added by Claude: Report first batch time
+                if epoch == 0 and batch_idx == 0 and profiling_enabled and not first_batch_done:
+                    first_batch_elapsed = time.time() - first_batch_start
+                    print(f"[PROFILE] First batch complete: {first_batch_elapsed:.2f}s")
+                    first_batch_done = True
+
+                batch_idx += 1
 
             # End of epoch: log metrics (at save_iter intervals and at the last epoch)
             is_last_epoch = (epoch == n_iter - 1)
