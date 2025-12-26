@@ -623,8 +623,14 @@ def evaluate_on_loader(trainer, params, static, loader, problem_type='vectors'):
         if problem_type == 'vectors':
             x, y = batch
             # Convert to numpy first, then to JAX
-            x = jnp.array(x.numpy() if hasattr(x, 'numpy') else x)
-            y = jnp.array(y.numpy() if hasattr(y, 'numpy') else y)
+            # Match training dtype: float64 for x (always), infer y dtype from data
+            x_np = x.numpy() if hasattr(x, 'numpy') else x
+            y_np = y.numpy() if hasattr(y, 'numpy') else y
+
+            x = jnp.asarray(x_np, dtype=jnp.float64)
+            # Infer y dtype: int64 for classification (integer labels), float64 for regression
+            y_dtype = jnp.int64 if y_np.dtype.kind in ('i', 'u') else jnp.float64
+            y = jnp.asarray(y_np, dtype=y_dtype)
             batch = (x, y)
         # For graphs: batch is more complex, handled in return_metric
 
