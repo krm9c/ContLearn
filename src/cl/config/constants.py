@@ -14,6 +14,12 @@ DEFAULT_SEED = 5678
 DEFAULT_GRAPH_SEED = 10
 
 # ============================================================================
+# PROFILING
+# ============================================================================
+# Added by Claude: Non-intrusive profiling for performance debugging
+DEFAULT_PROFILING_ENABLED = False
+
+# ============================================================================
 # DATASET-DRIVEN CONFIGURATION MAPPING
 # ============================================================================
 # Each dataset automatically selects: prob, problem, network, loss, metric

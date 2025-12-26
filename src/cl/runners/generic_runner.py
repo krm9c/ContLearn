@@ -25,6 +25,8 @@ from ..core.awb import (
 )
 # Added by Claude: AWB pipeline refactoring
 from ..core.awb_pipeline import run_awb_task
+# Added by Claude: Profiling support
+from ..core.profiling import enable_profiling
 from ..models.mlp import MLPAWBOps, create_mlp
 from ..models.cnn import CNNAWBOps, CNN, CNN3D
 from ..models.gcn import GCNAWBOps, GCN
@@ -858,6 +860,13 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     Returns:
         Dictionary of training records
     """
+    # Added by Claude: Enable profiling if requested
+    enable_profiling(config.get('profiling_enabled', False))
+    if config.get('profiling_enabled'):
+        print(f"\n{'='*60}")
+        print(f"PROFILING ENABLED - Detailed timing information will be shown")
+        print(f"{'='*60}\n")
+
     # Load components based on config
     trainer, optim, data, model = load_checkpoint(config)
 
