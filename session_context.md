@@ -287,12 +287,19 @@ git clean -fd  # if needed
   - Fixed unpacking error in `return_metric()` for graph data
   - Now handles both training mode (batch, batch_ex) and evaluation mode (single batch)
 
-❌ **Current Issues**:
-- Poor GPU utilization across all experiments (0-8% utilization on H200)
-  - Setup: 1 condition per GPU (4 conditions running in parallel on 4 GPUs)
-  - Example: MNIST shows ~815 MiB / 144 GB memory (0.6%), 115-121W / 700W power
-  - Root cause: batch_size=1024 is too small for H200 GPUs
-  - Diagnostic script created: `diagnose_gpu_utilization.py`
+✅ **GPU Utilization Optimization (Dec 25, 2024)**:
+- Diagnosed root cause: batch_size=1024 too small for H200 (processes in 0.14ms)
+- Increased dataset capacities:
+  - Sine: 4,000 → 100,000 samples
+  - Synthetic Graph: 1,000 → 100,000 graphs
+- Optimized batch sizes for all configs:
+  - MNIST/Permuted MNIST: 1024 → 2048 (2x)
+  - CIFAR-10: 1024 → 2048 (2x)
+  - CIFAR-100: 1024 (kept conservative, 20 tasks)
+  - Sine: 1024 → 4096 (4x)
+  - Synthetic Graph: 1024 → 8192 (8x)
+- Expected improvement: 0-8% → 20-40% GPU utilization
+- No gradient accumulation needed (<2GB memory used vs 144GB available)
 
 ## Next Steps / TODO
 
