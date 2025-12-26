@@ -225,8 +225,8 @@ DEFAULT_SCALING_RANGE = (1, 2)  # Min, max scaling factors
 DEFAULT_PERMUTATION_SEED_MULTIPLIER = 1000  # For permuted MNIST
 
 # Synthetic Graph Dataset
-# Increased from 1000 to 100000 to support larger batch sizes (e.g., 8192)
-DEFAULT_SYNTHETIC_NUM_GRAPHS = 100000
+# Conservative: 10,000 graphs (10x original, enough for batch_size=2048-4096)
+DEFAULT_SYNTHETIC_NUM_GRAPHS = 10000
 DEFAULT_SYNTHETIC_NUM_CHANNELS = 5  # Node feature channels
 DEFAULT_SYNTHETIC_AVG_NUM_NODES = 2
 DEFAULT_SYNTHETIC_NUM_CLASSES = 10

@@ -4,7 +4,7 @@
     "data": "sine",
     "n_task": 10,
     "epochs_per_task": 500,
-    "batch_size": 4096,
+    "batch_size": 2048,
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 50,
