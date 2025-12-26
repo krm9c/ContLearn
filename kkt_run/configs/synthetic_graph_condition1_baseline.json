@@ -1,7 +1,9 @@
 {
     "__comment": "CONDITION 1: Baseline Hamiltonian (No Smoothness)",
     "__comment_": "Fixed arch, constant LR, no warm start",
-    "data": "synthetic_graph",
+    "data": "synthetic",
+    "problem": "graph",
+    "network": "gcn",
     "n_task": 10,
     "epochs_per_task": 250,
     "batch_size": 1024,

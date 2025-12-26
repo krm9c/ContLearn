@@ -273,10 +273,33 @@ git clean -fd  # if needed
 - **Framework**: JAX + Equinox
 - **Graph**: torch_geometric (for synthetic_graph)
 
+## Completion Status
+
+✅ **Completed**:
+- AWB architecture search debugging (Dec 25, 2024)
+- AWB pipeline validation (runs without hanging)
+- All 4 critical fixes implemented and tested
+- SINE, MNIST, CIFAR-10, CIFAR-100 experiments working
+- Synthetic graph config fixes (Dec 25, 2024):
+  - Fixed `"data": "synthetic_graph"` → `"synthetic"` in all 4 condition configs
+  - Added missing `"problem": "graph"` and `"network": "gcn"` fields
+- Graph evaluation fix (Dec 25, 2024):
+  - Fixed unpacking error in `return_metric()` for graph data
+  - Now handles both training mode (batch, batch_ex) and evaluation mode (single batch)
+
+❌ **Current Issues**:
+- Poor GPU utilization across all experiments (0-8% utilization on H200)
+  - Setup: 1 condition per GPU (4 conditions running in parallel on 4 GPUs)
+  - Example: MNIST shows ~815 MiB / 144 GB memory (0.6%), 115-121W / 700W power
+  - Root cause: batch_size=1024 is too small for H200 GPUs
+  - Diagnostic script created: `diagnose_gpu_utilization.py`
+
 ## Next Steps / TODO
 
+- [ ] Test synthetic graph experiments (should now work with config fixes)
+- [ ] Run `python diagnose_gpu_utilization.py` and share output
+- [ ] Based on diagnostic results, increase batch sizes in configs
 - [ ] Monitor condition 1 runs to ensure no smoothing occurs
-- [ ] Validate AWB pipeline completes without hanging
 - [ ] Compare all 4 conditions across 5 datasets
 - [ ] Generate comparative plots for paper
 
