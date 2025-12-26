@@ -301,6 +301,38 @@ git clean -fd  # if needed
 - Expected improvement: 8% → 15-25% GPU utilization
 - Tradeoff: Conservative but stable (avoids OOM, fast iterations)
 
+✅ **CPU Bottleneck Analysis & Phase 1-3 Optimizations (Dec 25, 2024)**:
+- **Bottleneck diagnosis**: GPU at 0% utilization, code is CPU-bound not GPU-bound
+- **Root causes identified**:
+  1. PyTorch → JAX tensor conversion (10,000× per task) - CRITICAL
+  2. CPU-based NumPy random generation (10,000× per task) - CRITICAL
+  3. Eigenvalue computation O(n³) blocking loop (10× per task) - MODERATE
+  4. Full dataset variance computation at task start (1× per task) - MODERATE
+
+**Phase 1 fixes** (commit 7a75264):
+- Fix #2: Sample variance from subset (max_batches=5 instead of ~20 batches)
+- Fix #3: Reduce eigenvalue frequency (every 100 epochs instead of every 50)
+- Impact: Reduces CPU blocking at task start and during recording
+
+**Phase 2 fixes** (commit 385b264):
+- Fix #1: Replace NumPy random with JAX random (GPU-accelerated)
+- Eliminates 10,000+ CPU random calls per task
+- Deterministic seeding: `config['random_seed'] + task_id * 1000`
+- Impact: GPU-accelerated perturbation generation
+
+**Phase 3 fixes** (commit cb147cf):
+- Fix #4: Pre-convert train/exp loaders to JAX (ONCE per task)
+- Eliminates 10,000+ PyTorch→JAX conversions per task
+- Vector data only (graphs use torch_geometric, unchanged)
+- Memory analysis: < 1% GPU usage (exp replay capped at 200k samples)
+- Impact: Removes all PyTorch→JAX conversion overhead from training loop
+
+**Files modified**:
+- `src/cl/core/loops.py`: All three phases (variance, JAX random, pre-conversion)
+- `src/cl/core/recording.py`: Phase 1 eigenvalue optimization
+
+**Expected cumulative impact**: 25-40% GPU utilization (up from 0%)
+
 ## Next Steps / TODO
 
 - [ ] Test synthetic graph experiments (should now work with config fixes)
