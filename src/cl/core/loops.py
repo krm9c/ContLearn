@@ -332,6 +332,29 @@ class TrainingLoopsMixin:
         rng_seed = config.get('random_seed', 42) + task_id * 1000
         rng_key = jax.random.PRNGKey(rng_seed)
 
+        # Added by Claude: Phase 3 - Pre-convert train/exp loaders to JAX (ONCE per task)
+        # Eliminates 10,000+ PyTorch→JAX conversions per task (only for vector data)
+        if problem_type == 'vectors':
+            train_batches_jax = []
+            for batch in trainloader:
+                x, y = batch[0], batch[1]
+                x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
+                if loss_type == 'regression':
+                    y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
+                else:
+                    y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
+                train_batches_jax.append((x_jax, y_jax))
+
+            exp_batches_jax = []
+            for batch in exploader:
+                x, y = batch[0], batch[1]
+                x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
+                if loss_type == 'regression':
+                    y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
+                else:
+                    y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
+                exp_batches_jax.append((x_jax, y_jax))
+
         # JIT-compile optimizer step to avoid recompilation overhead
         @jax.jit
         def optimizer_step(grad, opt_state, params):
@@ -368,8 +391,13 @@ class TrainingLoopsMixin:
             compute_metric = compute_metric_class
 
         for epoch in pbar:
-            trainiter = iter(trainloader)
-            expiter = iter(exploader)
+            # Added by Claude: Use pre-converted JAX data for vectors, original loaders for graphs
+            if problem_type == 'vectors':
+                trainiter = iter(train_batches_jax)
+                expiter = iter(exp_batches_jax)
+            else:
+                trainiter = iter(trainloader)
+                expiter = iter(exploader)
 
             # Epoch accumulators
             epoch_H, epoch_V, epoch_dV = [], [], []
@@ -390,22 +418,16 @@ class TrainingLoopsMixin:
                     data = (static, (batch, batch_ex, delta_x, delta_adj))
                 else:
                     # Vector data processing (MLP, CNN)
-                    # Use asarray for zero-copy when possible
+                    # Added by Claude: Data already in JAX format from pre-conversion, just unpack
                     (x, y) = batch
                     (exp_x, exp_y) = batch_ex
                     min_batch = min(exp_x.shape[0], x.shape[0])
 
-                    # Convert PyTorch tensors to JAX arrays
-                    # Note: .numpy() on CPU tensor is a view, asarray minimizes copies
-                    x = jnp.asarray(x.numpy()[:min_batch], dtype=jnp.float64)
-                    exp_x = jnp.asarray(exp_x.numpy()[:min_batch], dtype=jnp.float64)
-
-                    if loss_type == 'regression':
-                        y = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.float64)
-                        exp_y = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.float64)
-                    else:  # classification
-                        y = jnp.asarray(y.numpy()[:min_batch], dtype=jnp.int64)
-                        exp_y = jnp.asarray(exp_y.numpy()[:min_batch], dtype=jnp.int64)
+                    # Slice to min batch size (data already correct dtype from pre-conversion)
+                    x = x[:min_batch]
+                    y = y[:min_batch]
+                    exp_x = exp_x[:min_batch]
+                    exp_y = exp_y[:min_batch]
 
                     # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
                     rng_key, subkey = jax.random.split(rng_key)
