@@ -30,7 +30,7 @@ class RecordingMixin:
         For standard models: computes eigenvalues of weight matrices (W).
 
         Args:
-            model: The model (combined params + static)
+            model: The model (combined params + static), or None to skip computation
             combined: If True, return model; if False, extract from self
 
         Returns:
@@ -45,8 +45,13 @@ class RecordingMixin:
                     'A': {'layer_0': array, 'layer_1': array, ...},
                     'B': {}
                 }
+                If model is None, returns empty dict (skips computation for efficiency)
         """
         eigenvalues = {'A': {}, 'B': {}}
+
+        # Added by Claude: Skip eigenvalue computation if model is None (for efficiency)
+        if model is None:
+            return eigenvalues
 
         try:
             # Added by Claude: Check if AWB is enabled and has valid A/B matrices

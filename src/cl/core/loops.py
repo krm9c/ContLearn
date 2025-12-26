@@ -208,7 +208,7 @@ class TrainingLoopsMixin:
         exp_mean = np_.mean(exp_metrics) if exp_metrics else 0.0
         return current_mean, exp_mean
 
-    def _compute_perturbation_variance(self, trainloader, exploader, problem_type):
+    def _compute_perturbation_variance(self, trainloader, exploader, problem_type, max_batches=5):
         """Pre-compute variance for perturbation sampling.
 
         Uses the mean difference approach for feature variance.
@@ -218,6 +218,8 @@ class TrainingLoopsMixin:
             trainloader: Current task data loader
             exploader: Experience replay data loader
             problem_type: 'vectors' or 'graph'
+            max_batches: Maximum batches to sample for variance estimation (default 5)
+                        5 batches × 2048 batch_size = 10,240 samples (statistically sufficient)
 
         Returns:
             Tuple of (var_x, var_adj) where var_adj is 0 for vectors
@@ -236,7 +238,13 @@ class TrainingLoopsMixin:
             return 1e-3, 1e-3 if problem_type == 'graph' else 0.0
 
         # Experience loader has data, proceed normally
+        # Added by Claude: Sample only max_batches for efficiency (sufficient for variance estimation)
+        batch_count = 0
         for batch, batch_ex in zip(iter(trainloader), iter(exploader)):
+            if batch_count >= max_batches:
+                break
+            batch_count += 1
+
             if problem_type == 'graph':
                 batch = transforms(batch)
                 batch_ex = transforms(batch_ex)
@@ -469,7 +477,15 @@ class TrainingLoopsMixin:
                 # Added by Claude: Phase-aware recording using new task-based structure
                 # Also maintain backward compatibility with old 'iterations' dict
                 if record_training:
-                    model = eqx.combine(params, static)
+                    # Added by Claude: Compute eigenvalues less frequently to reduce overhead
+                    # Eigenvalues change slowly, only need tracking every 100 epochs or at task end
+                    eigenvalue_interval = 100
+                    compute_eigenvalues = (epoch % eigenvalue_interval == 0 and epoch > 0) or is_last_epoch
+
+                    if compute_eigenvalues:
+                        model = eqx.combine(params, static)  # Triggers eigenvalue computation in record_metrics
+                    else:
+                        model = None  # Skip eigenvalue computation (metrics only)
 
                     # Compute global iteration for backward compatibility
                     global_iteration = global_iteration_offset + epoch
