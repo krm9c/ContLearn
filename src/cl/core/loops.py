@@ -24,6 +24,9 @@ import time
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
 
+# Added by Claude: Async checkpointing support
+from .async_checkpoint import AsyncCheckpointManager
+
 
 # Graph transform pipeline (lazy import to avoid dependency when not needed)
 _GRAPH_TRANSFORMS = None
@@ -290,7 +293,7 @@ class TrainingLoopsMixin:
             opt_state: Optimizer state - passed in and returned for continuity across tasks
             optim: Optimizer instance (for .update())
             n_iter: Number of epochs
-            save_iter: Save metrics every N epochs
+            save_iter: Save metrics to record_dict every N epochs (use eval_interval for test metrics)
             task_id: Current task ID
             config: Configuration dict (must contain 'flag' for regularization)
             record_dict: Dictionary to record metrics
@@ -314,6 +317,22 @@ class TrainingLoopsMixin:
         normalize_dV = config.get("normalize_dV", True)  # Default: enabled
         dV_scale = config.get("dV_scale_factor", 1.0)  # Default: no extra scaling
         gradient_clip_norm = config.get("gradient_clip_norm", None)  # Default: no clipping
+
+        # Added by Claude: Separate logging/evaluation intervals for performance
+        log_interval = config.get("log_interval", 1)  # Progress bar update frequency
+        eval_interval = config.get("eval_interval", save_iter)  # Test metric computation frequency
+
+        # Added by Claude: Initialize async checkpoint manager if periodic checkpointing enabled
+        checkpoint_interval = config.get("checkpoint_interval", 0)
+        checkpoint_manager = None
+        if checkpoint_interval > 0 and config.get("model_path"):
+            checkpoint_dir = f"{config['model_path']}_checkpoints"
+            checkpoint_manager = AsyncCheckpointManager(
+                save_dir=checkpoint_dir,
+                max_checkpoints=config.get("max_checkpoints", 3),
+                memory_limit_gb=config.get("checkpoint_memory_limit_gb", 8.0),
+                enable_async=config.get("async_checkpointing", True)
+            )
 
         pbar = tqdm(range(n_iter), dynamic_ncols=True)
 
@@ -504,9 +523,15 @@ class TrainingLoopsMixin:
 
                 batch_idx += 1
 
-            # End of epoch: log metrics (at save_iter intervals and at the last epoch)
+            # End of epoch: compute averages and conditionally log/evaluate
+            # Added by Claude: Separate intervals for logging (cheap) vs evaluation (expensive)
             is_last_epoch = (epoch == n_iter - 1)
-            if (epoch % save_iter == 0 and epoch > 0) or is_last_epoch:
+            should_log = (epoch % log_interval == 0 and epoch > 0) or is_last_epoch
+            should_eval = (epoch % eval_interval == 0 and epoch > 0) or is_last_epoch
+            should_record = (epoch % save_iter == 0 and epoch > 0) or is_last_epoch
+
+            # Always compute training metric averages for progress bar
+            if should_log:
                 H_avg = np_.mean(epoch_H)
                 V_avg = np_.mean(epoch_V)
                 dV_avg = np_.mean(epoch_dV)
@@ -515,14 +540,18 @@ class TrainingLoopsMixin:
                 grad_norm_avg = np_.mean(epoch_grad_norm)
                 train_metric_avg = np_.mean(epoch_train_metrics)
 
-                # Compute test metrics
-                test_current, test_exp = self._compute_metrics_on_sampled_batches(
-                    params, static, testloader, num_batches=10,
-                    problem_type=problem_type, notABTrain=notABTrain,
-                    transforms=transforms
-                )
+                # Compute expensive test metrics only at eval_interval (not every log_interval)
+                if should_eval:
+                    test_current, test_exp = self._compute_metrics_on_sampled_batches(
+                        params, static, testloader, num_batches=10,
+                        problem_type=problem_type, notABTrain=notABTrain,
+                        transforms=transforms
+                    )
+                else:
+                    # Skip expensive test evaluation, use placeholder values for progress bar
+                    test_current, test_exp = 0.0, 0.0
 
-                # Build loss dict for recording
+                # Build loss dict for progress bar
                 losses_dict = {
                     'H': H_avg, 'V': V_avg, 'dV': dV_avg,
                     'dV_dx': dV_dx_avg, 'dV_dtheta': dV_dtheta_avg,
@@ -530,26 +559,34 @@ class TrainingLoopsMixin:
                 if problem_type == 'graph':
                     losses_dict['dV_dadj'] = np_.mean(epoch_dV_dadj)
 
-                # Progress bar display
+                # Progress bar display (always update when logging)
                 loss_name = 'MSE' if loss_type == 'regression' else 'CE'
-                pbar.set_postfix_str(
-                    f"{loss_name}={V_avg:.6e} H={H_avg:.6e} dV_dx={dV_dx_avg:.6e} "
-                    f"dV_dθ={dV_dtheta_avg:.6e} ||∇||={grad_norm_avg:.6e} | "
-                    f"Tr={train_metric_avg:.4f} Te/Cur={test_current:.4f} Te/Exp={test_exp:.4f}"
-                )
+                if should_eval:
+                    # Full display with test metrics
+                    pbar.set_postfix_str(
+                        f"{loss_name}={V_avg:.6e} H={H_avg:.6e} dV_dx={dV_dx_avg:.6e} "
+                        f"dV_dθ={dV_dtheta_avg:.6e} ||∇||={grad_norm_avg:.6e} | "
+                        f"Tr={train_metric_avg:.4f} Te/Cur={test_current:.4f} Te/Exp={test_exp:.4f}"
+                    )
+                else:
+                    # Lightweight display without test metrics
+                    pbar.set_postfix_str(
+                        f"{loss_name}={V_avg:.6e} H={H_avg:.6e} dV_dx={dV_dx_avg:.6e} "
+                        f"dV_dθ={dV_dtheta_avg:.6e} ||∇||={grad_norm_avg:.6e} | "
+                        f"Tr={train_metric_avg:.4f}"
+                    )
 
-                # Added by Claude: Phase-aware recording using new task-based structure
-                # Also maintain backward compatibility with old 'iterations' dict
-                if record_training:
-                    # Added by Claude: Compute eigenvalues less frequently to reduce overhead
-                    # Eigenvalues change slowly, only need tracking every 100 epochs or at task end
-                    eigenvalue_interval = 100
-                    compute_eigenvalues = (epoch % eigenvalue_interval == 0 and epoch > 0) or is_last_epoch
-
-                    if compute_eigenvalues:
-                        model = eqx.combine(params, static)  # Triggers eigenvalue computation in record_metrics
+                # Added by Claude: Record to dict only at save_iter intervals (not every log)
+                # This reduces I/O overhead while maintaining progress bar updates
+                if record_training and should_record and should_eval:
+                    # Added by Claude: Eigenvalues only recorded for AB training, not main training
+                    # Main training doesn't need eigenvalue tracking (expensive operation)
+                    if phase == 'ab':
+                        # AB training: compute eigenvalues to monitor AB matrix evolution
+                        model = eqx.combine(params, static)
                     else:
-                        model = None  # Skip eigenvalue computation (metrics only)
+                        # Main/preliminary training: skip eigenvalue computation
+                        model = None
 
                     # Compute global iteration for backward compatibility
                     global_iteration = global_iteration_offset + epoch
@@ -633,5 +670,21 @@ class TrainingLoopsMixin:
                             },
                             model=model
                         )
+
+                    # Added by Claude: Periodic checkpointing (async, non-blocking)
+                    if checkpoint_manager is not None and (epoch % checkpoint_interval == 0 and epoch > 0):
+                        checkpoint_model = eqx.combine(params, static)
+                        checkpoint_manager.save_checkpoint(
+                            model=checkpoint_model,
+                            record_dict=record_dict,
+                            task_id=task_id,
+                            epoch=epoch,
+                            prefix=f"{phase}_checkpoint"
+                        )
+
+        # Added by Claude: Wait for any pending checkpoint saves before returning
+        if checkpoint_manager is not None:
+            checkpoint_manager.wait_all(timeout=30.0)
+            checkpoint_manager.shutdown()
 
         return params, static, opt_state, record_dict

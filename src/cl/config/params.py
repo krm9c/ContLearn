@@ -109,6 +109,10 @@ def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     set_default('n_task', constants.DEFAULT_N_TASK)
     set_default('epochs_per_task', constants.DEFAULT_EPOCHS_PER_TASK)
     set_default('save_iter', constants.DEFAULT_SAVE_ITER)
+    # Added by Claude: Separate logging/evaluation intervals for performance optimization
+    set_default('log_interval', constants.DEFAULT_LOG_INTERVAL)
+    set_default('eval_interval', constants.DEFAULT_EVAL_INTERVAL)
+    set_default('checkpoint_interval', constants.DEFAULT_CHECKPOINT_INTERVAL)
     set_default('model_path', constants.DEFAULT_MODEL_PATH)
 
     # Batch size: problem-specific defaults

@@ -89,7 +89,14 @@ DEFAULT_BATCH_SIZE_CLASSIFICATION = 128
 DEFAULT_BATCH_SIZE_GRAPH = 20
 DEFAULT_BATCH_SIZE_VECTOR = DEFAULT_BATCH_SIZE_REGRESSION  # Backward compatibility alias
 DEFAULT_BATCH_SIZE_CLASS = DEFAULT_BATCH_SIZE_CLASSIFICATION  # Backward compatibility alias
-DEFAULT_SAVE_ITER = 10  # Save metrics every N epochs
+# Added by Claude: Separate logging/evaluation frequencies for performance
+DEFAULT_SAVE_ITER = 50  # Save metrics to record_dict every N epochs (increased from 10 for speed)
+DEFAULT_LOG_INTERVAL = 1  # Progress bar update every N epochs (keep frequent for feedback)
+DEFAULT_EVAL_INTERVAL = 50  # Compute test metrics every N epochs (expensive operation)
+DEFAULT_CHECKPOINT_INTERVAL = 0  # Periodic checkpointing interval (0 = disabled, only save at end)
+DEFAULT_MAX_CHECKPOINTS = 3  # Maximum number of checkpoints to keep
+DEFAULT_CHECKPOINT_MEMORY_LIMIT_GB = 8.0  # Maximum memory for checkpointing (GB)
+DEFAULT_ASYNC_CHECKPOINTING = True  # Enable async (non-blocking) checkpointing
 DEFAULT_MODEL_PATH = "outputs/model"
 
 # ============================================================================
