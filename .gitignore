@@ -72,9 +72,9 @@ SCRIPT_TEST_RESULTS.md
 outputs/examples/*_modified.pkl
 
 # Logs
-*.log
-logs/
-log/
+# *.log
+# logs/
+# log/
 
 # Temporary files
 tmp/
