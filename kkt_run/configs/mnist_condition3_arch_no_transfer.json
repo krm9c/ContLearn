@@ -22,5 +22,7 @@
         0.1
     ],
     "debug_mode": false,
-    "per_task_eval_enabled": true
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": true,
+    "prefetch_size": 3
 }

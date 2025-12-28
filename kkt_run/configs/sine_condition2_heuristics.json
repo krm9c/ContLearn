@@ -1,6 +1,7 @@
 {
     "__comment": "CONDITION 2: Smoothness via Heuristics",
     "__comment_": "Fixed arch, cosine LR schedule, warm start",
+    "__optimization": "JAX prefetching enabled, eval_interval=50 for performance",
     "data": "sine",
     "n_task": 10,
     "epochs_per_task": 200,
@@ -20,5 +21,7 @@
         0.1
     ],
     "debug_mode": false,
-    "per_task_eval_enabled": true
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": true,
+    "prefetch_size": 3
 }
