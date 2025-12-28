@@ -173,6 +173,8 @@ ab2f122 Add GPU memory tracking to profiling system + force_arch_change debug fl
 
 **Correctness**: ✅ Equivalent computation, just faster execution
 
+**⚠️ CRITICAL NOTE**: Attempted to re-vectorize with vmap caused JIT compilation to hang for 6500 seconds in nested loops. **DO NOT re-vectorize** - the list comprehension is the optimal solution given JIT limitations.
+
 ---
 
 ### **7. JAX Asynchronous Data Pipeline** ✅
@@ -222,6 +224,36 @@ ab2f122 Add GPU memory tracking to profiling system + force_arch_change debug fl
 - Training loop receives same batches in same order
 
 **Testing Status**: ⏳ NOT YET TESTED - needs validation on MNIST
+
+---
+
+### **8. Skip Test Evaluation During A/B Training** ✅
+
+**Problem**: A/B training on MNIST takes 25 seconds per iteration due to:
+- `get_AWBT` method computes `A @ weights @ B.T` transformations
+- Called inside `jax.vmap` for all samples in batch
+- `jax.grad` and `jax.linearize` differentiate through transformations
+- Test evaluation runs these expensive operations on test set every `eval_interval` epochs
+
+**Root Cause**: A and B matrices are trainable parameters during A/B training phase, so transformations must be recomputed every iteration. List comprehension used instead of vmap because vmap caused 6500-second JIT compilation hang.
+
+**Solution**: Skip test evaluation during A/B training (`phase='ab'`)
+- Only evaluate test metrics on final epoch of A/B training
+- Keep logging (progress bar) every epoch for monitoring
+- Test evaluation not critical during A/B optimization phase
+
+**Files Modified**:
+- `src/cl/core/loops.py` (lines 575-580)
+
+**Expected Impact**: Eliminate test evaluation overhead during A/B training (only affects logging, not training)
+
+**Correctness**: ✅ No impact on training - only skips metric computation during A/B phase
+
+**Alternatives Considered**:
+- ❌ Vectorize with vmap: Causes 6500s JIT compilation hang
+- ❌ Pre-compute transformations: A and B are trainable, change every iteration
+- ❌ Cache transformed weights: Would break gradient computation
+- ✅ Accept slowness + skip test eval: Only viable option
 
 ---
 
