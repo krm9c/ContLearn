@@ -426,10 +426,12 @@ class RecordingMixin:
         awb_suffix = "_awb" if metadata.get('awb_enabled', False) else ""
         filename = f"{metadata['prob']}_{metadata['dataset']}_{metadata['network']}{awb_suffix}_run{run_id}_records.pkl"
 
-        # Use the base_path directory
+        # Fixed by Claude: Use base_path directly as save directory (not parent)
+        # This keeps each config's results in its own folder
+        # e.g., model_path="kkt_run/kkt/results/sine_condition1_optimized" → save there
         if base_path:
-            save_dir = os.path.dirname(base_path)
-            if save_dir and not os.path.exists(save_dir):
+            save_dir = base_path
+            if not os.path.exists(save_dir):
                 os.makedirs(save_dir, exist_ok=True)
             filepath = os.path.join(save_dir, filename)
         else:
@@ -468,10 +470,11 @@ class RecordingMixin:
         awb_suffix = "_awb" if config.get('awb_enabled', False) else ""
         filename = f"{config.get('prob', 'unknown')}_{config.get('data', 'unknown')}_{config.get('network', 'unknown')}{awb_suffix}_allruns.pkl"
 
-        # Use the base_path directory
+        # Fixed by Claude: Use base_path directly as save directory (not parent)
+        # This keeps each config's results in its own folder
         if base_path:
-            save_dir = os.path.dirname(base_path)
-            if save_dir and not os.path.exists(save_dir):
+            save_dir = base_path
+            if not os.path.exists(save_dir):
                 os.makedirs(save_dir, exist_ok=True)
             filepath = os.path.join(save_dir, filename)
         else:

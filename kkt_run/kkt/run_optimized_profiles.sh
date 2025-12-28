@@ -60,7 +60,11 @@ run_dataset_conditions() {
 
     # Run Condition 1 (baseline)
     local config1="debug/${dataset}_condition1_optimized_profile.json"
-    local log1="${LOG_DIR}/${dataset}_condition1_optimized_${timestamp}.log"
+    # Fixed by Claude: Create subdirectory for each config to organize logs
+    local config_name1="${dataset}_condition1_optimized"
+    local log_subdir1="${LOG_DIR}/${config_name1}"
+    mkdir -p "${log_subdir1}"
+    local log1="${log_subdir1}/${config_name1}_${timestamp}.log"
 
     echo "[GPU ${gpu_id}] [$(date)] Starting: ${dataset} Condition 1 (Baseline)"
     echo "  Config: ${config1}"
@@ -77,7 +81,11 @@ run_dataset_conditions() {
 
     # Run Condition 4 (AWB)
     local config4="debug/${dataset}_condition4_optimized_profile.json"
-    local log4="${LOG_DIR}/${dataset}_condition4_optimized_${timestamp}.log"
+    # Fixed by Claude: Create subdirectory for each config to organize logs
+    local config_name4="${dataset}_condition4_optimized"
+    local log_subdir4="${LOG_DIR}/${config_name4}"
+    mkdir -p "${log_subdir4}"
+    local log4="${log_subdir4}/${config_name4}_${timestamp}.log"
 
     echo "[GPU ${gpu_id}] [$(date)] Starting: ${dataset} Condition 4 (AWB)"
     echo "  Config: ${config4}"
@@ -145,17 +153,17 @@ echo "=========================================="
 echo "Datasets successful: ${SUCCESS_COUNT}/4"
 echo "Datasets failed: ${FAILED_COUNT}/4"
 echo ""
-echo "Logs saved to: ${LOG_DIR}/"
-echo "  Pattern: <dataset>_condition<1|4>_optimized_<timestamp>.log"
+echo "Logs saved to organized subdirectories in: ${LOG_DIR}/"
+echo "  Each config has its own subdirectory"
 echo ""
-echo "Expected log files (2 per dataset = 8 total):"
+echo "Log directory structure (8 configs total):"
 for DATASET in "${DATASETS[@]}"; do
-    echo "  ${DATASET}_condition1_optimized_*.log"
-    echo "  ${DATASET}_condition4_optimized_*.log"
+    echo "  ${LOG_DIR}/${DATASET}_condition1_optimized/${DATASET}_condition1_optimized_*.log"
+    echo "  ${LOG_DIR}/${DATASET}_condition4_optimized/${DATASET}_condition4_optimized_*.log"
 done
 echo ""
 echo "To analyze speedups:"
-echo "  grep 'it/s\\|s/it' ${LOG_DIR}/*optimized*.log | head -50"
+echo "  grep 'it/s\\|s/it' ${LOG_DIR}/*/*optimized*.log | head -50"
 echo "=========================================="
 
 # Return non-zero if any failed
