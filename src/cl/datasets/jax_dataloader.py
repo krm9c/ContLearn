@@ -40,10 +40,17 @@ class PrefetchDataLoader:
         ...     loss = train_step(x, y)
     """
 
-    def __init__(self, dataloader, prefetch_size: int = 2, device=None):
+    def __init__(self, dataloader, prefetch_size: int = 2, device=None, loss_type='classification'):
         self.dataloader = dataloader
         self.prefetch_size = prefetch_size
-        self.device = device or jax.devices()[0]
+        # Added by Claude: Explicitly use GPU (respects CUDA_VISIBLE_DEVICES from parallel scripts)
+        if device is None:
+            gpu_devices = jax.devices('gpu')
+            if not gpu_devices:
+                raise RuntimeError("No GPU found. JAX continual learning requires GPU.")
+            device = gpu_devices[0]  # Will be the GPU assigned by CUDA_VISIBLE_DEVICES
+        self.device = device
+        self.loss_type = loss_type  # Added by Claude: Store loss_type for dtype conversion
         # Added by Claude: Diagnostic logging for device detection
         print(f"[DEBUG] PrefetchDataLoader initialized with device: {self.device}")
         print(f"[DEBUG] All available JAX devices: {jax.devices()}")
@@ -77,8 +84,12 @@ class PrefetchDataLoader:
 
                     # Convert to JAX arrays and transfer to GPU asynchronously
                     # device_put is non-blocking - returns immediately while transfer happens
-                    x_gpu = jax.device_put(jnp.asarray(x), device=self.device)
-                    y_gpu = jax.device_put(jnp.asarray(y), device=self.device)
+                    # Added by Claude: Use float64 for x, and dtype based on loss_type for y
+                    x_gpu = jax.device_put(jnp.asarray(x, dtype=jnp.float64), device=self.device)
+                    if self.loss_type == 'regression':
+                        y_gpu = jax.device_put(jnp.asarray(y, dtype=jnp.float64), device=self.device)
+                    else:  # classification
+                        y_gpu = jax.device_put(jnp.asarray(y, dtype=jnp.int64), device=self.device)
 
                     # Block if queue is full (backpressure)
                     batch_queue.put((x_gpu, y_gpu))
