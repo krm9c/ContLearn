@@ -1,0 +1,117 @@
+JAX Backend: cpu
+JAX Devices: [CpuDevice(id=0)]
+
+Loaded config from: kkt_run/configs/sine_awb_forced_debug.json
+Problem type: regression
+Dataset: sine
+Tasks: 3
+AWB enabled: True
+
+
+############################################################
+# Run 1 / 1
+############################################################
+
+============================================================
+Task 0
+============================================================
+DEBUG MODE: Limiting training data from 3200 to 50 samples
+DEBUG MODE: Limiting test data from 800 to 50 samples
+Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:00<00:02,  1.57it/s] 20%|██        | 1/5 [00:00<00:02,  1.57it/s, MSE=1.438700e-01 H=1.418893e-01 dV_dx=-9.845033e-06 dV_dθ=-1.970882e-03 ||∇||=4.923843e-01 | Tr=0.1424 Te/Cur=0.1433 Te/Exp=0.1437]100%|██████████| 5/5 [00:01<00:00,  5.41it/s, MSE=1.438700e-01 H=1.418893e-01 dV_dx=-9.845033e-06 dV_dθ=-1.970882e-03 ||∇||=4.923843e-01 | Tr=0.1424 Te/Cur=0.1433 Te/Exp=0.1437]100%|██████████| 5/5 [00:01<00:00,  4.72it/s, MSE=1.438700e-01 H=1.418893e-01 dV_dx=-9.845033e-06 dV_dθ=-1.970882e-03 ||∇||=4.923843e-01 | Tr=0.1424 Te/Cur=0.1433 Te/Exp=0.1437]
+
+  Evaluating on all tasks 0..0 for CL metrics...
+DEBUG MODE: Limiting training data from 3200 to 50 samples
+DEBUG MODE: Limiting test data from 800 to 50 samples
+    Task 0: 0.1438
+
+============================================================
+Task 1
+============================================================
+DEBUG MODE: Limiting training data from 3200 to 50 samples
+DEBUG MODE: Limiting test data from 800 to 50 samples
+Initial loss on new task: 0.2881, previous: 0.1439, ratio: 2.00
+AWB pipeline (lr=0.000100)
+
+======================================================================
+AWB PIPELINE - Task 1
+======================================================================
+
+[STEP 1] Preliminary training (2 epochs) - Recorded temporarily
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  4.92it/s] 50%|█████     | 1/2 [00:00<00:00,  4.92it/s, MSE=1.340392e-01 H=1.320474e-01 dV_dx=-1.693655e-05 dV_dθ=-1.974826e-03 ||∇||=4.523566e-01 | Tr=0.1367 Te/Cur=0.1341 Te/Exp=0.1352]100%|██████████| 2/2 [00:00<00:00,  9.24it/s, MSE=1.340392e-01 H=1.320474e-01 dV_dx=-1.693655e-05 dV_dθ=-1.974826e-03 ||∇||=4.523566e-01 | Tr=0.1367 Te/Cur=0.1341 Te/Exp=0.1352]
+  Preliminary loss: 0.134039
+
+[STEP 2] Architecture change decision
+  Current: 0.134039, Previous: 0.143870
+  Decision: CHANGE
+
+[STEP 3a] Architecture search - NOT recorded
+  Starting grid architecture search for task 1
+  Baseline architecture: [3, 50, 50, 100]
+  Baseline loss: 0.134039
+  Search iteration 1/2
+  0%|          | 0/10 [00:00<?, ?it/s] 10%|█         | 1/10 [00:00<00:01,  6.38it/s] 10%|█         | 1/10 [00:00<00:01,  6.21it/s]
+Traceback (most recent call last):
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/run_files/scripts/run.py", line 125, in <module>
+    main()
+    ~~~~^^
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/run_files/scripts/run.py", line 103, in main
+    record_dict = train_model(config, run_id=run_id)
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/runners/generic_runner.py", line 1104, in train_model
+    model, optim, opt_state, record_dict = run_awb_task(
+                                           ~~~~~~~~~~~~^
+        task_id=task_id,
+        ^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        previous_task_loss=previous_task_loss
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/awb_pipeline.py", line 168, in run_awb_task
+    new_arch = awb_ops.search_architecture(
+        model, task_id, trainWLoss, trainloader, exploader,
+        valloader, testloader, config, trainer
+    )
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/models/mlp.py", line 449, in search_architecture
+    return search_architecture(
+        model=model, baseline_arch=list(model.sizes), task_id=task_id,
+    ...<2 lines>...
+        test_loader_exp=test_loader_exp, config=config, trainer=trainer, model_type='mlp'
+    )
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/arch_search.py", line 897, in search_architecture
+    return search_architecture_grid(
+        model, baseline_arch, task_id, baseline_loss,
+        dataloader_curr, dataloader_exp, test_loader_curr, test_loader_exp,
+        config, trainer, model_type
+    )
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/arch_search.py", line 777, in search_architecture_grid
+    params, static, opt_state, record_dict = trainer.train__CL(
+                                             ~~~~~~~~~~~~~~~~~^
+        train_data,
+        ^^^^^^^^^^^
+    ...<13 lines>...
+        global_iteration_offset=0
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/kraghavan/miniconda3/lib/python3.13/site-packages/equinox/_module/_prebuilt.py", line 33, in __call__
+    return self.__func__(self.__self__, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/loops.py", line 447, in train__CL
+    test_current, test_exp = self._compute_metrics_on_sampled_batches(
+                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        params, static, testloader, num_batches=10,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        problem_type=problem_type, notABTrain=notABTrain,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        transforms=transforms
+        ^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/kraghavan/miniconda3/lib/python3.13/site-packages/equinox/_module/_prebuilt.py", line 33, in __call__
+    return self.__func__(self.__self__, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/loops.py", line 180, in _compute_metrics_on_sampled_batches
+    x_exp = jnp.array(x_exp.numpy(), dtype=jnp.float64)
+                      ^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'numpy'
