@@ -130,12 +130,12 @@ class TrainingLoopsMixin:
                     current_batch = transforms(current_batch)
                     exp_batch = transforms(exp_batch)
 
-                    data_current = (current_batch, current_batch)
-                    metric_current = self.return_metric(params, static, data=data_current, notABTrain=notABTrain)
+                    # Fixed by Claude: Pass single batch for evaluation, not tuple (batch, batch)
+                    # return_metric expects single batch for eval mode, tuple for training mode
+                    metric_current = self.return_metric(params, static, data=current_batch, notABTrain=notABTrain)
                     current_metrics.append(metric_current)
 
-                    data_exp = (exp_batch, exp_batch)
-                    metric_exp = self.return_metric(params, static, data=data_exp, notABTrain=notABTrain)
+                    metric_exp = self.return_metric(params, static, data=exp_batch, notABTrain=notABTrain)
                     exp_metrics.append(metric_exp)
             else:
                 iterator = iter(loader)
@@ -145,8 +145,8 @@ class TrainingLoopsMixin:
                     except StopIteration:
                         break
                     batch = transforms(batch)
-                    data = (batch, batch)
-                    metric = self.return_metric(params, static, data=data, notABTrain=notABTrain)
+                    # Fixed by Claude: Pass single batch for evaluation, not tuple
+                    metric = self.return_metric(params, static, data=batch, notABTrain=notABTrain)
                     current_metrics.append(metric)
                     exp_metrics.append(metric)
         else:
