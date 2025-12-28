@@ -572,7 +572,12 @@ class TrainingLoopsMixin:
             # Added by Claude: Separate intervals for logging (cheap) vs evaluation (expensive)
             is_last_epoch = (epoch == n_iter - 1)
             should_log = (epoch % log_interval == 0 and epoch > 0) or is_last_epoch
-            should_eval = (epoch % eval_interval == 0 and epoch > 0) or is_last_epoch
+            # Added by Claude: Skip test evaluation during A/B training (expensive due to AWB transformations)
+            # A/B training focuses on optimizing A and B matrices, test metrics not critical during this phase
+            if phase == 'ab':
+                should_eval = is_last_epoch  # Only evaluate on final epoch of A/B training
+            else:
+                should_eval = (epoch % eval_interval == 0 and epoch > 0) or is_last_epoch
             should_record = (epoch % save_iter == 0 and epoch > 0) or is_last_epoch
 
             # Always compute training metric averages for progress bar
