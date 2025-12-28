@@ -1,6 +1,7 @@
 #!/bin/bash
 ### KKT Server - SINE & MNIST Conditions 3&4 (4 jobs on 4 GPUs)
 ### Runs Condition 3 and 4 for both sine and mnist in parallel
+### USAGE: Submit from ContLearn directory: sbatch kkt_run/kkt/submit_sine_mnist_cond34.slurm
 
 #SBATCH --job-name=sine_mnist_c34
 #SBATCH --gpus=4
@@ -20,8 +21,15 @@ echo "Date: $(date)"
 echo "=========================================="
 echo ""
 
-# Change to submission directory
+# Change to submission directory (should be ContLearn root)
 cd ${SLURM_SUBMIT_DIR}
+
+# Ensure we're in the ContLearn directory
+if [ ! -f "run.py" ]; then
+    echo "ERROR: Must be run from ContLearn directory"
+    echo "Current directory: $(pwd)"
+    exit 1
+fi
 
 # Add /usr/local/bin to PATH for SLURM commands
 export PATH="/usr/local/bin:$PATH"
@@ -38,6 +46,7 @@ fi
 
 echo "Python: $(which python)"
 echo "Python version: $(python --version)"
+echo "Working directory: $(pwd)"
 echo ""
 
 # GPU Information
@@ -47,20 +56,9 @@ if command -v nvidia-smi &> /dev/null; then
     echo ""
 fi
 
-# Project paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CONFIG_DIR="${SCRIPT_DIR}/../configs"
-LOG_DIR="${SCRIPT_DIR}/logs"
-RESULTS_DIR="${SCRIPT_DIR}/results"
-
-# Create directories
-mkdir -p "${LOG_DIR}"
-mkdir -p "${RESULTS_DIR}"
-
-# Define datasets and conditions
-DATASETS=("sine" "mnist")
-CONDITIONS=("condition3_arch_no_transfer" "condition4_awb_full")
+# Create directories in kkt_run/kkt
+mkdir -p kkt_run/kkt/logs
+mkdir -p kkt_run/kkt/results
 
 # GPU assignment (4 experiments on 4 GPUs)
 JOBS=(
@@ -88,9 +86,9 @@ for JOB in "${JOBS[@]}"; do
     IFS=':' read -r DATASET CONDITION GPU_ID <<< "$JOB"
 
     CONFIG_FILE="${DATASET}_${CONDITION}.json"
-    CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+    CONFIG_PATH="kkt_run/configs/${CONFIG_FILE}"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    LOG_FILE="${LOG_DIR}/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
+    LOG_FILE="kkt_run/kkt/logs/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
 
     if [ ! -f "${CONFIG_PATH}" ]; then
         echo "ERROR: Config not found: ${CONFIG_PATH}"
@@ -110,7 +108,7 @@ for JOB in "${JOBS[@]}"; do
         export XLA_PYTHON_CLIENT_PREALLOCATE=true
         export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
-        python "${PROJECT_ROOT}/run.py" "${CONFIG_PATH}" > "${LOG_FILE}" 2>&1
+        python run.py "${CONFIG_PATH}" > "${LOG_FILE}" 2>&1
     ) &
 
     JOB_KEY="${DATASET}_${CONDITION}"
