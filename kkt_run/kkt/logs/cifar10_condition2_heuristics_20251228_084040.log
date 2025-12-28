@@ -1,0 +1,24 @@
+JAX Backend: gpu
+JAX Devices: [CudaDevice(id=0)]
+
+Loaded config from: /home/kraghavan/projects/ContLearn/kkt_run/kkt/../configs/cifar10_condition2_heuristics.json
+Problem type: classification
+Dataset: cifar10
+Tasks: 10
+AWB enabled: False
+
+Output directory: /home/kraghavan/projects/ContLearn/kkt_run/kkt/results/cifar10
+Model path: /home/kraghavan/projects/ContLearn/kkt_run/kkt/results/cifar10/model
+
+
+############################################################
+# Run 1 / 1
+############################################################
+Loading CIFAR-10 dataset
+CIFAR-10 data loaded: 50000 samples
+
+============================================================
+Task 0
+============================================================
+Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
+  0%|          | 0/150 [00:00<?, ?it/s]  1%|          | 1/150 [01:32<3:48:57, 92.19s/it]  1%|          | 1/150 [02:42<3:48:57, 92.19s/it, CE=2.109242e+00 H=2.109087e+00 dV_dx=-1.622895e-07 dV_dθ=-1.549420e-04 ||∇||=5.261375e-01 | Tr=0.2442]  1%|▏         | 2/150 [02:42<3:15:34, 79.29s/it, CE=2.109242e+00 H=2.109087e+00 dV_dx=-1.622895e-07 dV_dθ=-1.549420e-04 ||∇||=5.261375e-01 | Tr=0.2442]  1%|▏         | 2/150 [03:46<3:15:34, 79.29s/it, CE=1.998938e+00 H=1.998318e+00 dV_dx=1.771641e-07 dV_dθ=-6.202892e-04 ||∇||=9.273731e-01 | Tr=0.2786]   2%|▏         | 3/150 [03:46<2:56:54, 72.21s/it, CE=1.998938e+00 H=1.998318e+00 dV_dx=1.771641e-07 dV_dθ=-6.202892e-04 ||∇||=9.273731e-01 | Tr=0.2786]
