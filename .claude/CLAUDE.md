@@ -10,50 +10,112 @@ JAX/Equinox-based continual learning framework implementing Hamiltonian-based gr
 
 ```
 ContLearn/
-├── src/cl/              # Core framework source code
-│   ├── arch_search/     # Architecture search modules (MLP, CNN, GCN)
-│   ├── config/          # Configuration parameters and constants
-│   ├── core/            # Core training components (mixins, trainer)
-│   ├── datasets/        # Dataset implementations
-│   ├── models/          # Neural network architectures
-│   └── runners/         # Problem-specific orchestration
-├── run_files/           # Execution scripts and utilities
-│   └── scripts/         # Main execution scripts (run.py, plot_results.py, etc.)
-├── kkt_run/             # KKT cluster-specific runs
-│   ├── configs/         # Production config files (.json)
-│   ├── logs/            # Training logs
-│   ├── results/         # Training outputs
-│   └── *.sh             # Slurm/parallel execution scripts
-├── tests/               # Test suite
-│   ├── training/        # Full pipeline training tests
-│   │   └── configs/     # Debug configs for testing
-│   └── *.py             # Unit tests
-├── data/                # Dataset storage (MNIST, CIFAR, etc.)
-└── docs/                # Documentation
+├── .claude/                      # Claude Code project configuration
+│   ├── CLAUDE.md                 # This file - project guide
+│   ├── profiling_context.md     # Performance optimization reference (READ BEFORE OPTIMIZING)
+│   ├── awb_refactoring_context.md
+│   ├── comprehensive_context.md
+│   └── session_context.md
+├── src/cl/                       # Core framework source code
+│   ├── arch_search/              # Architecture search modules (MLP, CNN, GCN)
+│   ├── config/                   # Configuration parameters and constants
+│   │   ├── constants.py          # All default hyperparameters
+│   │   └── params.py             # Config loading and defaults
+│   ├── core/                     # Core training components (mixins, trainer)
+│   │   ├── trainer.py            # Main Trainer class
+│   │   ├── losses.py             # LossMixin (DO NOT OPTIMIZE)
+│   │   ├── hamiltonian.py        # HamiltonianMixin (DO NOT OPTIMIZE)
+│   │   ├── loops.py              # TrainingLoopsMixin
+│   │   ├── recording.py          # RecordingMixin
+│   │   ├── awb.py                # AWB utilities (DO NOT OPTIMIZE)
+│   │   └── profiling.py          # GPU/memory profiling
+│   ├── datasets/                 # Dataset implementations
+│   │   ├── jax_dataloader.py     # JAX async data pipeline (NEW - for GPU utilization)
+│   │   ├── base.py               # Base dataset with experience replay
+│   │   ├── sine.py               # Sine wave regression
+│   │   ├── mnist.py              # MNIST/Permuted MNIST
+│   │   ├── cifar.py              # CIFAR-10/100
+│   │   └── synthetic_graph.py    # Graph classification
+│   ├── models/                   # Neural network architectures
+│   │   ├── mlp.py                # Fully connected networks
+│   │   ├── cnn.py                # Convolutional networks (MNIST, CIFAR)
+│   │   ├── gcn.py                # Graph convolutional networks
+│   │   └── layers.py             # Custom layer implementations
+│   └── runners/                  # Problem-specific orchestration
+│       ├── generic_runner.py     # Base runner
+│       ├── regression.py         # Sine wave regression
+│       ├── classification.py     # MNIST/CIFAR classification
+│       └── graph_classification.py # Graph classification
+├── run_files/                    # Execution scripts (DEPRECATED - moved to kkt_run)
+│   └── scripts/                  # Analysis scripts (moved to kkt_run/analysis)
+├── kkt_run/                      # KKT cluster experiment infrastructure
+│   ├── configs/                  # Production config files
+│   │   ├── debug/                # Profiling configs (optimized, fast runs)
+│   │   ├── *_condition1_baseline.json      # Condition 1: Baseline (20 configs)
+│   │   ├── *_condition2_heuristics.json    # Condition 2: Heuristics
+│   │   ├── *_condition3_arch_no_transfer.json # Condition 3: Arch search only
+│   │   └── *_condition4_awb_full.json      # Condition 4: Full AWB
+│   ├── experiments/              # Experiment management (JLSE cluster)
+│   │   ├── slurm/                # SLURM submission scripts
+│   │   ├── scripts/              # Execution scripts
+│   │   └── results/              # Experiment outputs
+│   ├── jlse/                     # JLSE cluster runs
+│   │   ├── logs/                 # Training logs
+│   │   ├── results/              # Training outputs
+│   │   └── run_*.sh              # Per-dataset run scripts
+│   ├── kkt/                      # KKT cluster runs
+│   │   ├── logs/                 # Training logs (organized by config)
+│   │   ├── results/              # Training outputs (organized by config)
+│   │   ├── run_parallel.sh       # Run all datasets in parallel
+│   │   ├── run_optimized_profiles.sh # Profile optimization performance
+│   │   └── submit_all_datasets.sh # Submit all SLURM jobs
+│   ├── analysis/                 # Analysis and plotting tools
+│   │   ├── scripts/              # Analysis scripts
+│   │   └── additional_python_scripts/ # Helper scripts
+│   ├── logs/                     # Legacy logs (moved to kkt/logs/)
+│   └── results/                  # Legacy results (organized by experiment)
+├── tests/                        # Test suite
+│   ├── training/                 # Full pipeline training tests (~5 min)
+│   │   ├── configs/              # Debug configs (50 samples, 2 epochs)
+│   │   └── test_all_configs.py   # Tests for all 10 configs
+│   ├── awb_tests/                # AWB-specific tests
+│   │   └── configs/              # AWB test configs
+│   ├── configs/                  # Shared test configs
+│   ├── gpu_reports/              # GPU profiling reports (JSON)
+│   ├── test_*.py                 # Unit tests (~30 sec total)
+│   └── conftest.py               # Pytest fixtures
+├── data/                         # Dataset storage (auto-downloaded)
+│   ├── MNIST/                    # MNIST dataset
+│   ├── cifar-10-batches-py/      # CIFAR-10 dataset
+│   └── cifar-100-python/         # CIFAR-100 dataset
+├── docs/                         # Documentation
+├── figures/                      # Generated plots
+├── outputs/                      # Default output directory
+└── run.py                        # Main entry point (root-level)
 ```
 
 ## Commands
 
 ### Running Experiments
 ```bash
-# Basic run (using run_files/scripts/)
-python run_files/scripts/run.py kkt_run/configs/sine.json
+# Basic run (run.py is now at project root)
+python run.py kkt_run/configs/sine_condition1_baseline.json
 
 # Multiple runs with plots
-python run_files/scripts/run.py kkt_run/configs/sine.json --runs 3
+python run.py kkt_run/configs/sine_condition1_baseline.json --runs 3
 
 # Skip plot generation
-python run_files/scripts/run.py kkt_run/configs/sine.json --no-plots
+python run.py kkt_run/configs/sine_condition1_baseline.json --no-plots
 
 # Custom figures output directory
-python run_files/scripts/run.py kkt_run/configs/sine.json --figures-dir outputs/figures
+python run.py kkt_run/configs/sine_condition1_baseline.json --figures-dir outputs/figures
 
-# Using convenience scripts (from run_files/scripts/)
-cd run_files/scripts/
-./run_sine.sh              # Run sine regression
-./run_mnist.sh             # Run MNIST classification
-./run_cifar10.sh           # Run CIFAR-10 classification
-./run_sine_awb.sh          # Run sine with AWB enabled
+# Run with JAX async prefetching disabled (for debugging)
+python run.py kkt_run/configs/mnist_condition1_baseline.json
+# Note: use_jax_prefetch=true by default (see profiling_context.md)
+
+# Monitor GPU utilization in real-time
+watch -n 0.5 nvidia-smi
 ```
 
 ### KKT Cluster Runs
