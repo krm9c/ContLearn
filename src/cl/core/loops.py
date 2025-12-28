@@ -327,8 +327,9 @@ class TrainingLoopsMixin:
         prefetch_size = config.get("prefetch_size", 3)  # 3 batches queued
 
         if use_prefetch:
-            trainloader = PrefetchDataLoader(trainloader, prefetch_size=prefetch_size)
-            exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size)
+            # Added by Claude: Pass loss_type to ensure correct dtype conversion
+            trainloader = PrefetchDataLoader(trainloader, prefetch_size=prefetch_size, loss_type=loss_type)
+            exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size, loss_type=loss_type)
             # Don't prefetch test loaders - they're only used at eval_interval
 
         # Added by Claude: Get gradient combination weights from config
