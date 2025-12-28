@@ -44,6 +44,9 @@ class PrefetchDataLoader:
         self.dataloader = dataloader
         self.prefetch_size = prefetch_size
         self.device = device or jax.devices()[0]
+        # Added by Claude: Diagnostic logging for device detection
+        print(f"[DEBUG] PrefetchDataLoader initialized with device: {self.device}")
+        print(f"[DEBUG] All available JAX devices: {jax.devices()}")
 
     def __iter__(self) -> Iterator[Tuple[jnp.ndarray, jnp.ndarray]]:
         """Iterate over batches with GPU prefetching."""

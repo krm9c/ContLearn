@@ -268,8 +268,15 @@ class TrainingLoopsMixin:
                 (x, _) = batch
                 (exp_x, _) = batch_ex
                 min_batch = min(x.shape[0], exp_x.shape[0])
-                x = jnp.array(x.numpy()[:min_batch], dtype=jnp.float64)
-                exp_x = jnp.array(exp_x.numpy()[:min_batch], dtype=jnp.float64)
+                # Added by Claude: Handle both PyTorch tensors and JAX arrays
+                if hasattr(x, 'numpy'):
+                    # PyTorch tensor - convert to JAX
+                    x = jnp.array(x.numpy()[:min_batch], dtype=jnp.float64)
+                    exp_x = jnp.array(exp_x.numpy()[:min_batch], dtype=jnp.float64)
+                else:
+                    # Already JAX array - just slice and ensure dtype
+                    x = jnp.array(x[:min_batch], dtype=jnp.float64)
+                    exp_x = jnp.array(exp_x[:min_batch], dtype=jnp.float64)
 
             # Compute feature variance
             var_x_list.append(
@@ -386,12 +393,23 @@ class TrainingLoopsMixin:
             if use_prefetch:
                 # PrefetchDataLoader already converts to JAX and transfers to GPU
                 # Just materialize the iterators into lists for multiple epochs
+                # Added by Claude: Diagnostic logging
+                print(f"[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)")
                 train_batches_jax = list(trainloader)
                 exp_batches_jax = list(exploader)
+                # Added by Claude: Check first batch device
+                if train_batches_jax:
+                    x_sample, y_sample = train_batches_jax[0]
+                    print(f"[DEBUG] First train batch device: {x_sample.device()}")
             else:
                 # Original path: Manually convert PyTorch tensors to JAX
+                # Added by Claude: Diagnostic logging
+                print(f"[DEBUG] Using manual conversion path (use_prefetch=False)")
+                print(f"[DEBUG] JAX default device: {jax.devices()[0]}")
+                print(f"[DEBUG] All JAX devices: {jax.devices()}")
+
                 train_batches_jax = []
-                for batch in trainloader:
+                for i, batch in enumerate(trainloader):
                     x, y = batch[0], batch[1]
                     x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
                     if loss_type == 'regression':
@@ -399,6 +417,9 @@ class TrainingLoopsMixin:
                     else:
                         y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
                     train_batches_jax.append((x_jax, y_jax))
+                    # Added by Claude: Log first batch device
+                    if i == 0:
+                        print(f"[DEBUG] First converted batch device: {x_jax.device()}")
 
                 exp_batches_jax = []
                 for batch in exploader:
