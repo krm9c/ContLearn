@@ -169,6 +169,11 @@ def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     set_default('debug_mode', constants.DEFAULT_DEBUG_MODE)
     set_default('debug_limit', constants.DEFAULT_DEBUG_LIMIT)
 
+    # ===== DATA LOADING OPTIMIZATION DEFAULTS =====
+    # Added by Claude: JAX-native data pipeline with GPU prefetching
+    set_default('use_jax_prefetch', constants.DEFAULT_USE_JAX_PREFETCH)
+    set_default('prefetch_size', constants.DEFAULT_PREFETCH_SIZE)
+
     # ===== MODEL ARCHITECTURE DEFAULTS =====
     network = config.get('network', constants.DEFAULT_NETWORK)
 

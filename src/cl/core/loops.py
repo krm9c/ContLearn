@@ -27,6 +27,9 @@ from .profiling import profile, profile_section
 # Added by Claude: Async checkpointing support
 from .async_checkpoint import AsyncCheckpointManager
 
+# Added by Claude: JAX-native data pipeline for GPU utilization
+from ..datasets.jax_dataloader import PrefetchDataLoader, DualPrefetchDataLoader
+
 
 # Graph transform pipeline (lazy import to avoid dependency when not needed)
 _GRAPH_TRANSFORMS = None
@@ -309,6 +312,18 @@ class TrainingLoopsMixin:
         """
         trainloader, exploader, valloader, testloader = train__
         flag = config.get("flag", [1.0, 1.0])
+
+        # Added by Claude: Wrap dataloaders with JAX prefetching for GPU utilization
+        # This overlaps data loading with computation, eliminating CPU-GPU transfer bottleneck
+        # prefetch_size=3 means 3 batches are loading while GPU processes current batch
+        use_prefetch = config.get("use_jax_prefetch", True)  # Enable by default
+        prefetch_size = config.get("prefetch_size", 3)  # 3 batches queued
+
+        if use_prefetch:
+            trainloader = PrefetchDataLoader(trainloader, prefetch_size=prefetch_size)
+            exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size)
+            # Don't prefetch test loaders - they're only used at eval_interval
+
         # Added by Claude: Get gradient combination weights from config
         # [alpha, beta, gamma] for [current_task, experience_replay, hamiltonian_regularization]
         grad_weights = config.get("grad_weights", None)  # None uses defaults in hamiltonian.py
@@ -366,26 +381,34 @@ class TrainingLoopsMixin:
 
         # Added by Claude: Phase 3 - Pre-convert train/exp loaders to JAX (ONCE per task)
         # Eliminates 10,000+ PyTorch→JAX conversions per task (only for vector data)
+        # NOTE: Skip conversion if using PrefetchDataLoader (data already JAX arrays on GPU)
         if problem_type == 'vectors':
-            train_batches_jax = []
-            for batch in trainloader:
-                x, y = batch[0], batch[1]
-                x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
-                if loss_type == 'regression':
-                    y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
-                else:
-                    y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
-                train_batches_jax.append((x_jax, y_jax))
+            if use_prefetch:
+                # PrefetchDataLoader already converts to JAX and transfers to GPU
+                # Just materialize the iterators into lists for multiple epochs
+                train_batches_jax = list(trainloader)
+                exp_batches_jax = list(exploader)
+            else:
+                # Original path: Manually convert PyTorch tensors to JAX
+                train_batches_jax = []
+                for batch in trainloader:
+                    x, y = batch[0], batch[1]
+                    x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
+                    if loss_type == 'regression':
+                        y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
+                    else:
+                        y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
+                    train_batches_jax.append((x_jax, y_jax))
 
-            exp_batches_jax = []
-            for batch in exploader:
-                x, y = batch[0], batch[1]
-                x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
-                if loss_type == 'regression':
-                    y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
-                else:
-                    y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
-                exp_batches_jax.append((x_jax, y_jax))
+                exp_batches_jax = []
+                for batch in exploader:
+                    x, y = batch[0], batch[1]
+                    x_jax = jnp.array(x.numpy(), dtype=jnp.float64)
+                    if loss_type == 'regression':
+                        y_jax = jnp.array(y.numpy(), dtype=jnp.float64)
+                    else:
+                        y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
+                    exp_batches_jax.append((x_jax, y_jax))
 
             if profiling_enabled:
                 preconv_elapsed = time.time() - preconv_start
