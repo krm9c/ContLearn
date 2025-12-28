@@ -4,7 +4,7 @@
     "data": "mnist",
     "n_task": 2,
     "epochs_per_task": 10,
-    "batch_size": 2048,
+    "batch_size": 1024,
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 3,
@@ -12,8 +12,9 @@
     "awb_loss_ratio_threshold": 1.1,
     "force_arch_change": true,
     "debug_mode": true,
-    "debug_limit": 1000,
+    "debug_limit": 10000,
     "profiling_enabled": true,
     "lr": 0.0001,
+    "use_jax_prefetch": true,
     "grad_weights": [0.01, 0.98, 0.1]
 }
