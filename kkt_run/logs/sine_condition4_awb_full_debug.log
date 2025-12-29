@@ -1,81 +1,0 @@
-JAX Backend: cpu
-JAX Devices: [CpuDevice(id=0)]
-
-Loaded config from: kkt_run/configs/sine_condition4_awb_full_debug.json
-Problem type: regression
-Dataset: sine
-Tasks: 2
-AWB enabled: True
-
-
-############################################################
-# Run 1 / 1
-############################################################
-
-============================================================
-Task 0
-============================================================
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
-  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  1.67it/s] 50%|█████     | 1/2 [00:00<00:00,  1.67it/s, MSE=2.394904e-01 H=2.357986e-01 dV_dx=-5.089508e-06 dV_dθ=-3.686644e-03 ||∇||=1.190789e+00 | Tr=0.2212 Te/Cur=0.2030 Te/Exp=0.2019]100%|██████████| 2/2 [00:01<00:00,  1.89it/s, MSE=2.394904e-01 H=2.357986e-01 dV_dx=-5.089508e-06 dV_dθ=-3.686644e-03 ||∇||=1.190789e+00 | Tr=0.2212 Te/Cur=0.2030 Te/Exp=0.2019]100%|██████████| 2/2 [00:01<00:00,  1.85it/s, MSE=2.394904e-01 H=2.357986e-01 dV_dx=-5.089508e-06 dV_dθ=-3.686644e-03 ||∇||=1.190789e+00 | Tr=0.2212 Te/Cur=0.2030 Te/Exp=0.2019]
-
-  Evaluating on all tasks 0..0 for CL metrics...
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-    Task 0: 0.2014
-
-============================================================
-Task 1
-============================================================
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-Initial loss on new task: 0.4092, previous: 0.2395, ratio: 1.71
-AWB pipeline (lr=0.000100)
-
-======================================================================
-AWB PIPELINE - Task 1
-======================================================================
-
-[STEP 1] Preliminary training (1 epochs) - NOT recorded
-  0%|          | 0/1 [00:00<?, ?it/s]  0%|          | 0/1 [00:00<?, ?it/s, MSE=1.904053e-01 H=1.876603e-01 dV_dx=2.209931e-06 dV_dθ=-2.747233e-03 ||∇||=1.010884e+00 | Tr=0.1768 Te/Cur=0.1650 Te/Exp=0.1621]100%|██████████| 1/1 [00:00<00:00,  5.72it/s, MSE=1.904053e-01 H=1.876603e-01 dV_dx=2.209931e-06 dV_dθ=-2.747233e-03 ||∇||=1.010884e+00 | Tr=0.1768 Te/Cur=0.1650 Te/Exp=0.1621]100%|██████████| 1/1 [00:00<00:00,  5.72it/s, MSE=1.904053e-01 H=1.876603e-01 dV_dx=2.209931e-06 dV_dθ=-2.747233e-03 ||∇||=1.010884e+00 | Tr=0.1768 Te/Cur=0.1650 Te/Exp=0.1621]
-  Preliminary loss: 0.239490
-
-[STEP 2] Architecture change decision
-  Current: 0.239490, Previous: 0.239490
-  Decision: KEEP
-  No change - standard training
-Traceback (most recent call last):
-  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/run_files/scripts/run.py", line 125, in <module>
-    main()
-    ~~~~^^
-  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/run_files/scripts/run.py", line 103, in main
-    record_dict = train_model(config, run_id=run_id)
-  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/runners/generic_runner.py", line 1104, in train_model
-    model, optim, opt_state, record_dict = run_awb_task(
-                                           ~~~~~~~~~~~~^
-        task_id=task_id,
-        ^^^^^^^^^^^^^^^^
-    ...<10 lines>...
-        previous_task_loss=previous_task_loss
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/kraghavan/Desktop/JMLR_paper/ContLearn/src/cl/core/awb_pipeline.py", line 237, in run_awb_task
-    from ..utils.optimizer import create_optimizer
-ModuleNotFoundError: No module named 'cl.utils'
-Loading records from: kkt_run/results/regression_sine_fcnn_run0_records.pkl
-Generating plots in: kkt_run/results/sine_condition4_awb_full_debug_plots
-
-1. Standard training plots...
-  ✓ Saved: kkt_run/results/sine_condition4_awb_full_debug_plots/losses.png
-  ✓ Saved: kkt_run/results/sine_condition4_awb_full_debug_plots/metrics.png
-
-2. CL metrics...
-  ✓ Saved: kkt_run/results/sine_condition4_awb_full_debug_plots/cl_metrics.png
-
-3. Performance matrix heatmap...
-  ✓ Saved: kkt_run/results/sine_condition4_awb_full_debug_plots/performance_matrix.png
-
-✓ All plots generated successfully!
-  Location: kkt_run/results/sine_condition4_awb_full_debug_plots
