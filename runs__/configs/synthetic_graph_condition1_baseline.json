@@ -1,23 +1,19 @@
 {
     "__comment": "CONDITION 1: Baseline Hamiltonian (No Smoothness)",
+
     "__comment_": "Fixed arch, constant LR, no warm start",
     "data": "synthetic",
     "problem": "graph",
     "network": "gcn",
     "n_task": 10,
     "epochs_per_task": 250,
-    "batch_size": 2048,
+    "batch_size": 256,
 
 
-    "model_path": "runs__/results/synthetic_graph_condition1",
+    "model_path": "runs__/kkt/results/synthetic_graph_condition1",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,
-    "grad_weights": [
-        0.4,
-        0.4,
-        0.1
-    ],
     "debug_mode": false,
     "per_task_eval_enabled": true,
     "use_jax_prefetch": true,
@@ -26,7 +22,10 @@
     "__comment_": "the modifications for different conditions",
     "lr_schedule": "constant",
     "lr": 0.0001,
-    "warmup_epochs": 0,
     "awb_enabled": false,
-    "task_warmup_enabled": false
+    "task_warmup_enabled": false,
+
+    "__comment__": "Gradient weights configuration (static)",
+    "adaptive_grad_weights_enabled": false,
+    "main_grad_weights": [0.4, 0.4, 0.1]
 }

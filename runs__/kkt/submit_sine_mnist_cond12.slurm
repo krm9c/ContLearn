@@ -1,14 +1,14 @@
 #!/bin/bash
 ### KKT Server - SINE & MNIST Conditions 1&2 (4 jobs on 4 GPUs)
 ### Runs Condition 1 and 2 for both sine and mnist in parallel
-### USAGE: Submit from ContLearn directory: sbatch kkt_run/kkt/submit_sine_mnist_cond12.slurm
+### USAGE: Submit from ContLearn directory: sbatch runs__/kkt/submit_sine_mnist_cond12.slurm
 
 #SBATCH --job-name=sine_mnist_c12
 #SBATCH --gpus=4
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
-#SBATCH --output=kkt_run/kkt/logs/sine_mnist_cond12_%j.out
-#SBATCH --error=kkt_run/kkt/logs/sine_mnist_cond12_%j.err
+#SBATCH --output=runs__/kkt/logs/sine_mnist_cond12_%j.out
+#SBATCH --error=runs__/kkt/logs/sine_mnist_cond12_%j.err
 
 echo ""
 echo "=========================================================================================================="
@@ -56,9 +56,9 @@ if command -v nvidia-smi &> /dev/null; then
     echo ""
 fi
 
-# Create directories in kkt_run/kkt
-mkdir -p kkt_run/kkt/logs
-mkdir -p kkt_run/kkt/results
+# Create directories in runs__/kkt
+mkdir -p runs__/kkt/logs
+mkdir -p runs__/kkt/results
 
 # GPU assignment (4 experiments on 4 GPUs)
 JOBS=(
@@ -86,9 +86,9 @@ for JOB in "${JOBS[@]}"; do
     IFS=':' read -r DATASET CONDITION GPU_ID <<< "$JOB"
 
     CONFIG_FILE="${DATASET}_${CONDITION}.json"
-    CONFIG_PATH="kkt_run/configs/${CONFIG_FILE}"
+    CONFIG_PATH="runs__/configs/${CONFIG_FILE}"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    LOG_FILE="kkt_run/kkt/logs/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
+    LOG_FILE="runs__/kkt/logs/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
 
     if [ ! -f "${CONFIG_PATH}" ]; then
         echo "ERROR: Config not found: ${CONFIG_PATH}"
@@ -98,7 +98,6 @@ for JOB in "${JOBS[@]}"; do
     echo "[$(date)] Starting: ${DATASET} - ${CONDITION} on GPU ${GPU_ID}"
     echo "  Config: ${CONFIG_PATH}"
     echo "  Log: ${LOG_FILE}"
-    echo "  Note: Results directory specified in config file"
 
     # Run in background with dedicated GPU
     (
