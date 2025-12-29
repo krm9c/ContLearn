@@ -1,68 +1,0 @@
-JAX Backend: cpu
-JAX Devices: [CpuDevice(id=0)]
-
-Loaded config from: kkt_run/configs/sine_condition2_heuristics_debug.json
-Problem type: regression
-Dataset: sine
-Tasks: 2
-AWB enabled: False
-
-
-############################################################
-# Run 1 / 1
-############################################################
-
-============================================================
-Task 0
-============================================================
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
-  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  1.68it/s] 50%|█████     | 1/2 [00:00<00:00,  1.68it/s, MSE=2.409263e-01 H=2.370949e-01 dV_dx=-8.364735e-07 dV_dθ=-3.830542e-03 ||∇||=1.188718e+00 | Tr=0.2237 Te/Cur=0.2039 Te/Exp=0.2045]100%|██████████| 2/2 [00:00<00:00,  2.09it/s, MSE=2.409263e-01 H=2.370949e-01 dV_dx=-8.364735e-07 dV_dθ=-3.830542e-03 ||∇||=1.188718e+00 | Tr=0.2237 Te/Cur=0.2039 Te/Exp=0.2045]100%|██████████| 2/2 [00:00<00:00,  2.02it/s, MSE=2.409263e-01 H=2.370949e-01 dV_dx=-8.364735e-07 dV_dθ=-3.830542e-03 ||∇||=1.188718e+00 | Tr=0.2237 Te/Cur=0.2039 Te/Exp=0.2045]
-
-  Evaluating on all tasks 0..0 for CL metrics...
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-    Task 0: 0.2022
-
-============================================================
-Task 1
-============================================================
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-Initial loss on new task: 0.4109, previous: 0.2409, ratio: 1.71
-Standard CL training (lr=0.000015, adaptive_lr_min=1.46e-05, loss_ratio=1.71)
-  Warmup phase: 5 epochs at lr=1.46e-06
-    Using new task samples only (no experience replay)
-    Grad weights: [1.0, 0.0, 0.0]
-  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:00<00:00,  9.11it/s] 20%|██        | 1/5 [00:00<00:00,  9.11it/s, MSE=2.032899e-01 H=2.000754e-01 dV_dx=2.130030e-06 dV_dθ=-3.216610e-03 ||∇||=9.979406e-01 | Tr=0.2025 Te/Cur=0.2043 Te/Exp=0.1998]100%|██████████| 5/5 [00:00<00:00, 32.17it/s, MSE=2.032899e-01 H=2.000754e-01 dV_dx=2.130030e-06 dV_dθ=-3.216610e-03 ||∇||=9.979406e-01 | Tr=0.2025 Te/Cur=0.2043 Te/Exp=0.1998]
-  Main phase: -3 epochs at lr=1.46e-05
-    Using experience replay
-    Adaptive grad weights: [0.47, 0.43, 0.10] (current, experience, regularization)
-0it [00:00, ?it/s]0it [00:00, ?it/s]
-
-  Evaluating on all tasks 0..1 for CL metrics...
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-    Task 0: 0.1989
-DEBUG MODE: Limiting training data from 3200 to 50 samples
-DEBUG MODE: Limiting test data from 800 to 50 samples
-    Task 1: 0.2068
-Records saved to: kkt_run/results/regression_sine_fcnn_run0_records.pkl
-
-Training complete!
-Loading records from: kkt_run/results/regression_sine_fcnn_run0_records.pkl
-Generating plots in: kkt_run/results/sine_condition2_heuristics_debug_plots
-
-1. Standard training plots...
-  ✓ Saved: kkt_run/results/sine_condition2_heuristics_debug_plots/losses.png
-  ✓ Saved: kkt_run/results/sine_condition2_heuristics_debug_plots/metrics.png
-
-2. CL metrics...
-  ✓ Saved: kkt_run/results/sine_condition2_heuristics_debug_plots/cl_metrics.png
-
-3. Performance matrix heatmap...
-  ✓ Saved: kkt_run/results/sine_condition2_heuristics_debug_plots/performance_matrix.png
-
-✓ All plots generated successfully!
-  Location: kkt_run/results/sine_condition2_heuristics_debug_plots
