@@ -6,32 +6,28 @@
     "epochs_per_task": 200,
     "batch_size": 1024,
 
-
-    "model_path": "runs__/kkt/results/sine_condition4",
+    "model_path": "runs__/results/sine_condition4",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,
+    "grad_weights": [
+        0.4,
+        0.4,
+        0.1
+    ],
     "debug_mode": false,
     "per_task_eval_enabled": true,
     "use_jax_prefetch": true,
     "prefetch_size": 3,
 
-
-    "__comment__": "AWB configuration (architecture + transfer learning)",
+    "__comment_": "the modifications for different conditions",
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 30,
     "awb_ab_training_epochs": 100,
-    "awb_ab_warmup_epochs": 2,
     "awb_loss_ratio_threshold": 1.1,
-    "awb_validation_ratio": 1.0,
-
-
-    "__comment___": "Learning rate configuration",
     "lr_schedule": "cosine",
     "lr": 0.0001,
-
-
-    "__comment____": "Gradient weights (static - AWB pipeline does not use adaptive grad weights)",
-    "grad_weights": [0.4, 0.4, 0.1]
+    "warmup_epochs": 25,
+    "lr_warmup_factor": 0.1
 }

@@ -14,8 +14,7 @@ JAX/Equinox continual learning framework with Hamiltonian gradients and AWB (Ada
 ContLearn/
 ├── .claude/                  # Project configuration
 │   ├── CLAUDE.md             # This file
-│   ├── profiling_context.md # Performance optimization guide (READ FIRST)
-│   └── conditions_execution_map.md # 4 conditions: configs → code execution paths
+│   └── profiling_context.md # Performance optimization guide (READ FIRST)
 ├── src/cl/                   # Core source code
 │   ├── arch_search/          # Architecture search (MLP, CNN, GCN)
 │   ├── config/               # constants.py, params.py
@@ -208,4 +207,3 @@ Auto-generated after training:
 - **AWB algorithm**: `src/cl/core/awb.py`
 - **Performance optimization**: `.claude/profiling_context.md` (READ BEFORE OPTIMIZING)
 - **Config defaults**: `src/cl/config/constants.py`
-- **Experimental conditions**: `.claude/conditions_execution_map.md` (4 conditions config → code mapping)
