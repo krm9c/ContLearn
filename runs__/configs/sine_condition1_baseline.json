@@ -1,11 +1,13 @@
 {
     "__comment": "CONDITION 1: Baseline Hamiltonian (No Smoothness)",
+
     "__comment_": "Fixed arch, constant LR, no warm start",
     "data": "sine",
     "n_task": 10,
     "epochs_per_task": 200,
     "batch_size": 1024,
-    
+
+
     "model_path": "runs__/results/sine_condition1",
     "save_iter": 50,
     "log_interval": 1,
@@ -21,13 +23,9 @@
     "prefetch_size": 3,
 
     "__comment_": "the modifications for different conditions",
-    "awb_enabled": false,
-    "awb_skip_transfer": false,
-    "awb_preliminary_epochs": 30,
-    "awb_ab_training_epochs": 100,
-    "awb_loss_ratio_threshold": 1.1,
-    "lr_schedule": "cosine",
+    "lr_schedule": "constant",
     "lr": 0.0001,
-    "warmup_epochs": 25,
-    "lr_warmup_factor": 0.1
+    "warmup_epochs": 0,
+    "awb_enabled": false,
+    "task_warmup_enabled": false
 }
