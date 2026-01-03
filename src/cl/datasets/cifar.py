@@ -17,6 +17,7 @@ from ..config.constants import (
     DEFAULT_TRAIN_TEST_SPLIT,
     DEFAULT_ROTATION_RANGE,
     DEFAULT_SCALING_RANGE,
+    DEFAULT_PERMUTATION_SEED_MULTIPLIER,
 )
 
 
@@ -86,6 +87,10 @@ class CIFAR10Dataset(BaseDataset):
         Args:
             task_id: Task identifier (0-indexed)
         """
+        # Fixed by Claude: Set deterministic seed for reproducible task generation
+        # Critical for accurate CL metrics - ensures task data is identical during training and evaluation
+        np.random.seed(task_id * DEFAULT_PERMUTATION_SEED_MULTIPLIER)
+
         X = self.images.clone()
         y = self.labels.copy()
 
@@ -100,7 +105,8 @@ class CIFAR10Dataset(BaseDataset):
             scale=1, shear=rot_angle
         )
 
-        # Split the data
+        # Fixed by Claude: Use deterministic train/test split for reproducibility
+        # The seed was already set above, so np.random calls will be deterministic
         n_samples = X.shape[0]
         n_train = int(self.train_split * n_samples)
 
@@ -196,6 +202,10 @@ class CIFAR100Dataset(BaseDataset):
         Args:
             task_id: Task identifier (0-indexed)
         """
+        # Fixed by Claude: Set deterministic seed for reproducible task generation
+        # Critical for accurate CL metrics - ensures task data is identical during training and evaluation
+        np.random.seed(task_id * DEFAULT_PERMUTATION_SEED_MULTIPLIER)
+
         X = self.images.clone()
         y = self.labels.copy()
 
@@ -210,7 +220,8 @@ class CIFAR100Dataset(BaseDataset):
             scale=1, shear=rot_angle
         )
 
-        # Split the data
+        # Fixed by Claude: Use deterministic train/test split for reproducibility
+        # The seed was already set above, so np.random calls will be deterministic
         n_samples = X.shape[0]
         n_train = int(self.train_split * n_samples)
 

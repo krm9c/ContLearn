@@ -26,6 +26,7 @@
     "awb_preliminary_epochs": 30,
     "awb_ab_training_epochs": 100,
     "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": true,
     "lr_schedule": "cosine",
     "lr": 0.0001,
     "warmup_epochs": 25,
