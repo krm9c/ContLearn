@@ -20,7 +20,7 @@
     ],
     "debug_mode": false,
     "per_task_eval_enabled": true,
-    "use_jax_prefetch": true,
+    "use_jax_prefetch": false,
     "prefetch_size": 3,
 
     "__comment_": "the modifications for different conditions",
