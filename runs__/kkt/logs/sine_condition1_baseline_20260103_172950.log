@@ -1,0 +1,25 @@
+JAX Backend: gpu
+JAX Devices: [CudaDevice(id=0)]
+
+Loaded config from: runs__/configs/sine_condition1_baseline.json
+Problem type: regression
+Dataset: sine
+Tasks: 10
+AWB enabled: False
+
+
+############################################################
+# Run 1 / 1
+############################################################
+
+============================================================
+Task 0
+============================================================
+  Note: Batch size capped from 1024 to 800 due to small dataset size (800 samples)
+  Note: Batch size capped from 1024 to 800 due to small dataset size (800 samples)
+Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [CudaDevice(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [CudaDevice(id=0)]
+  0%|          | 0/200 [00:00<?, ?it/s]
