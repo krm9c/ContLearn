@@ -6,8 +6,8 @@
 #SBATCH --gpus=4
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
-#SBATCH --output=kkt_run/kkt/logs/cifar100_%j.out
-#SBATCH --error=kkt_run/kkt/logs/cifar100_%j.err
+#SBATCH --output=runs__/kkt/logs/cifar100_%j.out
+#SBATCH --error=runs__/kkt/logs/cifar100_%j.err
 
 echo ""
 echo "=========================================================================================================="
@@ -48,11 +48,11 @@ if command -v nvidia-smi &> /dev/null; then
 fi
 
 # Create directories
-mkdir -p kkt_run/kkt/logs
-mkdir -p kkt_run/kkt/results
+mkdir -p runs__/kkt/logs
+mkdir -p runs__/kkt/results
 
 # Run all 4 conditions in parallel
-bash kkt_run/kkt/run_dataset_parallel.sh cifar100
+bash runs__/kkt/run_dataset_parallel.sh cifar100
 
 EXIT_CODE=$?
 

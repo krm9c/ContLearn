@@ -1,18 +1,18 @@
 #!/bin/bash
-### KKT Server - SINE & MNIST Conditions 1&2 (4 jobs on 4 GPUs)
-### Runs Condition 1 and 2 for both sine and mnist in parallel
-### USAGE: Submit from ContLearn directory: sbatch runs__/kkt/submit_sine_mnist_cond12.slurm
+### KKT Server - SYNTHETIC GRAPH Conditions 1&2 (2 jobs on 2 GPUs)
+### Runs Condition 1 and 2 for synthetic_graph in parallel
+### USAGE: Submit from ContLearn directory: sbatch runs__/kkt/submit_synthetic_graph_cond12.slurm
 
-#SBATCH --job-name=sine_mnist_c12
-#SBATCH --gpus=4
-#SBATCH --mem=128G
+#SBATCH --job-name=synthgraph_c12
+#SBATCH --gpus=2
+#SBATCH --mem=64G
 #SBATCH --time=48:00:00
-#SBATCH --output=runs__/kkt/logs/sine_mnist_cond12_%j.out
-#SBATCH --error=runs__/kkt/logs/sine_mnist_cond12_%j.err
+#SBATCH --output=runs__/kkt/logs/synthetic_graph_cond12_%j.out
+#SBATCH --error=runs__/kkt/logs/synthetic_graph_cond12_%j.err
 
 echo ""
 echo "=========================================================================================================="
-echo "SINE & MNIST - Conditions 1&2 (Baseline + Heuristics)"
+echo "SYNTHETIC GRAPH - Conditions 1&2 (Baseline + Heuristics)"
 echo "=========================================================================================================="
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Node: ${SLURM_NODELIST}"
@@ -60,20 +60,16 @@ fi
 mkdir -p runs__/kkt/logs
 mkdir -p runs__/kkt/results
 
-# GPU assignment (4 experiments on 4 GPUs)
+# GPU assignment (2 experiments on 2 GPUs)
 JOBS=(
-    "sine:condition1_baseline:0"
-    "sine:condition2_heuristics:1"
-    "mnist:condition1_baseline:2"
-    "mnist:condition2_heuristics:3"
+    "synthetic_graph:condition1_baseline:0"
+    "synthetic_graph:condition2_heuristics:1"
 )
 
 echo "=========================================="
-echo "Running 4 experiments in parallel:"
-echo "  GPU 0: sine - condition1_baseline"
-echo "  GPU 1: sine - condition2_heuristics"
-echo "  GPU 2: mnist - condition1_baseline"
-echo "  GPU 3: mnist - condition2_heuristics"
+echo "Running 2 experiments in parallel:"
+echo "  GPU 0: synthetic_graph - condition1_baseline"
+echo "  GPU 1: synthetic_graph - condition2_heuristics"
 echo "=========================================="
 echo ""
 
@@ -81,7 +77,7 @@ echo ""
 declare -A PIDS
 declare -A STATUS
 
-# Launch all 4 jobs in parallel
+# Launch all 2 jobs in parallel
 for JOB in "${JOBS[@]}"; do
     IFS=':' read -r DATASET CONDITION GPU_ID <<< "$JOB"
 
@@ -98,7 +94,6 @@ for JOB in "${JOBS[@]}"; do
     echo "[$(date)] Starting: ${DATASET} - ${CONDITION} on GPU ${GPU_ID}"
     echo "  Config: ${CONFIG_PATH}"
     echo "  Log: ${LOG_FILE}"
-    echo "  Note: Results directory specified in config file"
 
     # Run in background with dedicated GPU
     (
@@ -118,7 +113,7 @@ for JOB in "${JOBS[@]}"; do
 done
 
 # Wait for all jobs to complete
-echo "Waiting for all 4 jobs to complete..."
+echo "Waiting for all 2 jobs to complete..."
 echo ""
 
 SUCCESS_COUNT=0
@@ -147,8 +142,8 @@ done
 echo ""
 echo "=========================================="
 echo "All jobs completed!"
-echo "Successful: ${SUCCESS_COUNT}/4"
-echo "Failed: ${FAILED_COUNT}/4"
+echo "Successful: ${SUCCESS_COUNT}/2"
+echo "Failed: ${FAILED_COUNT}/2"
 echo "Completed at: $(date)"
 echo "=========================================="
 echo ""

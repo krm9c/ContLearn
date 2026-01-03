@@ -6,7 +6,7 @@
     "epochs_per_task": 200,
     "batch_size": 1024,
 
-    "model_path": "runs__/results/sine_condition4",
+    "model_path": "runs__/kkt/results/sine_condition4",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,

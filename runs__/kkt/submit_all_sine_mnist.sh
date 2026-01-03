@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit both SLURM jobs for sine and mnist (conditions 1-4)
 # This submits 2 jobs that together run all 8 experiments
-# USAGE: Run from ContLearn directory: ./kkt_run/kkt/submit_all_sine_mnist.sh
+# USAGE: Run from ContLearn directory: ./runs__/kkt/submit_all_sine_mnist.sh
 
 # Ensure we're in the ContLearn directory
 if [ ! -f "run.py" ]; then
