@@ -86,9 +86,9 @@ for JOB in "${JOBS[@]}"; do
     IFS=':' read -r DATASET CONDITION GPU_ID <<< "$JOB"
 
     CONFIG_FILE="${DATASET}_${CONDITION}.json"
-    CONFIG_PATH="kkt_run/configs/${CONFIG_FILE}"
+    CONFIG_PATH="runs__/configs/${CONFIG_FILE}"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    LOG_FILE="kkt_run/kkt/logs/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
+    LOG_FILE="runs__/kkt/logs/${DATASET}_${CONDITION}_${TIMESTAMP}.log"
 
     if [ ! -f "${CONFIG_PATH}" ]; then
         echo "ERROR: Config not found: ${CONFIG_PATH}"
