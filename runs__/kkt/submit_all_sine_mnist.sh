@@ -7,7 +7,7 @@
 if [ ! -f "run.py" ]; then
     echo "ERROR: Must be run from ContLearn directory"
     echo "Current directory: $(pwd)"
-    echo "Usage: cd /path/to/ContLearn && ./kkt_run/kkt/submit_all_sine_mnist.sh"
+    echo "Usage: cd /path/to/ContLearn && ./runs__/kkt/submit_all_sine_mnist.sh"
     exit 1
 fi
 
@@ -18,14 +18,14 @@ echo ""
 
 # Submit conditions 1&2
 echo "Submitting Conditions 1&2 (Baseline + Heuristics)..."
-JOB1=$(sbatch kkt_run/kkt/submit_sine_mnist_cond12.slurm)
+JOB1=$(sbatch runs__/kkt/submit_sine_mnist_cond12.slurm)
 JOB1_ID=$(echo ${JOB1} | awk '{print $NF}')
 echo "  Job ID: ${JOB1_ID}"
 echo ""
 
 # Submit conditions 3&4
 echo "Submitting Conditions 3&4 (Arch Search + AWB Full)..."
-JOB2=$(sbatch kkt_run/kkt/submit_sine_mnist_cond34.slurm)
+JOB2=$(sbatch runs__/kkt/submit_sine_mnist_cond34.slurm)
 JOB2_ID=$(echo ${JOB2} | awk '{print $NF}')
 echo "  Job ID: ${JOB2_ID}"
 echo ""
@@ -39,10 +39,10 @@ echo "  Conditions 3&4: ${JOB2_ID}"
 echo ""
 echo "Monitor with:"
 echo "  squeue -u \$USER"
-echo "  tail -f kkt_run/kkt/logs/sine_mnist_cond12_${JOB1_ID}.out"
-echo "  tail -f kkt_run/kkt/logs/sine_mnist_cond34_${JOB2_ID}.out"
+echo "  tail -f runs__/kkt/logs/sine_mnist_cond12_${JOB1_ID}.out"
+echo "  tail -f runs__/kkt/logs/sine_mnist_cond34_${JOB2_ID}.out"
 echo ""
 echo "Results will be saved according to config 'model_path':"
 echo "  Check config files for output directories"
-echo "  Typically: kkt_run/results/<dataset>_condition<N>/"
+echo "  Typically: runs__/kkt/results/<dataset>_condition<N>/"
 echo "=========================================="
