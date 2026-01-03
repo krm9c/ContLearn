@@ -8,7 +8,7 @@
     "batch_size": 1024,
     
 
-    "model_path": "runs__/results/mnist_condition1",
+    "model_path": "runs__/kkt/results/mnist_condition1",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,

@@ -8,7 +8,7 @@
 
 
    
-    "model_path": "runs__/results/mnist_condition2",
+    "model_path": "runs__/kkt/results/mnist_condition2",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,

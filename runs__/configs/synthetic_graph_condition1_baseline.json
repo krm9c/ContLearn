@@ -9,7 +9,7 @@
     "batch_size": 2048,
 
 
-    "model_path": "runs__/results/synthetic_graph_condition1",
+    "model_path": "runs__/kkt/results/synthetic_graph_condition1",
     "save_iter": 50,
     "log_interval": 1,
     "eval_interval": 50,
