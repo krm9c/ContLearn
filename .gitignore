@@ -85,8 +85,6 @@ temp/
 *.swo
 
 # Model files (large binary files)
-*.eqx
-*.pkl
 *.pickle
 *.p
 *.pt
