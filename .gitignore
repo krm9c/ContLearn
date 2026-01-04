@@ -44,6 +44,9 @@ polaris_run/venvs/
 # Data directories
 /data/
 /Data/
+*.pkl
+*.csv
+*.eqx
 /datasets/
 /dataset/
 /raw_data/
