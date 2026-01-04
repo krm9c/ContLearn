@@ -5,6 +5,8 @@
     "n_task": 10,
     "epochs_per_task": 200,
     "batch_size": 1024,
+    "n_layers": 4,
+    "hln": 64,
 
 
     "model_path": "runs__/kkt/results/sine_condition3",
@@ -21,12 +23,11 @@
     "use_jax_prefetch": true,
     "prefetch_size": 3,
 
-    "__comment_": "the modifications for different conditions",
     "awb_enabled": true,
     "awb_skip_transfer": true,
-    "awb_preliminary_epochs": 30,
+    "awb_preliminary_epochs": 1,
     "awb_loss_ratio_threshold": 1.1,
     "lr_schedule": "constant",
     "lr": 0.0001,
-    "warmup_epochs": 0
+    "task_warmup_enabled": false
 }
