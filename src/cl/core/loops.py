@@ -401,7 +401,7 @@ class TrainingLoopsMixin:
                 # Added by Claude: Check first batch device
                 if train_batches_jax:
                     x_sample, y_sample = train_batches_jax[0]
-                    print(f"[DEBUG] First train batch device: {x_sample.device}")
+                    print(f"[DEBUG] First train batch device: {list(x_sample.devices())}")
             else:
                 # Original path: Manually convert PyTorch tensors to JAX
                 # Added by Claude: Diagnostic logging
