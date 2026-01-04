@@ -239,6 +239,9 @@ def build_train_config(config: Dict[str, Any], search_cfg: Dict[str, Any]) -> Di
         'flag': config.get('flag', [1.0, 1.0]),
         'len_exp_replay': search_cfg.get('search_exp_replay', default_replay),
         'network': config.get('network', 'fcnn'),
+        # Added by Claude: Propagate JAX prefetch setting to arch search training
+        'use_jax_prefetch': config.get('use_jax_prefetch', True),
+        'prefetch_size': config.get('prefetch_size', 3),
     }
 
 

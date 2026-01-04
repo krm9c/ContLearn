@@ -22,7 +22,6 @@
     "use_jax_prefetch": false,
     "prefetch_size": 3,
 
-    "__comment_": "the modifications for different conditions",
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 30,
@@ -30,6 +29,7 @@
     "awb_loss_ratio_threshold": 1.1,
     "lr_schedule": "cosine",
     "lr": 0.0001,
-    "warmup_epochs": 25,
-    "lr_warmup_factor": 0.1
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 25,
+    "task_warmup_lr_factor": 0.1
 }

@@ -24,11 +24,10 @@
     "use_jax_prefetch": false,
     "prefetch_size": 3,
 
-    "__comment_": "the modifications for different conditions",
     "lr_schedule": "cosine",
     "lr": 0.0001,
-    "warmup_epochs": 25,
-    "awb_enabled": false,
-    "lr_warmup_factor": 0.1,
-    "task_warmup_enabled": false
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 25,
+    "task_warmup_lr_factor": 0.1,
+    "awb_enabled": false
 }

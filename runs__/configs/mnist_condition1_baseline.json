@@ -22,10 +22,8 @@
     "use_jax_prefetch": true,
     "prefetch_size": 3,
 
-    "__comment_": "the modifications for different conditions",
     "lr_schedule": "constant",
     "lr": 0.0001,
-    "warmup_epochs": 0,
-    "awb_enabled": false,
-    "task_warmup_enabled": false
+    "task_warmup_enabled": false,
+    "awb_enabled": false
 }
