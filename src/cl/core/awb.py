@@ -218,6 +218,32 @@ def initialize_AB_matrices(model, original_arch, new_arch, seed=5):
 # New code should use the generic functions above or model interface methods
 # ============================================================================
 
+def _create_identity_like_matrix(new_size, old_size, key=None):
+    """Create identity-like transformation matrix for AWB.
+
+    Creates a matrix that preserves the original weights in the overlap region:
+    - If new_size >= old_size: Identity in upper-left, zeros elsewhere
+    - If new_size < old_size: Truncated identity
+
+    This ensures A @ W @ B^T ≈ W initially for smooth knowledge transfer.
+
+    Args:
+        new_size: Target dimension
+        old_size: Source dimension
+        key: Optional PRNG key for small noise (unused, kept for API compatibility)
+
+    Returns:
+        JAX array of shape (new_size, old_size)
+    """
+    # Create identity-like matrix
+    min_size = min(new_size, old_size)
+    matrix = jnp.zeros((new_size, old_size))
+    # Set diagonal to 1 for the overlapping region
+    indices = jnp.arange(min_size)
+    matrix = matrix.at[indices, indices].set(1.0)
+    return matrix
+
+
 def set_new_AB_matrices(model, original_arch, new_arch, seed=5):
     """Initialize A/B matrices for architecture transition (MLP only).
 
@@ -227,26 +253,29 @@ def set_new_AB_matrices(model, original_arch, new_arch, seed=5):
     we create transformation matrices A and B such that
     the forward pass becomes: A @ W @ B.T
 
+    Uses identity-like initialization so that A @ W @ B^T ≈ W initially,
+    preserving learned weights in the overlap region for smooth transfer.
+
     Args:
         model: Current equinox model (MLP)
         original_arch: Original architecture sizes list [in, h1, h2, ..., out]
         new_arch: New architecture sizes list [in, h1', h2', ..., out]
-        seed: Random seed for initializer
+        seed: Random seed for initializer (unused, kept for API compatibility)
 
     Returns:
         Updated model with new A, B matrices and sizes
     """
-    initializer = jax.nn.initializers.glorot_uniform()
-
     # A matrices: transform output dimensions [new_out, old_out]
+    # Identity-like: A @ old_output ≈ old_output (with padding/truncation)
     A_list = [
-        initializer(jax.random.PRNGKey(seed), (y_new, y_old))
+        _create_identity_like_matrix(y_new, y_old)
         for y_old, y_new in zip(original_arch[1:], new_arch[1:])
     ]
 
     # B matrices: transform input dimensions [new_in, old_in]
+    # Identity-like: B @ old_input ≈ old_input (with padding/truncation)
     B_list = [
-        initializer(jax.random.PRNGKey(seed), (x_new, x_old))
+        _create_identity_like_matrix(x_new, x_old)
         for x_old, x_new in zip(original_arch[:-1], new_arch[:-1])
     ]
 

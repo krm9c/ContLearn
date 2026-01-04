@@ -1,0 +1,33 @@
+{
+    "__comment": "CONDITION 5: Tuned AWB for CNN",
+    "__comment_": "AWB with tuned parameters to reduce forgetting on CNN",
+    "data": "mnist",
+    "n_task": 10,
+    "epochs_per_task": 150,
+    "batch_size": 1024,
+
+    "model_path": "runs__/analysis/data_analysis/mnist_condition5_awb_tuned_run0",
+    "save_iter": 50,
+    "log_interval": 1,
+    "eval_interval": 50,
+    "debug_mode": false,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": false,
+    "prefetch_size": 3,
+
+    "awb_enabled": true,
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 30,
+    "awb_ab_training_epochs": 150,
+    "awb_ab_lr": 0.00005,
+    "awb_loss_ratio_threshold": 1.3,
+
+    "lr_schedule": "cosine",
+    "lr": 0.0001,
+
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 50,
+    "task_warmup_lr_factor": 0.05,
+
+    "grad_weights": [0.5, 0.4, 0.05]
+}
