@@ -31,7 +31,7 @@ from cl.runners import train_model
 from cl.core.recording import RecordingMixin
 
 # Added by Claude: Import plotting module for post-training visualization
-from runs__.analysis.additional_python_scripts.scripts.plot_results import generate_plots
+from runs__.analysis.scripts.additional_python_scripts.scripts.plot_results import generate_plots
 
 # Suppress JAX MaxPool gradient warning (expected behavior for second-order derivatives)
 warnings.filterwarnings('ignore', message='.*reduce-window min/max.*')
