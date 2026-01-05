@@ -5,6 +5,7 @@ Activated only when config['profiling_enabled'] = True.
 Uses Python decorators and global flag to minimize overhead when disabled.
 
 Added by Claude: December 26, 2024 - CIFAR-10 AWB performance debugging
+
 """
 import time
 import functools
