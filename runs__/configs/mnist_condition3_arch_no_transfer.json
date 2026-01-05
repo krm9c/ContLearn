@@ -2,8 +2,8 @@
     "__comment": "CONDITION 3: Architecture Change, No Transfer",
     "__comment_": "Arch search enabled, skip A/B training, random init after arch change",
     "data": "mnist",
-    "n_task": 2,
-    "epochs_per_task": 200,
+    "n_task": 10,
+    "epochs_per_task": 150,
     "batch_size": 1024,
 
 
