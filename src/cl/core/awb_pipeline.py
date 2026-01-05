@@ -337,7 +337,6 @@ def run_awb_task(
                 opt_state = optim.init(params)
 
             else:
-                # CONDITION 4: Run full A/B training pipeline
                 # STEP 3b: Train A/B
                 print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
 
@@ -361,10 +360,9 @@ def run_awb_task(
                     phase='ab', record_training=True, global_iteration_offset=0
                 )
 
-                ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
-                                           epochs=ab_training_epochs, window=averaging_window)
+                ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0, epochs=ab_training_epochs, window=averaging_window)
+                
                 print(f"  AB loss: {ab_loss:.6f}")
-
                 # Optional: Continue AB training
                 ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
                 ab_iter = 1
