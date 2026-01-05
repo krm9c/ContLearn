@@ -2,8 +2,8 @@
     "__comment": "CONDITION 3: Architecture Change, No Transfer",
     "__comment_": "Arch search enabled, skip A/B training, random init after arch change",
     "data": "mnist",
-    "n_task": 10,
-    "epochs_per_task": 150,
+    "n_task": 2,
+    "epochs_per_task": 200,
     "batch_size": 1024,
 
 
@@ -23,8 +23,9 @@
 
     "awb_enabled": true,
     "awb_skip_transfer": true,
-    "awb_preliminary_epochs": 1,
+    "awb_preliminary_epochs": 2,
     "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": true,
     "lr_schedule": "constant",
     "lr": 0.0001,
     "task_warmup_enabled": false

@@ -44,8 +44,6 @@ def load_metrics_from_pkl(pkl_path):
     epochs = []
     task_boundaries_epochs = []
 
-    current_epoch = 0
-
     for task_id in range(n_tasks):
         if task_id not in data['tasks']:
             print(f"  Warning: Task {task_id} not found in data")
@@ -53,9 +51,9 @@ def load_metrics_from_pkl(pkl_path):
 
         task_data = data['tasks'][task_id]
 
-        # Mark task boundary (before adding new task data)
+        # Mark task boundary (at the START of each new task, except task 0)
         if task_id > 0:
-            task_boundaries_epochs.append(current_epoch)
+            task_boundaries_epochs.append(task_id * epochs_per_task)
 
         # Extract main training data
         if 'main_training' in task_data:
@@ -77,20 +75,20 @@ def load_metrics_from_pkl(pkl_path):
                     values = training[pkl_key]
                     metrics[metric_name].extend(values)
 
-            # Track epochs based on iterations
+            # Track epochs based on iterations (iterations are global, already absolute)
             if 'iterations' in training:
                 iters = training['iterations']
-                for iter_val in iters:
-                    # Convert iteration to epoch within this task
-                    epoch_in_task = iter_val
-                    absolute_epoch = task_id * epochs_per_task + epoch_in_task
-                    epochs.append(absolute_epoch)
+                epochs.extend(iters)
 
     return metrics, np.array(epochs), task_boundaries_epochs, n_tasks, data
 
 
 def compute_cl_metrics(data):
-    """Compute ACC, BWT, FWT from task_performance_matrix."""
+    """Compute ACC, BWT, FWT from task_performance_matrix.
+
+    For regression (MSE), we flip signs so positive BWT = improvement.
+    Standard CL metrics assume higher = better, but MSE has lower = better.
+    """
     if 'task_performance_matrix' not in data:
         return None
 
@@ -113,27 +111,31 @@ def compute_cl_metrics(data):
 
     n_tasks = matrix.shape[0]
 
-    # ACC: Average of final row
+    # ACC: Average of final row (lower = better for MSE)
     acc = np.mean(matrix[-1, :])
 
-    # BWT: Backward transfer
+    # BWT: Backward transfer (SIGN FLIPPED for MSE)
+    # BWT = R_{i,i} - R_{T,i} so positive = MSE decreased = good
     bwt_values = []
     for i in range(n_tasks - 1):
-        bwt_values.append(matrix[-1, i] - matrix[i, i])
+        bwt_values.append(matrix[i, i] - matrix[-1, i])  # FLIPPED SIGN
     bwt = np.mean(bwt_values) if bwt_values else 0.0
 
-    # FWT: Forward transfer
+    # FWT: Forward transfer (SIGN FLIPPED for MSE)
+    # FWT = baseline - R_{i-1,i} so positive = better than baseline
     fwt_values = []
+    baseline = matrix[0, 0]  # Task 0 performance as baseline
     for i in range(1, n_tasks):
-        fwt_values.append(matrix[i-1, i] - matrix[0, 0])
+        fwt_values.append(baseline - matrix[i-1, i])  # FLIPPED SIGN
     fwt = np.mean(fwt_values) if fwt_values else 0.0
 
-    # Forgetting
+    # Forgetting: How much MSE increased from best to final (CORRECTED)
+    # Forgetting = final_MSE - min_MSE (positive = bad)
     forgetting_values = []
     for i in range(n_tasks - 1):
-        max_perf = np.max(matrix[:, i])
-        final_perf = matrix[-1, i]
-        forgetting_values.append(max(0, max_perf - final_perf))
+        min_mse = np.min(matrix[:, i])  # Best (minimum) MSE achieved
+        final_mse = matrix[-1, i]       # Final MSE
+        forgetting_values.append(max(0, final_mse - min_mse))  # CORRECTED
     forgetting = np.mean(forgetting_values) if forgetting_values else 0.0
 
     return {
@@ -178,7 +180,7 @@ def plot_comparison(all_metrics, all_epochs, all_boundaries, all_cl_metrics, out
         for boundary in ref_boundaries:
             ax.axvline(boundary, color='black', linestyle='--', alpha=0.5, linewidth=1.5, label='Task Boundary' if boundary == ref_boundaries[0] else '')
 
-        ax.set_xlabel('Epoch', fontsize=11)
+        ax.set_xlabel('Iteration', fontsize=11)
         ax.set_ylabel(metric, fontsize=11)
         ax.set_title(title, fontsize=12)
         ax.legend(loc='best', fontsize=8)
@@ -279,7 +281,7 @@ def plot_comparison(all_metrics, all_epochs, all_boundaries, all_cl_metrics, out
         for boundary in ref_boundaries:
             ax.axvline(boundary, color='black', linestyle='--', alpha=0.4, linewidth=1.5)
 
-        ax.set_xlabel('Epoch', fontsize=10)
+        ax.set_xlabel('Iteration', fontsize=10)
         ax.set_ylabel(metric, fontsize=10)
         ax.set_title(title, fontsize=11)
         ax.legend(loc='best', fontsize=8)
@@ -299,9 +301,15 @@ def plot_comparison(all_metrics, all_epochs, all_boundaries, all_cl_metrics, out
     fig.suptitle('Sine: Continual Learning Metrics Comparison', fontsize=14, fontweight='bold')
 
     metric_names = ['ACC', 'BWT', 'FWT', 'Forgetting']
+    metric_labels = [
+        'Avg MSE\n(lower better)',
+        'BWT\n(positive = improvement)',
+        'FWT\n(positive = helped)',
+        'Forgetting\n(lower better)'
+    ]
     cond_names_short = ['C1', 'C2', 'C3', 'C4']
 
-    for idx, metric_name in enumerate(metric_names):
+    for idx, (metric_name, metric_label) in enumerate(zip(metric_names, metric_labels)):
         ax = axes[idx]
 
         values = []
@@ -313,14 +321,14 @@ def plot_comparison(all_metrics, all_epochs, all_boundaries, all_cl_metrics, out
 
         bars = ax.bar(cond_names_short, values, color=colors)
         ax.set_ylabel(metric_name, fontsize=10)
-        ax.set_title(f'{metric_name}', fontsize=11)
+        ax.set_title(metric_label, fontsize=10)
         ax.grid(True, alpha=0.3, axis='y')
 
         # Add value labels on bars
         for bar, val in zip(bars, values):
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{val:.4f}', ha='center', va='bottom', fontsize=8)
+                   f'{val:.4f}', ha='center', va='bottom' if val >= 0 else 'top', fontsize=8)
 
     plt.tight_layout()
     plt.savefig(output_dir / 'sine_cl_metrics_comparison.png', dpi=300, bbox_inches='tight')
@@ -361,7 +369,7 @@ def main():
     """Main execution."""
     print("="*70)
     print("Sine Condition Comparison Analysis (from PKL files)")
-    print("Updated with EPOCH x-axis and task boundaries")
+    print("Updated with ITERATION x-axis and task boundaries")
     print("="*70)
 
     all_metrics = {}
@@ -394,9 +402,9 @@ def main():
 
         print(f"  Tasks: {num_tasks}")
         print(f"  Total checkpoints: {len(metrics.get('H', []))}")
-        print(f"  Task boundaries (epochs): {boundaries}")
+        print(f"  Task boundaries (iterations): {boundaries}")
         if cl_metrics:
-            print(f"  ACC: {cl_metrics['ACC']:.4f}, BWT: {cl_metrics['BWT']:.4f}, FWT: {cl_metrics['FWT']:.4f}, Forgetting: {cl_metrics['Forgetting']:.4f}")
+            print(f"  Avg MSE: {cl_metrics['ACC']:.4f}, BWT: {cl_metrics['BWT']:.4f} (+good), FWT: {cl_metrics['FWT']:.4f} (+good), Forgetting: {cl_metrics['Forgetting']:.4f} (lower good)")
 
         # Show available metrics
         available = [k for k, v in metrics.items() if len(v) > 0]
@@ -415,11 +423,11 @@ def main():
     print("="*70)
     print(f"\nPlots saved to: {output_dir}")
     print("\nGenerated files:")
-    print("  1. sine_loss_comparison.png - Loss components (with epochs)")
-    print("  2. sine_mse_comparison.png - MSE metrics (with epochs)")
-    print("  3. sine_gradient_comparison.png - Gradient norms (with epochs)")
-    print("  4. sine_overview_comparison.png/pdf - Combined overview (with epochs)")
-    print("  5. sine_cl_metrics_comparison.png - ACC, BWT, FWT, Forgetting bar chart")
+    print("  1. sine_loss_comparison.png - Loss components (iterations)")
+    print("  2. sine_mse_comparison.png - MSE metrics (iterations)")
+    print("  3. sine_gradient_comparison.png - Gradient norms (iterations)")
+    print("  4. sine_overview_comparison.png/pdf - Combined overview (iterations)")
+    print("  5. sine_cl_metrics_comparison.png - MSE, BWT, FWT, Forgetting bar chart")
     print("  6. sine_performance_matrix.png - Task performance matrices")
 
 
