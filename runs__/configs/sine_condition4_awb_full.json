@@ -2,7 +2,7 @@
     "__comment": "CONDITION 4: Full AWB (Architecture + Transfer)",
     "__comment_": "Arch search + A/B training for knowledge transfer",
     "data": "sine",
-    "n_task": 2,
+    "n_task": 10,
     "epochs_per_task": 500,
     "batch_size": 1024,
     "n_layers": 4,
@@ -24,7 +24,7 @@
 
     "awb_enabled": true,
     "awb_skip_transfer": false,
-    "awb_preliminary_epochs": 30,
+    "awb_preliminary_epochs": 1,
     "awb_ab_training_epochs": 500,
     "awb_ab_lr": 0.001,
     "awb_loss_ratio_threshold": 1.1,

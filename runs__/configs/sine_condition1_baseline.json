@@ -3,7 +3,7 @@
 
     "__comment_": "Fixed arch, constant LR, no warm start",
     "data": "sine",
-    "n_task": 2,
+    "n_task": 10,
     "epochs_per_task": 500,
     "batch_size": 1024,
     "n_layers": 4,

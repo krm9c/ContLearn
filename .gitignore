@@ -86,6 +86,11 @@ temp/
 *.bak
 *.swp
 *.swo
+*.png
+*.pdf
+*.jpg
+*.jpeg
+*.gif
 
 # Model files (large binary files)
 *.pickle
