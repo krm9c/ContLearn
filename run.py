@@ -5,12 +5,12 @@ Entry point for continual learning experiments.
 Usage:
     python scripts/run.py <config_file>
     python scripts/run.py config/sine.json
-    python scripts/run.py config/sine.json --runs 3
-    python scripts/run.py config/sine.json --runs 3 --no-plots
+    python scripts/run.py config/sine.json --runs 0
+    python scripts/run.py config/sine.json --runs 2 --no-plots
 
 Arguments:
     config_file: Path to JSON configuration file
-    --runs: Number of experiment runs (default: 1)
+    --runs: Run ID for this experiment (default: 0)
     --no-plots: Skip plot generation (default: generate plots)
     --figures-dir: Output directory for figures (default: figures)
 """
@@ -44,13 +44,13 @@ def main():
         epilog="""
 Examples:
     python run.py kkt_run/config/sine.json
-    python run.py kkt_run/config/sine.json --runs 3
-    python run.py kkt_run/config/sine.json --no-plots
-    python run.py kkt_run/config/sine.json --figures-dir outputs/figures
+    python run.py kkt_run/config/sine.json --runs 0
+    python run.py kkt_run/config/sine.json --runs 2 --no-plots
+    python run.py kkt_run/config/sine.json --runs 1 --figures-dir outputs/figures
         """
     )
     parser.add_argument('config', type=str, help='Path to JSON configuration file')
-    parser.add_argument('--runs', type=int, default=1, help='Number of experiment runs')
+    parser.add_argument('--runs', type=int, default=0, help='Run ID for this experiment (default: 0)')
     # Added by Claude: Options for plot generation
     parser.add_argument('--no-plots', action='store_true', help='Skip plot generation')
     parser.add_argument('--figures-dir', type=str, default='figures', help='Output directory for figures')
@@ -97,31 +97,24 @@ Examples:
         print()
 
     # Added by Claude: Generic runner handles all problem types via config dispatch
-    all_records = {}
+    run_id = args.runs  # Use --runs as the run_id
 
-    for run_id in range(args.runs):
-        print(f"\n{'#'*60}")
-        print(f"# Run {run_id + 1} / {args.runs}")
-        print(f"{'#'*60}")
+    print(f"\n{'#'*60}")
+    print(f"# Run ID: {run_id}")
+    print(f"{'#'*60}")
 
-        # Generic unified runner works for all problem types
-        record_dict = train_model(config, run_id=run_id)
+    # Generic unified runner works for all problem types
+    record_dict = train_model(config, run_id=run_id)
 
-        all_records[f'run_{run_id}'] = record_dict
-
-        # Generate plots for each run (unless --no-plots)
-        # Use AWB-aware figures directory
-        if not args.no_plots:
-            figures_dir = args.figures_dir if args.figures_dir != 'figures' or args.output_dir else args.figures_dir
-            # If using default figures dir and no custom output, add AWB suffix
-            if figures_dir == 'figures' and not args.output_dir and config.get('awb_enabled', False):
-                dataset_name = config.get('data', 'unknown')
-                figures_dir = f'figures/{dataset_name}_awb'
-            generate_plots(record_dict, output_dir=figures_dir, run_id=str(run_id))
-
-    # Save all runs if multiple
-    if args.runs > 1:
-        RecordingMixin.save_all_runs(all_records, base_model_path, config)
+    # Generate plots for each run (unless --no-plots)
+    # Use AWB-aware figures directory
+    if not args.no_plots:
+        figures_dir = args.figures_dir if args.figures_dir != 'figures' or args.output_dir else args.figures_dir
+        # If using default figures dir and no custom output, add AWB suffix
+        if figures_dir == 'figures' and not args.output_dir and config.get('awb_enabled', False):
+            dataset_name = config.get('data', 'unknown')
+            figures_dir = f'figures/{dataset_name}_awb'
+        generate_plots(record_dict, output_dir=figures_dir, run_id=str(run_id))
 
     print("\nTraining complete!")
 

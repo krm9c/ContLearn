@@ -79,9 +79,9 @@ export JAX_PLATFORMS=cuda
 export XLA_PYTHON_CLIENT_PREALLOCATE=true
 export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
-# Run with run_id override
+# Run with run_id specified via --runs parameter
 python run.py "${CONFIG_PATH}" \
-    --run-id ${RUN_ID} \
+    --runs ${RUN_ID} \
     --output-dir "${OUTPUT_DIR}" \
     --model-suffix "${CONFIG_BASE}_run${RUN_ID}" \
     --figures-dir "${OUTPUT_DIR}/figures" \
