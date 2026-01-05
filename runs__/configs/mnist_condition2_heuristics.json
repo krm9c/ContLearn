@@ -2,8 +2,8 @@
     "__comment": "CONDITION 2: Smoothness via Heuristics",
     "__comment_": "Fixed arch, cosine LR schedule, warm start",
     "data": "mnist",
-    "n_task": 10,
-    "epochs_per_task": 150,
+    "n_task": 2,
+    "epochs_per_task": 200,
     "batch_size": 1024,
 
 

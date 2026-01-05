@@ -257,11 +257,11 @@ DEFAULT_SYNTHETIC_NUM_CLASSES = 10
 # Master switch
 DEFAULT_AWB_ENABLED = False
 # AWB 5-Step Pipeline
-DEFAULT_AWB_PRELIMINARY_EPOCHS = 100  # STEP 1: Preliminary training epochs
+DEFAULT_AWB_PRELIMINARY_EPOCHS = 10  # STEP 1: Preliminary training epochs
 DEFAULT_AWB_AB_TRAINING_EPOCHS = 50  # STEP 3b: A/B matrix training epochs
 DEFAULT_AWB_AB_WARMUP_EPOCHS   = 2  # STEP 5: Warmup epochs after V computation
 DEFAULT_AWB_AB_MAX_ITERATIONS  = 2  # Max iterations for A/B training loop
-DEFAULT_AWB_AVERAGING_WINDOW   = 10  # Epochs to average for loss computation
+DEFAULT_AWB_AVERAGING_WINDOW   = 5  # Epochs to average for loss computation
 # AWB Decision Thresholds
 DEFAULT_AWB_CHANGE_THRESHOLD_HIGH = 0.9  # Loss ratio threshold to trigger arch change
 DEFAULT_AWB_CHANGE_THRESHOLD_MIN_DELTA = 0.01  # Minimum loss increase to trigger change
@@ -292,7 +292,7 @@ DEFAULT_AWB_FNN_ARCH = [100, 140, 140]  # For GCN FNN part
 # General Architecture Search
 DEFAULT_ARCH_SEARCH_ENABLED = False
 DEFAULT_ARCH_SEARCH_START_TASK = 999  # 999 = never
-DEFAULT_ARCH_SEARCH_EPOCHS = 10  # General default
+DEFAULT_ARCH_SEARCH_EPOCHS = 2  # General default
 DEFAULT_ARCH_SEARCH_LR = 1e-4
 DEFAULT_ARCH_SEARCH_BATCH_SIZE = DEFAULT_BATCH_SIZE_REGRESSION
 DEFAULT_ARCH_SEARCH_EXP_REPLAY = 20000
