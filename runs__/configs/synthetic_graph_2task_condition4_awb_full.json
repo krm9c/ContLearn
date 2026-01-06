@@ -1,0 +1,37 @@
+{
+    "__comment": "CONDITION 4: AWB Full (2-task synthetic graph)",
+    "__comment_": "Architecture search + AWB transfer + heuristics",
+    "data": "synthetic",
+    "problem": "graph",
+    "network": "gcn",
+    "n_task": 2,
+    "epochs_per_task": 125,
+    "batch_size": 20,
+
+    "num_graphs": 10000,
+    "num_channels": 5,
+    "avg_num_nodes": 2,
+    "num_classes": 10,
+    "class_per_task": 5,
+
+    "model_path": "runs__/results/synthetic_graph_2task_condition4",
+    "save_iter": 25,
+    "log_interval": 1,
+    "eval_interval": 25,
+    "grad_weights": [0.4, 0.4, 0.1],
+    "debug_mode": false,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": false,
+
+    "lr_schedule": "cosine",
+    "lr": 0.0001,
+    "task_warmup_enabled": true,
+    "warmup_epochs": 15,
+    "awb_enabled": true,
+    "awb_transfer_enabled": true,
+    "arch_search_enabled": true,
+    "force_arch_search": true,
+    "awb_preliminary_epochs": 2,
+    "awb_ab_training_epochs": 50,
+    "awb_loss_ratio_threshold": 1.1
+}
