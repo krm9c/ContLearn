@@ -90,6 +90,9 @@ class SineDataset(BaseDataset):
             - debug_mode: Enable debug mode with limited data
             - debug_limit: Number of samples in debug mode
             - n_task: Number of tasks to use (default: all available)
+            - noise_enabled: Whether to add noise to targets (default: False)
+            - noise_scale: Base noise standard deviation (default: 0.1)
+            - noise_increment: How much to increase noise per task (default: 0.05)
 
     Example:
         >>> config = {'delta': 0.001, 'batch_size': 64}
@@ -109,6 +112,11 @@ class SineDataset(BaseDataset):
         self.data_path = config.get('data_path', 'data/Incremental_Sine1e^4.p')
         self._n_tasks = config.get('n_task', 40)
         self.test_size = config.get('test_size', 0.2)
+
+        # Noise parameters for Experiment 3 (increasing noise per task)
+        self.noise_enabled = config.get('noise_enabled', False)
+        self.noise_scale = config.get('noise_scale', 0.1)
+        self.noise_increment = config.get('noise_increment', 0.05)
 
         # Generate data if file doesn't exist
         if not os.path.exists(self.data_path):
@@ -163,6 +171,14 @@ class SineDataset(BaseDataset):
         # For regression, we typically predict all time points
         # But original code treats y as target directly
         y = y.astype(np.float32)
+
+        # Add noise to targets if enabled (Experiment 3: increasing noise per task)
+        if self.noise_enabled:
+            # Noise increases with each task: noise_scale + task_id * noise_increment
+            current_noise_std = self.noise_scale + task_id * self.noise_increment
+            np.random.seed(42 + task_id)  # Reproducible noise per task
+            noise = np.random.normal(0, current_noise_std, y.shape).astype(np.float32)
+            y = y + noise
 
         # Train/test split
         self.X_train, self.X_test, self.y_train, self.y_test = model_selection.train_test_split(
