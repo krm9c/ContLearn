@@ -1,0 +1,36 @@
+{
+    "__comment": "CONDITION 3: Arch Search Only with Noise (Experiment 3)",
+    "__comment_": "Architecture search at task boundaries, random reinit (no AWB transfer), increasing noise per task",
+    "data": "sine",
+    "n_task": 5,
+    "epochs_per_task": 500,
+    "batch_size": 1024,
+    "n_layers": 4,
+    "hln": 64,
+
+    "noise_enabled": true,
+    "noise_scale": 0.1,
+    "noise_increment": 0.05,
+
+    "model_path": "runs__/experiments/sine_noise/results/sine_noise_condition3",
+    "save_iter": 50,
+    "log_interval": 1,
+    "eval_interval": 50,
+    "grad_weights": [
+        0.4,
+        0.4,
+        0.1
+    ],
+    "debug_mode": false,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": true,
+    "prefetch_size": 3,
+
+    "lr_schedule": "cosine",
+    "lr": 0.0001,
+    "task_warmup_enabled": true,
+    "warmup_epochs": 25,
+    "awb_enabled": true,
+    "awb_transfer_enabled": false,
+    "arch_search_enabled": true
+}
