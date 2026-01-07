@@ -31,6 +31,6 @@
     "task_warmup_enabled": true,
     "warmup_epochs": 25,
     "awb_enabled": true,
-    "awb_transfer_enabled": false,
+    "awb_skip_transfer": true,
     "arch_search_enabled": true
 }

@@ -258,14 +258,14 @@ class SyntheticGraphDataset(BaseGraphDataset):
         # Set seed for reproducibility
         torch_geometric.seed.seed_everything(DEFAULT_GRAPH_SEED)
 
-        # Create synthetic dataset
+        # Create synthetic dataset and shuffle (matching old code behavior)
         self.dataset = FakeDataset(
             num_graphs=num_graphs,
             num_channels=num_channels,
             avg_num_nodes=avg_num_nodes,
             num_classes=num_classes,
             transform=_transform_graph
-        )
+        ).shuffle()
 
         # Apply debug limit if enabled
         if self.debug_mode:
