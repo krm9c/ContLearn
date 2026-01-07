@@ -6,13 +6,8 @@
     "network": "gcn",
     "n_task": 2,
     "epochs_per_task": 125,
-    "batch_size": 20,
+    "batch_size": 64,
 
-    "num_graphs": 10000,
-    "num_channels": 5,
-    "avg_num_nodes": 2,
-    "num_classes": 10,
-    "class_per_task": 5,
 
     "model_path": "runs__/results/synthetic_graph_2task_condition4",
     "save_iter": 25,
@@ -23,15 +18,14 @@
     "per_task_eval_enabled": true,
     "use_jax_prefetch": false,
 
-    "lr_schedule": "cosine",
-    "lr": 0.0001,
-    "task_warmup_enabled": true,
-    "warmup_epochs": 15,
     "awb_enabled": true,
-    "arch_search_enabled": true,
-    "force_arch_search": true,
-    "awb_preliminary_epochs": 2,
-    "awb_ab_training_epochs": 50,
-    "force_arch_change": true,
-    "awb_loss_ratio_threshold": 1.1
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 100,
+    "awb_loss_ratio_threshold": 1.1,
+    "lr_schedule": "cosine",
+    "lr": 0.001,
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 25,
+    "task_warmup_lr_factor": 0.1
 }

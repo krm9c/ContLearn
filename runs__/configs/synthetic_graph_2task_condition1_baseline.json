@@ -6,13 +6,8 @@
     "network": "gcn",
     "n_task": 2,
     "epochs_per_task": 125,
-    "batch_size": 20,
+    "batch_size": 64,
 
-    "num_graphs": 10000,
-    "num_channels": 5,
-    "avg_num_nodes": 2,
-    "num_classes": 10,
-    "class_per_task": 5,
 
     "model_path": "runs__/results/synthetic_graph_2task_condition1",
     "save_iter": 25,

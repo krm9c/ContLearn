@@ -225,4 +225,7 @@ class LossMixin:
                 else:
                     yhat = self.accuracy_graphs_AWBT(params, statics, x_tog, adj_tog, b_tog, n_tog)
                 pred_y = jnp.argmax(yhat, axis=1)
-                return jnp.mean(jnp.concatenate(y_tog) == pred_y)
+                y_concat = jnp.concatenate(y_tog)
+                # DEBUG: Print prediction distribution
+                print(f"[DEBUG METRIC] preds={pred_y.tolist()[:8]}... labels={y_concat.tolist()[:8]}... acc={float(jnp.mean(y_concat == pred_y)):.4f}")
+                return jnp.mean(y_concat == pred_y)
