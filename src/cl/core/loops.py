@@ -36,19 +36,16 @@ _GRAPH_TRANSFORMS = None
 
 
 def get_graph_transforms():
-    """Lazily load graph transforms to avoid torch_geometric import when not needed."""
+    """Lazily load graph transforms to avoid torch_geometric import when not needed.
+
+    Transform pipeline matches old working code:
+    T.Compose([T.GCNNorm(), T.ToDense(), T.NormalizeFeatures()])
+    """
     global _GRAPH_TRANSFORMS
     if _GRAPH_TRANSFORMS is None:
         import torch_geometric.transforms as T
 
-        class RemoveEdgeAttr:
-            """Remove edge_attr so ToDense creates 2D adjacency matrix."""
-            def __call__(self, data):
-                data.edge_attr = None
-                return data
-
         _GRAPH_TRANSFORMS = T.Compose([
-            RemoveEdgeAttr(),
             T.GCNNorm(),
             T.ToDense(),
             T.NormalizeFeatures()

@@ -148,24 +148,25 @@ class GCNLayer(eqx.Module):
         return adj_normalized
 
     def __call__(self, x: jax.Array, adj: jax.Array) -> jax.Array:
-        """Forward pass with standard GCN normalization.
+        """Forward pass for GCN layer.
 
-        Implements: Â @ X @ W + b
-        where Â = D̃^(-1/2) @ (A + I) @ D̃^(-1/2)
+        Implements: adj @ X @ W + b
+
+        Note: Adjacency normalization is applied via T.GCNNorm() transform
+        in the data pipeline (loops.py:get_graph_transforms), so we do NOT
+        normalize here to avoid double normalization.
 
         Args:
             x: Node features (num_nodes, in_size)
-            adj: Adjacency matrix (num_nodes, num_nodes)
+            adj: Adjacency matrix (num_nodes, num_nodes) - already normalized by T.GCNNorm()
 
         Returns:
             Updated node features (num_nodes, out_size)
         """
-        # Added by Claude: Apply standard GCN normalization
-        adj_normalized = self.normalize_adjacency(adj)
-
-        # Graph convolution with normalized adjacency
+        # Graph convolution: adj @ (x @ W) + b
+        # Note: adj is already normalized by T.GCNNorm() transform
         support = x @ self.weight
-        x = self.matmul(adj_normalized, support, support.shape)
+        x = self.matmul(adj, support, support.shape)
         if self.bias_flag:
             x += self.bias
         return x
@@ -350,14 +351,16 @@ class GCN(eqx.Module):
 
     def get_AWBT(self, x: jax.Array, adj: jax.Array, batch: jax.Array,
                  n_nodes: jax.Array) -> jax.Array:
-        """Forward pass using AWB transformation with standard GCN normalization.
+        """Forward pass using AWB transformation.
 
         Uses V = A @ W @ B.T for both GCN and feed layers.
-        Applies standard GCN adjacency normalization: Â = D̃^(-1/2) @ (A + I) @ D̃^(-1/2)
+
+        Note: Adjacency normalization is applied via T.GCNNorm() transform
+        in the data pipeline, so we do NOT normalize here.
 
         Args:
             x: Node features (total_nodes, in_size)
-            adj: Adjacency matrix (total_nodes, total_nodes)
+            adj: Adjacency matrix (total_nodes, total_nodes) - already normalized by T.GCNNorm()
             batch: Batch assignment for each node (total_nodes,)
             n_nodes: Number of nodes per graph (batch_size,)
 
@@ -366,15 +369,12 @@ class GCN(eqx.Module):
         """
         # GCN layers with AWB transformation
         for i in range(len(self.gcn_layers)):
-            # Added by Claude: Apply standard GCN normalization
-            adj_normalized = self.gcn_layers[i].normalize_adjacency(adj)
-
             # Compute AWB transformed weight: V = A_gcn @ W @ B_gcn^T
             transformed_weight = (self.A_gcn[i] @ self.gcn_layers[i].weight
                                   @ jnp.transpose(self.B_gcn[i]))
             support = x @ transformed_weight
-            # Use normalized adjacency for graph convolution
-            x = self.matmul(adj_normalized, support, support.shape)
+            # adj is already normalized by T.GCNNorm() transform
+            x = self.matmul(adj, support, support.shape)
 
             if self.gcn_layers[i].bias_flag:
                 # Transform bias: bias @ B.T
