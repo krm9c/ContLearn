@@ -32,5 +32,6 @@
     "force_arch_search": true,
     "awb_preliminary_epochs": 2,
     "awb_ab_training_epochs": 50,
+    "force_arch_change": true,
     "awb_loss_ratio_threshold": 1.1
 }
