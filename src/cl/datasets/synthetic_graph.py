@@ -130,9 +130,15 @@ class BaseGraphDataset(ABC):
         n_class = self.config.get('n_class', self.num_classes)
         select = self.config.get('class_per_task', 2)
 
-        # Added by Claude: Use deterministic task-to-class mapping
-        # If task already defined, use cached classes; otherwise create deterministically
-        if task_id in self._task_class_mapping:
+        # DEBUG MODE: Use all classes for each task (no forgetting scenario)
+        # Set debug_all_classes=True in config to enable
+        debug_all_classes = self.config.get('debug_all_classes', False)
+
+        if debug_all_classes:
+            # All tasks see all classes - no continual learning challenge
+            tasks = np.arange(n_class)
+            print(f"[DEBUG] Task {task_id}: Using ALL {n_class} classes (no forgetting test)")
+        elif task_id in self._task_class_mapping:
             tasks = self._task_class_mapping[task_id]
         else:
             # Use task_id as seed for reproducible class selection
