@@ -130,21 +130,9 @@ class BaseGraphDataset(ABC):
         n_class = self.config.get('n_class', self.num_classes)
         select = self.config.get('class_per_task', 2)
 
-        # DEBUG MODE: Use all classes for each task (no forgetting scenario)
-        # Set debug_all_classes=True in config to enable
-        debug_all_classes = self.config.get('debug_all_classes', False)
-
-        if debug_all_classes:
-            # All tasks see all classes - no continual learning challenge
-            tasks = np.arange(n_class)
-            print(f"[DEBUG] Task {task_id}: Using ALL {n_class} classes (no forgetting test)")
-        elif task_id in self._task_class_mapping:
-            tasks = self._task_class_mapping[task_id]
-        else:
-            # Use task_id as seed for reproducible class selection
-            rng = np.random.RandomState(seed=task_id * 1000)
-            tasks = rng.randint(0, n_class, select)
-            self._task_class_mapping[task_id] = tasks
+        # DEBUG: All tasks see all classes (no forgetting test) - REMOVE AFTER DEBUG
+        tasks = np.arange(n_class)
+        print(f"[DEBUG] Task {task_id}: Using ALL {n_class} classes")
 
         # Choose data source based on phase
         source_data = self.train_data if phase == 'training' else self.test_data
