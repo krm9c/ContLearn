@@ -28,6 +28,7 @@
 
     "lr_schedule": "cosine",
     "lr": 0.0001,
+    "force_arch_change": true,
     "task_warmup_enabled": true,
     "warmup_epochs": 25,
     "awb_enabled": true,
