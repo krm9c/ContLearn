@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-01-07 17:38:32",
+  "jax_backend": "cpu",
+  "jax_devices": "[CpuDevice(id=0)]",
+  "results": {
+    "mlp": {
+      "forward": {
+        "name": "MLP AWB forward",
+        "mean_ms": 2.629720908589661,
+        "min_ms": 2.3830001009628177,
+        "max_ms": 2.996542025357485,
+        "runs": 10
+      },
+      "gradient": {
+        "name": "MLP AWB gradient",
+        "mean_ms": 11.891316610854119,
+        "min_ms": 11.395124951377511,
+        "max_ms": 12.448125053197145,
+        "runs": 10
+      }
+    },
+    "cnn_mnist": {
+      "forward": {
+        "name": "CNN AWB forward",
+        "mean_ms": 1.0872042970731854,
+        "min_ms": 0.9720420930534601,
+        "max_ms": 1.3234580401331186,
+        "runs": 10
+      },
+      "gradient": {
+        "name": "CNN AWB gradient",
+        "mean_ms": 13.307137589436024,
+        "min_ms": 12.880500056780875,
+        "max_ms": 14.02495801448822,
+        "runs": 10
+      }
+    },
+    "cnn3d_cifar10": {
+      "forward": {
+        "name": "CNN3D CIFAR-10 AWB forward",
+        "mean_ms": 200.76110428199172,
+        "min_ms": 188.46791703253984,
+        "max_ms": 280.2416250342503,
+        "runs": 10
+      },
+      "gradient": {
+        "name": "CNN3D CIFAR-10 AWB gradient",
+        "mean_ms": 3557.16327088885,
+        "min_ms": 3478.6542499205098,
+        "max_ms": 3687.0774999260902,
+        "runs": 10
+      }
+    },
+    "cnn3d_cifar100": {
+      "forward": {
+        "name": "CNN3D CIFAR-100 AWB forward",
+        "mean_ms": 189.85644570784643,
+        "min_ms": 186.61029206123203,
+        "max_ms": 192.58400006219745,
+        "runs": 10
+      },
+      "gradient": {
+        "name": "CNN3D CIFAR-100 AWB gradient",
+        "mean_ms": 3559.2945877695456,
+        "min_ms": 3489.3658339278772,
+        "max_ms": 3650.730333989486,
+        "runs": 10
+      }
+    },
+    "gcn": {
+      "forward": {
+        "name": "GCN AWB forward",
+        "mean_ms": 0.38488329155370593,
+        "min_ms": 0.370291993021965,
+        "max_ms": 0.4082079976797104,
+        "runs": 10
+      },
+      "gradient": {
+        "name": "GCN AWB gradient",
+        "mean_ms": 7.9255916411057115,
+        "min_ms": 7.41995801217854,
+        "max_ms": 8.401583065278828,
+        "runs": 10
+      }
+    }
+  }
+}
