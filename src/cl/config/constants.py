@@ -246,10 +246,10 @@ DEFAULT_PERMUTATION_SEED_MULTIPLIER = 1000  # For permuted MNIST
 
 # Synthetic Graph Dataset
 # Conservative: 10,000 graphs (10x original, enough for batch_size=2048-4096)
-DEFAULT_SYNTHETIC_NUM_GRAPHS = 10000
+DEFAULT_SYNTHETIC_NUM_GRAPHS = 100
 DEFAULT_SYNTHETIC_NUM_CHANNELS = 5  # Node feature channels
 DEFAULT_SYNTHETIC_AVG_NUM_NODES = 2
-DEFAULT_SYNTHETIC_NUM_CLASSES = 10
+DEFAULT_SYNTHETIC_NUM_CLASSES = 2
 
 # ============================================================================
 # AWB (Adaptive Weight Basis) DEFAULTS
