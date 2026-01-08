@@ -1,0 +1,178 @@
+JAX Backend: gpu
+JAX Devices: [cuda(id=0)]
+
+Loaded config from: /home/kraghavan/current/CL_codes/ContLearn/runs__/tests/configs/sine_test_awb.json
+Problem type: regression
+Dataset: sine
+Tasks: 3
+AWB enabled: True
+
+
+############################################################
+# Run ID: 0
+############################################################
+
+============================================================
+Task 0
+============================================================
+Standard CL training (lr=0.001000, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/10 [00:00<?, ?it/s] 10%|█         | 1/10 [00:02<00:26,  2.98s/it] 10%|█         | 1/10 [00:03<00:26,  2.98s/it, MSE=1.533078e-01 H=1.347042e-01 dV_dx=3.372828e-06 dV_dθ=-1.860704e-02 ||∇||=7.576030e-01 | Tr=0.1370] 10%|█         | 1/10 [00:03<00:26,  2.98s/it, MSE=8.109629e-02 H=7.429433e-02 dV_dx=-6.201007e-07 dV_dθ=-6.801341e-03 ||∇||=4.597174e-01 | Tr=0.0743] 10%|█         | 1/10 [00:03<00:26,  2.98s/it, MSE=5.173210e-02 H=4.862230e-02 dV_dx=-7.807349e-07 dV_dθ=-3.109020e-03 ||∇||=3.131376e-01 | Tr=0.0491] 40%|████      | 4/10 [00:03<00:03,  1.69it/s, MSE=5.173210e-02 H=4.862230e-02 dV_dx=-7.807349e-07 dV_dθ=-3.109020e-03 ||∇||=3.131376e-01 | Tr=0.0491] 40%|████      | 4/10 [00:03<00:03,  1.69it/s, MSE=4.173144e-02 H=4.058631e-02 dV_dx=-3.706379e-06 dV_dθ=-1.141428e-03 ||∇||=1.895657e-01 | Tr=0.0410] 40%|████      | 4/10 [00:03<00:03,  1.69it/s, MSE=3.974913e-02 H=3.911306e-02 dV_dx=-8.534925e-06 dV_dθ=-6.275360e-04 ||∇||=1.423884e-01 | Tr=0.0395 Te/Cur=0.0393 Te/Exp=0.0394] 60%|██████    | 6/10 [00:03<00:01,  2.32it/s, MSE=3.974913e-02 H=3.911306e-02 dV_dx=-8.534925e-06 dV_dθ=-6.275360e-04 ||∇||=1.423884e-01 | Tr=0.0395 Te/Cur=0.0393 Te/Exp=0.0394] 60%|██████    | 6/10 [00:03<00:01,  2.32it/s, MSE=3.803049e-02 H=3.749141e-02 dV_dx=8.143405e-07 dV_dθ=-5.399014e-04 ||∇||=1.318753e-01 | Tr=0.0375]                              60%|██████    | 6/10 [00:03<00:01,  2.32it/s, MSE=3.519332e-02 H=3.491095e-02 dV_dx=3.079620e-07 dV_dθ=-2.826767e-04 ||∇||=9.550676e-02 | Tr=0.0347] 60%|██████    | 6/10 [00:03<00:01,  2.32it/s, MSE=3.307082e-02 H=3.298793e-02 dV_dx=2.817832e-07 dV_dθ=-8.317605e-05 ||∇||=5.407463e-02 | Tr=0.0328] 90%|█████████ | 9/10 [00:03<00:00,  4.15it/s, MSE=3.307082e-02 H=3.298793e-02 dV_dx=2.817832e-07 dV_dθ=-8.317605e-05 ||∇||=5.407463e-02 | Tr=0.0328] 90%|█████████ | 9/10 [00:03<00:00,  4.15it/s, MSE=3.210277e-02 H=3.204194e-02 dV_dx=-3.238803e-06 dV_dθ=-5.759054e-05 ||∇||=4.624709e-02 | Tr=0.0320 Te/Cur=0.0322 Te/Exp=0.0325]100%|██████████| 10/10 [00:03<00:00,  2.71it/s, MSE=3.210277e-02 H=3.204194e-02 dV_dx=-3.238803e-06 dV_dθ=-5.759054e-05 ||∇||=4.624709e-02 | Tr=0.0320 Te/Cur=0.0322 Te/Exp=0.0325]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+
+  Evaluating on all tasks 0..0 for CL metrics...
+    Task 0: 0.0323
+
+============================================================
+Task 1
+============================================================
+Initial loss on new task: 0.0646, previous: 0.0321, ratio: 2.01
+AWB pipeline (lr=0.000517)
+
+======================================================================
+AWB PIPELINE - Task 1
+======================================================================
+
+[STEP 1] Preliminary training (1 epochs) - Recorded temporarily
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/1 [00:00<?, ?it/s]  0%|          | 0/1 [00:00<?, ?it/s, MSE=3.171624e-02 H=3.164562e-02 dV_dx=-2.631470e-07 dV_dθ=-7.035544e-05 ||∇||=5.078792e-02 | Tr=0.0319 Te/Cur=0.0323 Te/Exp=0.0317]100%|██████████| 1/1 [00:00<00:00,  1.16it/s, MSE=3.171624e-02 H=3.164562e-02 dV_dx=-2.631470e-07 dV_dθ=-7.035544e-05 ||∇||=5.078792e-02 | Tr=0.0319 Te/Cur=0.0323 Te/Exp=0.0317]100%|██████████| 1/1 [00:00<00:00,  1.16it/s, MSE=3.171624e-02 H=3.164562e-02 dV_dx=-2.631470e-07 dV_dθ=-7.035544e-05 ||∇||=5.078792e-02 | Tr=0.0319 Te/Cur=0.0323 Te/Exp=0.0317]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+  Preliminary loss: 0.031716
+
+[STEP 2] Architecture change decision
+  Current: 0.031716, Previous: 0.032103
+  [DEBUG] Forcing architecture change (force_arch_change=True)
+  Decision: CHANGE
+
+[STEP 3a] Architecture search - NOT recorded
+  Created balanced validation set: 28200 samples from 27587 classes
+  Created balanced validation set: 28205 samples from 27592 classes
+  Starting grid architecture search for task 1
+  Baseline architecture: [3, 32, 32, 10]
+  Baseline loss: 0.031716
+  Search iteration 1/2
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:02<00:02,  2.78s/it] 50%|█████     | 1/2 [00:03<00:02,  2.78s/it, MSE=1.593844e-01 H=1.402701e-01 dV_dx=7.553818e-07 dV_dθ=-1.911513e-02 ||∇||=9.363082e-01 | Tr=0.1584 Te/Cur=0.1152 Te/Exp=0.1174]100%|██████████| 2/2 [00:03<00:00,  1.35s/it, MSE=1.593844e-01 H=1.402701e-01 dV_dx=7.553818e-07 dV_dθ=-1.911513e-02 ||∇||=9.363082e-01 | Tr=0.1584 Te/Cur=0.1152 Te/Exp=0.1174]100%|██████████| 2/2 [00:03<00:00,  1.57s/it, MSE=1.593844e-01 H=1.402701e-01 dV_dx=7.553818e-07 dV_dθ=-1.911513e-02 ||∇||=9.363082e-01 | Tr=0.1584 Te/Cur=0.1152 Te/Exp=0.1174]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+I found my baseline 0.15938444315072253
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:03<00:03,  3.62s/it] 50%|█████     | 1/2 [00:04<00:03,  3.62s/it, MSE=1.274037e-01 H=1.107788e-01 dV_dx=4.415461e-07 dV_dθ=-1.662532e-02 ||∇||=9.428302e-01 | Tr=0.1256 Te/Cur=0.0807 Te/Exp=0.0797]100%|██████████| 2/2 [00:04<00:00,  1.79s/it, MSE=1.274037e-01 H=1.107788e-01 dV_dx=4.415461e-07 dV_dθ=-1.662532e-02 ||∇||=9.428302e-01 | Tr=0.1256 Te/Cur=0.0807 Te/Exp=0.0797]100%|██████████| 2/2 [00:04<00:00,  2.06s/it, MSE=1.274037e-01 H=1.107788e-01 dV_dx=4.415461e-07 dV_dθ=-1.662532e-02 ||∇||=9.428302e-01 | Tr=0.1256 Te/Cur=0.0807 Te/Exp=0.0797]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+    Found better architecture: [3, 32, 47, 10] with loss 0.127404
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:03<00:03,  3.73s/it] 50%|█████     | 1/2 [00:04<00:03,  3.73s/it, MSE=1.893828e-01 H=1.564704e-01 dV_dx=2.998365e-08 dV_dθ=-3.291247e-02 ||∇||=1.319189e+00 | Tr=0.1866 Te/Cur=0.1220 Te/Exp=0.1225]100%|██████████| 2/2 [00:04<00:00,  1.81s/it, MSE=1.893828e-01 H=1.564704e-01 dV_dx=2.998365e-08 dV_dθ=-3.291247e-02 ||∇||=1.319189e+00 | Tr=0.1866 Te/Cur=0.1220 Te/Exp=0.1225]100%|██████████| 2/2 [00:04<00:00,  2.10s/it, MSE=1.893828e-01 H=1.564704e-01 dV_dx=2.998365e-08 dV_dθ=-3.291247e-02 ||∇||=1.319189e+00 | Tr=0.1866 Te/Cur=0.1220 Te/Exp=0.1225]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:03<00:03,  3.47s/it] 50%|█████     | 1/2 [00:03<00:03,  3.47s/it, MSE=1.053343e-01 H=9.097054e-02 dV_dx=6.366866e-07 dV_dθ=-1.436440e-02 ||∇||=9.423996e-01 | Tr=0.1036 Te/Cur=0.0647 Te/Exp=0.0658]100%|██████████| 2/2 [00:03<00:00,  1.67s/it, MSE=1.053343e-01 H=9.097054e-02 dV_dx=6.366866e-07 dV_dθ=-1.436440e-02 ||∇||=9.423996e-01 | Tr=0.1036 Te/Cur=0.0647 Te/Exp=0.0658]100%|██████████| 2/2 [00:03<00:00,  1.94s/it, MSE=1.053343e-01 H=9.097054e-02 dV_dx=6.366866e-07 dV_dθ=-1.436440e-02 ||∇||=9.423996e-01 | Tr=0.1036 Te/Cur=0.0647 Te/Exp=0.0658]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+    Found better architecture: [3, 47, 47, 10] with loss 0.105334
+  Search iteration 2/2
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:01<00:01,  1.59s/it] 50%|█████     | 1/2 [00:01<00:01,  1.59s/it, MSE=2.318122e-01 H=1.709393e-01 dV_dx=2.964628e-07 dV_dθ=-6.087321e-02 ||∇||=1.953307e+00 | Tr=0.2275 Te/Cur=0.1373 Te/Exp=0.1343]100%|██████████| 2/2 [00:01<00:00,  1.15it/s, MSE=2.318122e-01 H=1.709393e-01 dV_dx=2.964628e-07 dV_dθ=-6.087321e-02 ||∇||=1.953307e+00 | Tr=0.2275 Te/Cur=0.1373 Te/Exp=0.1343]100%|██████████| 2/2 [00:01<00:00,  1.02it/s, MSE=2.318122e-01 H=1.709393e-01 dV_dx=2.964628e-07 dV_dθ=-6.087321e-02 ||∇||=1.953307e+00 | Tr=0.2275 Te/Cur=0.1373 Te/Exp=0.1343]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+I found my baseline 0.231812224205002
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:03<00:03,  3.79s/it] 50%|█████     | 1/2 [00:04<00:03,  3.79s/it, MSE=4.342203e-02 H=4.150128e-02 dV_dx=2.041030e-08 dV_dθ=-1.920768e-03 ||∇||=3.469408e-01 | Tr=0.0433 Te/Cur=0.0373 Te/Exp=0.0377]100%|██████████| 2/2 [00:04<00:00,  1.85s/it, MSE=4.342203e-02 H=4.150128e-02 dV_dx=2.041030e-08 dV_dθ=-1.920768e-03 ||∇||=3.469408e-01 | Tr=0.0433 Te/Cur=0.0373 Te/Exp=0.0377]100%|██████████| 2/2 [00:04<00:00,  2.14s/it, MSE=4.342203e-02 H=4.150128e-02 dV_dx=2.041030e-08 dV_dθ=-1.920768e-03 ||∇||=3.469408e-01 | Tr=0.0433 Te/Cur=0.0373 Te/Exp=0.0377]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+    Found better architecture: [3, 47, 62, 10] with loss 0.043422
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+[DEBUG] PrefetchDataLoader initialized with device: cuda:0
+[DEBUG] All available JAX devices: [cuda(id=0)]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:02<?, ?it/s]
+[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
+[DEBUG] First train batch device: [cuda(id=0)]
+Traceback (most recent call last):
+  File "/home/kraghavan/current/CL_codes/ContLearn/run.py", line 123, in <module>
+    main()
+  File "/home/kraghavan/current/CL_codes/ContLearn/run.py", line 107, in main
+    record_dict = train_model(config, run_id=run_id)
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/runners/generic_runner.py", line 1178, in train_model
+    model, optim, opt_state, record_dict = run_awb_task(
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/profiling.py", line 101, in wrapper
+    return func(*args, **kwargs)
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/awb_pipeline.py", line 303, in run_awb_task
+    new_arch = awb_ops.search_architecture(
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/models/mlp.py", line 450, in search_architecture
+    return search_architecture(
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/arch_search.py", line 900, in search_architecture
+    return search_architecture_grid(
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/arch_search.py", line 780, in search_architecture_grid
+    params, static, opt_state, record_dict = trainer.train__CL(
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/profiling.py", line 101, in wrapper
+    return func(*args, **kwargs)
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/loops.py", line 525, in train__CL
+    grad, losses = hamiltonian_fn(params, data, notABTrain,
+  File "/home/kraghavan/current/CL_codes/ContLearn/src/cl/core/hamiltonian.py", line 614, in return_Hamiltonian_mse
+    return _hamiltonian_core_mse_standard(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/equinox/_jit.py", line 275, in __call__
+    return self._call(False, args, kwargs)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/equinox/_module.py", line 1096, in __call__
+    return self.__func__(self.__self__, *args, **kwargs)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/equinox/_jit.py", line 244, in _call
+    marker, _, _ = out = self._cached(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/traceback_util.py", line 179, in reraise_with_filtered_traceback
+    return fun(*args, **kwargs)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/pjit.py", line 327, in cache_miss
+    outs, out_flat, out_tree, args_flat, jaxpr, attrs_tracked = _python_pjit_helper(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/pjit.py", line 185, in _python_pjit_helper
+    out_flat = pjit_p.bind(*args_flat, **params)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/core.py", line 2834, in bind
+    return self.bind_with_trace(top_trace, args, params)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/core.py", line 420, in bind_with_trace
+    out = trace.process_primitive(self, map(trace.full_raise, args), params)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/core.py", line 921, in process_primitive
+    return primitive.impl(*tracers, **params)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/pjit.py", line 1635, in _pjit_call_impl
+    return xc._xla.pjit(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/pjit.py", line 1614, in call_impl_cache_miss
+    out_flat, compiled = _pjit_call_impl_python(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/pjit.py", line 1536, in _pjit_call_impl_python
+    compiled = _resolve_and_lower(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/interpreters/pxla.py", line 2496, in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/interpreters/pxla.py", line 2995, in from_hlo
+    xla_executable = _cached_compilation(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/interpreters/pxla.py", line 2810, in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/compiler.py", line 378, in compile_or_get_cached
+    return _compile_and_write_cache(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/compiler.py", line 608, in _compile_and_write_cache
+    executable = backend_compile(
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/profiler.py", line 335, in wrapper
+    return func(*args, **kwargs)
+  File "/home/kraghavan/miniconda3/envs/jax__kkt/lib/python3.9/site-packages/jax/_src/compiler.py", line 238, in backend_compile
+    return backend.compile(built_c, compile_options=options)
+KeyboardInterrupt
