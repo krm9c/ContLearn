@@ -399,7 +399,8 @@ def partition_for_standard_training_cnn(model):
 
     A_conv and B_conv are now stacked 3D arrays (not lists).
     A_feed and B_feed remain lists.
-    Uses filter_spec approach to mark AWB matrices as non-trainable.
+    Uses eqx.is_array to properly separate arrays from non-arrays (ints, etc.),
+    then moves A/B matrices to static for freezing.
 
     Args:
         model: Equinox CNN model
@@ -407,15 +408,29 @@ def partition_for_standard_training_cnn(model):
     Returns:
         Tuple of (params, static)
     """
-    # Create filter spec: True for trainable W, False for frozen A/B
-    filter_spec = jtu.tree_map(lambda _: True, model)  # Default: train everything
-    # Set A/B matrices to non-trainable (False)
-    filter_spec = eqx.tree_at(
+    # Fixed by Claude: Use eqx.is_array to properly handle non-array leaves (ints)
+    # Previous approach with tree_map(lambda _: True, model) put ints in params
+    # which caused jax.grad to fail with "int64 not supported" error
+    params, static = eqx.partition(model, eqx.is_array)
+
+    # Move A/B matrices from params to static (freeze them)
+    # Use is_leaf=lambda x: x is None to handle None values in static
+    static = eqx.tree_at(
         lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-        filter_spec,
-        replace=(False, False, False, False)
+        static,
+        replace=(model.A_conv, model.B_conv, model.A_feed, model.B_feed),
+        is_leaf=lambda x: x is None
     )
-    return eqx.partition(model, filter_spec)
+
+    # Set A/B to None in params (they're frozen in static)
+    params = eqx.tree_at(
+        lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
+        params,
+        replace=(None, None, None, None),
+        is_leaf=lambda x: x is None
+    )
+
+    return params, static
 
 
 # Added by Claude: CNN3D versions for two-conv-layer models (CIFAR)
@@ -443,7 +458,8 @@ def partition_for_standard_training_cnn3d(model):
 
     A_conv1, B_conv1, A_conv2, B_conv2 are now stacked 4D arrays (not nested lists).
     A_feed, B_feed remain lists of arrays.
-    Uses filter_spec approach to mark AWB matrices as non-trainable.
+    Uses eqx.is_array to properly separate arrays from non-arrays (ints, etc.),
+    then moves A/B matrices to static for freezing.
 
     Args:
         model: Equinox CNN3D model
@@ -451,15 +467,30 @@ def partition_for_standard_training_cnn3d(model):
     Returns:
         Tuple of (params, static)
     """
-    # Create filter spec: True for trainable W, False for frozen A/B
-    filter_spec = jtu.tree_map(lambda _: True, model)  # Default: train everything
-    # Set A/B matrices to non-trainable (False)
-    filter_spec = eqx.tree_at(
+    # Fixed by Claude: Use eqx.is_array to properly handle non-array leaves (ints)
+    # Previous approach with tree_map(lambda _: True, model) put ints in params
+    # which caused jax.grad to fail with "int64 not supported" error
+    params, static = eqx.partition(model, eqx.is_array)
+
+    # Move A/B matrices from params to static (freeze them)
+    # Use is_leaf=lambda x: x is None to handle None values in static
+    static = eqx.tree_at(
         lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-        filter_spec,
-        replace=(False, False, False, False, False, False, False, False)
+        static,
+        replace=(model.A_conv1, model.B_conv1, model.A_conv2, model.B_conv2,
+                 model.A_conv, model.B_conv, model.A_feed, model.B_feed),
+        is_leaf=lambda x: x is None
     )
-    return eqx.partition(model, filter_spec)
+
+    # Set A/B to None in params (they're frozen in static)
+    params = eqx.tree_at(
+        lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_conv, x.B_conv, x.A_feed, x.B_feed),
+        params,
+        replace=(None, None, None, None, None, None, None, None),
+        is_leaf=lambda x: x is None
+    )
+
+    return params, static
 
 
 def partition_for_AB_training_gnn(model):
