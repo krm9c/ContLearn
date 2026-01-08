@@ -6,7 +6,7 @@
     "problem": "graph",
     "network": "gcn",
     "n_task": 2,
-    "epochs_per_task": 200,
+    "epochs_per_task": 1000,
     "batch_size": 64,
 
     "num_graphs": 2000,
@@ -19,8 +19,7 @@
 
     "gcn_sizes": [10, 64, 64],
     "mlp_sizes": [64, 64, 32, 5],
-
-    "model_path": "runs__/results/synthetic_graph_2task_condition1",
+    "model_path": "runs__/tests/results/synthetic_graph_2task_condition1",
     "save_iter": 25,
     "log_interval": 1,
     "eval_interval": 25,
@@ -30,7 +29,7 @@
     "use_jax_prefetch": false,
 
     "lr_schedule": "constant",
-    "lr": 0.0001,
+    "lr": 0.001,
     "task_warmup_enabled": false,
     "awb_enabled": false
 }

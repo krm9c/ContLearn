@@ -58,8 +58,8 @@ echo "Synthetic Graph 2-Task All Conditions"
 echo "Started at: $(date)"
 echo ""
 
-run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1"
-run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2"
+# run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1"
+# run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2"
 run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "synthetic_2task_C3"
 run_config "synthetic_graph_2task_condition4_awb_full.json" "synthetic_2task_C4"
 
