@@ -6,10 +6,10 @@
     "problem": "graph",
     "network": "gcn",
     "n_task": 2,
-    "epochs_per_task": 200,
+    "epochs_per_task": 400,
     "batch_size": 64,
 
-    "num_graphs": 2000,
+    "num_graphs": 1000,
     "num_channels": 10,
     "avg_num_nodes": 20,
     "num_classes": 5,
@@ -31,13 +31,14 @@
 
     "awb_enabled": true,
     "awb_skip_transfer": false,
-    "awb_preliminary_epochs": 30,
-    "awb_ab_training_epochs": 100,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 150,
+    "awb_ab_warmup_epochs": 50,
     "awb_loss_ratio_threshold": 1.1,
     "force_arch_change": true,
     "lr_schedule": "cosine",
     "lr": 0.001,
     "task_warmup_enabled": true,
-    "task_warmup_epochs": 25,
+    "task_warmup_epochs": 50,
     "task_warmup_lr_factor": 0.1
 }
