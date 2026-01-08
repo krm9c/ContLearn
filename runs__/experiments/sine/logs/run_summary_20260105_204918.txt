@@ -1,0 +1,43 @@
+SINE EXPERIMENTS - MULTIPLE RUNS
+Started: Mon Jan  5 08:49:18 PM CST 2026
+Runs per condition: 3
+Total experiments: 12
+
+
+========================================
+RESULTS SUMMARY
+========================================
+
+Condition: sine_condition1_baseline
+  ✓ run0: SUCCESS
+  ✓ run1: SUCCESS
+  ✓ run2: SUCCESS
+  Summary: 3/3 successful
+
+Condition: sine_condition2_heuristics
+  ✓ run0: SUCCESS
+  ✓ run1: SUCCESS
+  ✓ run2: SUCCESS
+  Summary: 3/3 successful
+
+Condition: sine_condition3_arch_no_transfer
+  ✓ run0: SUCCESS
+  ✓ run1: SUCCESS
+  ✓ run2: SUCCESS
+  Summary: 3/3 successful
+
+Condition: sine_condition4_awb_full
+  ✓ run0: SUCCESS
+  ✓ run1: SUCCESS
+  ✓ run2: SUCCESS
+  Summary: 3/3 successful
+
+========================================
+OVERALL SUMMARY
+========================================
+Total experiments run: 12
+Successful: 12
+Failed: 0
+Skipped (previously completed): 0
+Finished: Mon Jan  5 11:19:13 PM CST 2026
+========================================
