@@ -120,6 +120,14 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     for layer in model.gcn_layers:
         actual_gcn_sizes.append(layer.weight.shape[1])  # Output size
 
+    # DEBUG: Check for size mismatch
+    print(f"DEBUG prepABs_GCN:")
+    print(f"  actual_gcn_sizes: {actual_gcn_sizes} (len={len(actual_gcn_sizes)})")
+    print(f"  opt_gcn_sizes: {opt_gcn_sizes} (len={len(opt_gcn_sizes)})")
+    print(f"  len(model.gcn_layers): {len(model.gcn_layers)}")
+    assert len(actual_gcn_sizes) == len(opt_gcn_sizes), \
+        f"GCN size mismatch: actual={actual_gcn_sizes}, opt={opt_gcn_sizes}"
+
     # Check what changed (compare actual current dimensions to desired new dimensions)
     feed_changed = (list(actual_feed_sizes[1:-1]) != list(opt_feed_sizes[1:-1]))
     gcn_changed = (list(actual_gcn_sizes[1:]) != list(opt_gcn_sizes[1:]))
