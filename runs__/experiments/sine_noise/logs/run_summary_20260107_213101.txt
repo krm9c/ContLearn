@@ -1,0 +1,5 @@
+SINE NOISE EXPERIMENTS - MULTIPLE RUNS
+Started: Wed Jan  7 09:31:01 PM CST 2026
+Runs per condition: 3
+Total experiments: 12
+
