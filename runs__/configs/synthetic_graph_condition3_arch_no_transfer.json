@@ -36,6 +36,6 @@
     "awb_loss_ratio_threshold": 1.1,
     "force_arch_change": true,
     "lr_schedule": "constant",
-    "lr": 0.01,
+    "lr": 0.0001,
     "task_warmup_enabled": false
 }
