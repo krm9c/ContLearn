@@ -108,11 +108,11 @@ class MLP(AWBMixin, eqx.Module):
         Raises:
             ValueError: If AWB is not enabled (A/B matrices are None)
         """
-        if not self.awb_enabled or self.A is None or self.B is None:
-            raise ValueError(
-                "AWB forward pass requires awb_enabled=True. "
-                "Initialize MLP with awb_enabled=True to use getAWB()."
-            )
+        # Note: We don't check awb_enabled here to allow JIT tracing.
+        # The caller is responsible for ensuring A/B are properly initialized
+        # before calling getAWB(). This is guaranteed by the AWB pipeline:
+        # - partition_for_AB_training() is only called after with_new_AB_matrices()
+        # - hamiltonian.py only calls getAWB when notABTrain=False
 
         for i in range(len(self.sizes) - 1):
             # Compute transformed weight and bias using AWBMixin

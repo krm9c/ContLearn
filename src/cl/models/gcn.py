@@ -64,14 +64,26 @@ class Pool:
         return x
 
 
-class GraphPooling:
-    """Graph pooling wrapper class."""
+class GraphPooling(eqx.Module):
+    """Graph pooling wrapper class.
 
-    def __init__(self, pool: Callable) -> None:
-        self.pool = pool
+    Made into an Equinox module to support JIT compilation.
+    Uses a static pool_type string instead of storing a function.
+    """
+    pool_type: str = eqx.field(static=True)  # Static field - not traced
+
+    def __init__(self, pool_type: str = 'max') -> None:
+        self.pool_type = pool_type
 
     def __call__(self, x: jnp.ndarray, batch: jnp.ndarray, num_nodes: jnp.ndarray) -> jnp.ndarray:
-        return self.pool(x, batch, num_nodes)
+        if self.pool_type == 'sum':
+            return Pool.sum(x, batch, num_nodes)
+        elif self.pool_type == 'mean':
+            return Pool.mean(x, batch, num_nodes)
+        elif self.pool_type == 'max':
+            return Pool.max(x, batch, num_nodes)
+        else:  # identity
+            return Pool.identity(x, batch, num_nodes)
 
 
 class GCNLayer(eqx.Module):
@@ -89,19 +101,19 @@ class GCNLayer(eqx.Module):
     """
     weight: jax.Array
     bias: jax.Array
-    sparse: bool
-    bias_flag: bool
-    initializer: None
+    sparse: bool = eqx.field(static=True)
+    bias_flag: bool = eqx.field(static=True)
 
     def __init__(self, in_size: int, out_size: int, key: jax.Array,
                  bias: bool = True, sparse: bool = False):
         self.bias_flag = bias
         self.sparse = sparse
-        self.initializer = jax.nn.initializers.glorot_uniform()
+        # Use initializer locally, don't store as attribute (breaks JIT)
+        initializer = jax.nn.initializers.glorot_uniform()
         wkey, bkey = jax.random.split(key)
-        self.weight = self.initializer(wkey, (in_size, out_size))
+        self.weight = initializer(wkey, (in_size, out_size))
         if self.bias_flag:
-            self.bias = self.initializer(bkey, (1, out_size))
+            self.bias = initializer(bkey, (1, out_size))
         else:
             self.bias = None
 
@@ -226,9 +238,9 @@ class GCN(AWBMixin, eqx.Module):
     """
     gcn_layers: list
     pool_layer: GraphPooling
-    SEED: int
-    graph: bool
-    node_num: int
+    SEED: int = eqx.field(static=True)
+    graph: bool = eqx.field(static=True)
+    node_num: int = eqx.field(static=True)
     feed_layers: list
     feed_sizes: list
     gcn_sizes: list
@@ -236,7 +248,7 @@ class GCN(AWBMixin, eqx.Module):
     B_gcn: list
     A_feed: list
     B_feed: list
-    sparse: bool
+    sparse: bool = eqx.field(static=True)
 
     def __init__(self, in_size: int, feed_sizes: List[int] = None,
                  gcn_sizes: List[int] = None, node_num: int = 0,
@@ -313,7 +325,7 @@ class GCN(AWBMixin, eqx.Module):
                             key=jax.random.PRNGKey(self.SEED))
                 )
 
-        self.pool_layer = GraphPooling(Pool.max)
+        self.pool_layer = GraphPooling('max')
 
     def matmul(self, A, B, shape):
         """Matrix multiplication supporting sparse adjacency."""
