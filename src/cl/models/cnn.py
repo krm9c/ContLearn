@@ -190,6 +190,9 @@ class CNN(AWBMixin, eqx.Module):
         x = jnp.expand_dims(x, axis=0)
         x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
+        # Add conv bias (shape: out_ch) - broadcast over spatial dimensions
+        # This ensures AB training matches V training which uses standard __call__ with bias
+        x = x + self.conv_layers[0].bias[:, None, None]
         x = jnp.ravel(jax.nn.relu(eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)))
 
         # AWB transformation on feed layers using AWBMixin
@@ -524,6 +527,8 @@ class CNN3D(AWBMixin, eqx.Module):
         x = jnp.expand_dims(x, axis=0)
         x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed1, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
+        # Add conv1 bias (shape: out_ch) - broadcast over spatial dimensions
+        x = x + self.conv_layers[0].bias[:, None, None]
         x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
 
@@ -533,6 +538,8 @@ class CNN3D(AWBMixin, eqx.Module):
         x = jnp.expand_dims(x, axis=0)
         x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed2, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
+        # Add conv2 bias (shape: out_ch*2) - broadcast over spatial dimensions
+        x = x + self.conv_layers[1].bias[:, None, None]
         x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
 
