@@ -417,7 +417,7 @@ class TrainingLoopsMixin:
                     train_batches_jax.append((x_jax, y_jax))
                     # Added by Claude: Log first batch device
                     if i == 0:
-                        print(f"[DEBUG] First converted batch device: {x_jax.device}")
+                        print(f"[DEBUG] First converted batch device:")
 
                 exp_batches_jax = []
                 for batch in exploader:

@@ -63,9 +63,9 @@ echo ""
 
 # Run all 4 conditions
 run_config "synthetic_graph_2task_condition1_baseline.json" "condition1_baseline"
-# run_config "synthetic_graph_2task_condition2_heuristics.json" "condition2_heuristics"
-# run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
-# run_config "synthetic_graph_2task_condition4_awb_full.json" "condition4_awb_full"
+run_config "synthetic_graph_2task_condition2_heuristics.json" "condition2_heuristics"
+run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "condition3_arch_no_transfer"
+run_config "synthetic_graph_2task_condition4_awb_full.json" "condition4_awb_full"
 
 echo "========================================"
 echo "Synthetic Graph - All conditions completed"
