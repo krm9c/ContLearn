@@ -21,7 +21,14 @@ conda activate jax__kkt
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 RUN_SCRIPT="$REPO_ROOT/run.py"
-CONFIG_DIR="$SCRIPT_DIR/configs"
+CONFIG_DIR="$REPO_ROOT/runs__/configs"
+
+
+echo Script Directory: $SCRIPT_DIR
+echo Repo Root: $REPO_ROOT
+echo Run Script: $RUN_SCRIPT
+echo Config Directory: $CONFIG_DIR
+echo ""
 
 # Create output directories
 mkdir -p "$SCRIPT_DIR/logs"
@@ -58,8 +65,8 @@ echo "Synthetic Graph 2-Task All Conditions"
 echo "Started at: $(date)"
 echo ""
 
-# run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1"
-# run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2"
+run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1"
+run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2"
 run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "synthetic_2task_C3"
 run_config "synthetic_graph_2task_condition4_awb_full.json" "synthetic_2task_C4"
 
