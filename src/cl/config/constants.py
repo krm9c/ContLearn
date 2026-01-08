@@ -75,6 +75,14 @@ DATASET_CONFIG_MAP = {
         "loss": "class",
         "metric": "class",
     },
+    # Added by Claude: Task-shift synthetic graph dataset for domain-shift CL
+    "synthetic_taskshift": {
+        "prob": "classification",
+        "problem": "graph",
+        "network": "gcn",
+        "loss": "class",
+        "metric": "class",
+    },
 }
 
 # Fallback defaults if dataset not in map
@@ -219,9 +227,15 @@ DEFAULT_CNN3D_CIFAR_ARCH = DEFAULT_CNN_CIFAR_FEED  # Backward compatibility alia
 # ============================================================================
 # GCN (Graph Convolutional Network) DEFAULTS
 # ============================================================================
-DEFAULT_GCN_SIZES = [None, 128]  # First element set to input feature size
-DEFAULT_GCN_FEED_SIZES = [128, 128, 128, 10]  # MLP after GCN layers
+# Added by Claude: Improved GCN architecture based on best practices
+# - 2 GCN layers (avoid over-smoothing, see PLOS One 2023)
+# - 64 hidden units (standard for graph classification)
+# - Decreasing MLP layers after pooling
+# Reference: https://stellargraph.readthedocs.io/en/stable/demos/graph-classification/gcn-supervised-graph-classification.html
+DEFAULT_GCN_SIZES = [None, 64, 64]  # First element set to input feature size, 2 GCN layers
+DEFAULT_GCN_FEED_SIZES = [64, 64, 32, 10]  # MLP after GCN layers (decreasing)
 DEFAULT_GCN_MLP_SIZES = DEFAULT_GCN_FEED_SIZES  # Backward compatibility alias
+DEFAULT_GCN_DROPOUT = 0.3  # Dropout rate between layers
 
 # ============================================================================
 # CLASSIFICATION DEFAULTS
@@ -250,6 +264,17 @@ DEFAULT_SYNTHETIC_NUM_GRAPHS = 1000
 DEFAULT_SYNTHETIC_NUM_CHANNELS = 5  # Node feature channels
 DEFAULT_SYNTHETIC_AVG_NUM_NODES = 20
 DEFAULT_SYNTHETIC_NUM_CLASSES = 10
+
+# Added by Claude: Task-shift synthetic graph dataset for continual learning
+# Instead of incremental class learning, uses domain shift across tasks:
+# - Same classes in all tasks
+# - Progressive perturbations (noise, edge dropout, feature shift)
+# This tests continual learning under distribution shift (real-world scenario)
+DEFAULT_SYNTHETIC_TASK_SHIFT_ENABLED = True  # Use domain shift instead of class incremental
+DEFAULT_SYNTHETIC_NUM_CLASSES_PER_TASK = 5  # All tasks have same 5 classes
+DEFAULT_SYNTHETIC_FEATURE_NOISE_BASE = 0.1  # Base noise σ, scaled by task_id
+DEFAULT_SYNTHETIC_EDGE_DROPOUT_BASE = 0.05  # Base edge dropout rate, scaled by task_id
+DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE = 0.05  # Base feature shift, scaled by task_id
 
 # ============================================================================
 # AWB (Adaptive Weight Basis) DEFAULTS

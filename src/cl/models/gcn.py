@@ -16,6 +16,7 @@ from ..config.constants import (
     DEFAULT_AWB_GCN_ARCH,
     DEFAULT_GCN_SIZES,
     DEFAULT_GCN_MLP_SIZES,
+    DEFAULT_GCN_DROPOUT,
 )
 from .layers import Linear, Dropout, AWBLayerSpec, AWBMixin
 import jax.tree_util as jtu

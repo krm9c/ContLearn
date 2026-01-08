@@ -20,6 +20,12 @@ from ..config.constants import (
     DEFAULT_SYNTHETIC_AVG_NUM_NODES,
     DEFAULT_SYNTHETIC_NUM_CLASSES,
     DEFAULT_BATCH_SIZE_GRAPH,
+    # Added by Claude: Task-shift dataset constants
+    DEFAULT_SYNTHETIC_TASK_SHIFT_ENABLED,
+    DEFAULT_SYNTHETIC_NUM_CLASSES_PER_TASK,
+    DEFAULT_SYNTHETIC_FEATURE_NOISE_BASE,
+    DEFAULT_SYNTHETIC_EDGE_DROPOUT_BASE,
+    DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE,
 )
 
 
@@ -290,6 +296,222 @@ class SyntheticGraphDataset(BaseGraphDataset):
         return self.dataset.num_classes
 
 
+# Added by Claude: Task-shift synthetic graph dataset for continual learning
+class TaskShiftGraphDataset(BaseGraphDataset):
+    """Synthetic graph dataset with domain shift across tasks.
+
+    Instead of class-incremental learning (which causes mode collapse when classes
+    are added/removed), this dataset uses domain shift continual learning:
+
+    - All tasks have the same N classes (default: 5)
+    - Each task introduces progressive perturbations:
+        1. Feature noise: Gaussian noise N(0, σ²) where σ = task_id * noise_base
+        2. Edge dropout: Random edge removal with probability task_id * dropout_base
+        3. Feature shift: Constant additive shift task_id * shift_base
+
+    This tests continual learning under distribution shift (real-world scenario)
+    and avoids mode collapse issues from class-incremental approaches.
+
+    Args:
+        config: Configuration dictionary with optional keys:
+            - num_graphs: Number of graphs to generate (default: 1000)
+            - num_channels: Number of node features (default: 5)
+            - avg_num_nodes: Average number of nodes per graph (default: 20)
+            - num_classes: Total classes in dataset (default: 5)
+            - task_shift_enabled: Enable domain shift (default: True)
+            - feature_noise_base: Base noise σ, scaled by task_id (default: 0.1)
+            - edge_dropout_base: Base edge dropout rate (default: 0.05)
+            - feature_shift_base: Base feature shift (default: 0.05)
+            - n_tasks: Number of tasks (default: 5)
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        # Task-shift parameters
+        self.task_shift_enabled = config.get('task_shift_enabled', DEFAULT_SYNTHETIC_TASK_SHIFT_ENABLED)
+        self.feature_noise_base = config.get('feature_noise_base', DEFAULT_SYNTHETIC_FEATURE_NOISE_BASE)
+        self.edge_dropout_base = config.get('edge_dropout_base', DEFAULT_SYNTHETIC_EDGE_DROPOUT_BASE)
+        self.feature_shift_base = config.get('feature_shift_base', DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE)
+        self.n_tasks = config.get('n_tasks', 5)
+
+        # Store base (unperturbed) datasets for generating task-shifted versions
+        self._base_train_data = None
+        self._base_test_data = None
+
+        self._load_dataset()
+
+    def _load_dataset(self) -> None:
+        """Load synthetic graph dataset."""
+        # Get dataset parameters from config
+        num_graphs = self.config.get('num_graphs', DEFAULT_SYNTHETIC_NUM_GRAPHS)
+        num_channels = self.config.get('num_channels', DEFAULT_SYNTHETIC_NUM_CHANNELS)
+        avg_num_nodes = self.config.get('avg_num_nodes', DEFAULT_SYNTHETIC_AVG_NUM_NODES)
+        # Use smaller number of classes for task-shift (all tasks see same classes)
+        num_classes = self.config.get('num_classes', DEFAULT_SYNTHETIC_NUM_CLASSES_PER_TASK)
+
+        # Set seed for reproducibility
+        torch_geometric.seed.seed_everything(DEFAULT_GRAPH_SEED)
+
+        # Create synthetic dataset
+        self.dataset = FakeDataset(
+            num_graphs=num_graphs,
+            num_channels=num_channels,
+            avg_num_nodes=avg_num_nodes,
+            num_classes=num_classes,
+            transform=_transform_graph
+        ).shuffle()
+
+        # Apply debug limit if enabled
+        if self.debug_mode:
+            print(f"DEBUG MODE: Limiting synthetic graph data from {len(self.dataset)} to {self.debug_limit} samples")
+            self.dataset = self.dataset[:self.debug_limit]
+
+        # Split into train/test
+        length = len(self.dataset)
+        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+        self.train_data = list(self.dataset[:int(train_split * length)])
+        self.test_data = list(self.dataset[int(train_split * length):])
+
+        # Store base data for task-shift generation
+        self._base_train_data = self.train_data.copy()
+        self._base_test_data = self.test_data.copy()
+
+        print(f'Task-Shift Synthetic Graph Dataset:')
+        print('====================================')
+        print(f'Number of training graphs: {len(self.train_data)}')
+        print(f'Number of test graphs: {len(self.test_data)}')
+        print(f'Number of features: {self.dataset.num_features}')
+        print(f'Number of classes: {self.dataset.num_classes}')
+        print(f'Task-shift enabled: {self.task_shift_enabled}')
+        print(f'  Feature noise base: {self.feature_noise_base}')
+        print(f'  Edge dropout base: {self.edge_dropout_base}')
+        print(f'  Feature shift base: {self.feature_shift_base}')
+
+    def _apply_task_perturbation(self, data_list: List, task_id: int, seed: int = None) -> List:
+        """Apply task-specific perturbations to graph data.
+
+        Perturbations scale linearly with task_id:
+        - Task 0: No perturbation (baseline)
+        - Task k: feature_noise = k * noise_base, edge_dropout = k * dropout_base, etc.
+
+        Args:
+            data_list: List of graph data objects
+            task_id: Current task ID (0 = no perturbation)
+            seed: Random seed for reproducibility
+
+        Returns:
+            List of perturbed graph data objects
+        """
+        import copy
+        import torch
+
+        if seed is not None:
+            np.random.seed(seed + task_id)
+            torch.manual_seed(seed + task_id)
+
+        # Task 0 has no perturbation
+        if task_id == 0:
+            return [copy.deepcopy(d) for d in data_list]
+
+        # Compute perturbation magnitudes
+        feature_noise_std = task_id * self.feature_noise_base
+        edge_dropout_prob = min(task_id * self.edge_dropout_base, 0.5)  # Cap at 50%
+        feature_shift = task_id * self.feature_shift_base
+
+        perturbed_list = []
+        for data in data_list:
+            # Deep copy to avoid modifying original
+            new_data = copy.deepcopy(data)
+
+            # 1. Add feature noise: x' = x + N(0, σ²)
+            if feature_noise_std > 0:
+                noise = torch.randn_like(new_data.x) * feature_noise_std
+                new_data.x = new_data.x + noise
+
+            # 2. Add feature shift: x' = x + shift
+            if feature_shift > 0:
+                new_data.x = new_data.x + feature_shift
+
+            # 3. Edge dropout: randomly remove edges
+            if edge_dropout_prob > 0 and new_data.edge_index.shape[1] > 0:
+                num_edges = new_data.edge_index.shape[1]
+                keep_mask = torch.rand(num_edges) > edge_dropout_prob
+                # Ensure at least some edges remain
+                if keep_mask.sum() < 2:
+                    keep_mask[:2] = True
+                new_data.edge_index = new_data.edge_index[:, keep_mask]
+
+            # Ensure n_nodes is set
+            new_data.n_nodes = new_data.num_nodes
+
+            perturbed_list.append(new_data)
+
+        return perturbed_list
+
+    def generate_dataset(self, task_id: int, batch_size: int = None,
+                         phase: str = 'training') -> Tuple[DataLoader, DataLoader]:
+        """Generate train/memory dataloaders for a task with domain shift.
+
+        Each task uses the same classes but with task-specific perturbations.
+        Memory buffer accumulates perturbed data from all seen tasks.
+
+        Args:
+            task_id: Current task ID (0-indexed)
+            batch_size: Batch size for DataLoader
+            phase: 'training' or 'testing'
+
+        Returns:
+            Tuple of (current_loader, memory_loader)
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        # Choose base data based on phase
+        base_data = self._base_train_data if phase == 'training' else self._base_test_data
+        cache_dict = self._task_train_data if phase == 'training' else self._task_test_data
+
+        # Check cache first
+        if task_id in cache_dict:
+            task_data = cache_dict[task_id]
+        else:
+            # Apply task-specific perturbations
+            task_data = self._apply_task_perturbation(
+                base_data, task_id, seed=DEFAULT_GRAPH_SEED
+            )
+
+            # Update memory buffer (only for training, only first time)
+            if phase == 'training':
+                self.memory_train.extend(task_data)
+
+            # Cache for future use
+            cache_dict[task_id] = task_data
+
+        # Create DataLoaders
+        train_loader = DataLoader(task_data, batch_size=batch_size, shuffle=False)
+        mem_train_loader = DataLoader(self.memory_train, batch_size=batch_size, shuffle=False)
+
+        # Compute perturbation info for logging
+        noise_std = task_id * self.feature_noise_base
+        dropout_prob = min(task_id * self.edge_dropout_base, 0.5)
+        shift = task_id * self.feature_shift_base
+
+        print(f"Task {task_id} ({phase}): All {self.num_classes} classes with perturbation "
+              f"(noise_σ={noise_std:.2f}, edge_drop={dropout_prob:.2f}, shift={shift:.2f}), "
+              f"current={len(task_data)}, memory={len(self.memory_train)}")
+
+        return train_loader, mem_train_loader
+
+    @property
+    def num_features(self) -> int:
+        """Number of node features."""
+        return self.dataset.num_features
+
+    @property
+    def num_classes(self) -> int:
+        """Number of graph classes."""
+        return self.dataset.num_classes
+
+
 class TUGraphDataset(BaseGraphDataset):
     """TU Dataset wrapper for graph classification (MUTAG, ENZYMES, PROTEINS).
 
@@ -355,14 +577,17 @@ def load_graph_dataset(config: Dict[str, Any]) -> BaseGraphDataset:
         config: Configuration dictionary with 'data' key
 
     Returns:
-        Graph dataset instance (SyntheticGraphDataset or TUGraphDataset)
+        Graph dataset instance (SyntheticGraphDataset, TaskShiftGraphDataset, or TUGraphDataset)
     """
     data_name = config.get('data', 'synthetic')
 
     if data_name == 'synthetic':
         return SyntheticGraphDataset(config)
+    # Added by Claude: Task-shift synthetic dataset for domain-shift CL
+    elif data_name == 'synthetic_taskshift':
+        return TaskShiftGraphDataset(config)
     elif data_name in ['MUTAG', 'ENZYMES', 'PROTEINS']:
         return TUGraphDataset(config)
     else:
         raise ValueError(f"Unknown graph dataset: {data_name}. "
-                         f"Supported: 'synthetic', 'MUTAG', 'ENZYMES', 'PROTEINS'")
+                         f"Supported: 'synthetic', 'synthetic_taskshift', 'MUTAG', 'ENZYMES', 'PROTEINS'")
