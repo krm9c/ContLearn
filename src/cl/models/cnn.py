@@ -21,7 +21,7 @@ from ..config.constants import (
     DEFAULT_POOL_STRIDE,
 )
 
-from .layers import Linear2, AWBLayerSpec, compute_V_conv2d_single_channel, compute_V_conv2d_multi_channel
+from .layers import Linear2, AWBLayerSpec, awb_transform, AWBMixin
 import jax.tree_util as jtu
 from typing import List
 
@@ -52,8 +52,11 @@ class CNNorig(eqx.Module):
         return x
 
 
-class CNN(eqx.Module):
-    """CNN with AWB (Adaptive Weight Basis) support for MNIST/Omniglot."""
+class CNN(AWBMixin, eqx.Module):
+    """CNN with AWB (Adaptive Weight Basis) support for MNIST/Omniglot.
+
+    Inherits from AWBMixin for unified AWB interface using einsum-based transforms.
+    """
     conv_layers: list
     feed_layers: list
     A_conv: jax.Array
@@ -127,10 +130,17 @@ class CNN(eqx.Module):
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(feed_sizes[1:],new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x,y in zip(feed_sizes[:-1],new_arch[:-1])]
 
-        # AWB convolution filters
+        # AWB convolution filters - stored as stacked 3D arrays for efficient einsum
+        # Shape: (channel_out, new_filter_size, filter_size)
         new_filter_size = awb_filter_size if awb_filter_size is not None else (filter_size + DEFAULT_AWB_FILTER_INCREMENT)
-        self.B_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (new_filter_size,filter_size)) for j in range(0,self.channel_out)]
-        self.A_conv = [jax.random.normal(jax.random.PRNGKey(j),shape = (new_filter_size,filter_size)) for j in range(0,self.channel_out)]
+        self.A_conv = jnp.stack([
+            jax.random.normal(jax.random.PRNGKey(j), shape=(new_filter_size, filter_size))
+            for j in range(self.channel_out)
+        ])
+        self.B_conv = jnp.stack([
+            jax.random.normal(jax.random.PRNGKey(j + 100), shape=(new_filter_size, filter_size))
+            for j in range(self.channel_out)
+        ])
 
     def calc_output_size(self, fil_size, input_size=None):
         """Calculate output size after convolution"""
@@ -162,35 +172,34 @@ class CNN(eqx.Module):
         #return x
 
 
-    def get_AWBT(self,x):
-        """Forward pass using AWB transformation."""
-        #print("x before: ", x.shape)
-        #print("shape of A_conv: ", self.A_conv[0].shape)
-        #print("shape of B_conv: ", self.B_conv[0].shape)
-        #print("shape of weights: ", self.conv_layers[0].weight)
-        #print("before weights: ", self.conv_layers[0].weight)
-        #rint("shape of A_conv@weights: ", (self.A_conv[0]@self.conv_layers[0].weight).shape)
-        #rint("weights after: ", self.A_conv[0]@self.conv_layers[0].weight)
-        weights_list = [[(self.A_conv[i]@(self.conv_layers[0].weight[i][0])@jnp.transpose(self.B_conv[i]))] for i in range(0,self.channel_out)]
-        #print("weights list shape: ", jnp.array(weights_list).shape)
+    def get_AWBT(self, x):
+        """Forward pass using AWB transformation.
+
+        Uses AWBMixin.awb_transform_conv for efficient batched computation.
+        Single einsum call replaces nested Python loops, enabling JIT optimization.
+        """
+        # AWB transformation on conv layer using AWBMixin
+        # For single-channel input (MNIST), conv weight is (out_ch, 1, H, W)
+        # We transform each output channel: A[i] @ W[i,0] @ B[i].T
+        # Using stacked arrays: A_conv (out_ch, new_f, old_f), W[:, 0] (out_ch, H, W)
+        conv_weights = self.conv_layers[0].weight[:, 0]  # (channel_out, H, W)
+        weights_transformed = self.awb_transform_conv(self.A_conv, conv_weights, self.B_conv)
+        # Add back the channel_in dimension for convolution
+        weights_transformed = weights_transformed[:, jnp.newaxis, :, :]  # (out_ch, 1, new_H, new_W)
+
         x = jnp.expand_dims(x, axis=0)
-        #print("x: ", x.shape)
-        x = jax.lax.conv_general_dilated(lhs = x, rhs = jnp.array(weights_list), window_strides= (1,1), padding="VALID")
-        #print("shape of x after:", x.shape)
+        x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed, window_strides=(1, 1), padding="VALID")
         x = x.squeeze(0)
-        #print("x: ", x.shape)
         x = jnp.ravel(jax.nn.relu(eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)))
-        #print("x after: ", x.shape)
-        for i in range(0,len(self.feed_sizes)-1):
-            #print(x.shape)
-            #print("AWBTx: ", (self.A_feed[i] @ self.feed_layers[i].weight @ jnp.transpose(self.B_feed[i]) @ x).shape)
-            #print("bias part: ", (self.A_feed[i]@self.feed_layers[i].bias).squeeze(1).shape)
-            x = (self.A_feed[i] @ self.feed_layers[i].weight @ jnp.transpose(self.B_feed[i]) @ x) + (self.A_feed[i]@self.feed_layers[i].bias).squeeze(1)
-            #print("after: ", x.shape)
+
+        # AWB transformation on feed layers using AWBMixin
+        for i in range(0, len(self.feed_sizes) - 1):
+            V_weight = self.awb_transform_linear(self.A_feed[i], self.feed_layers[i].weight, self.B_feed[i])
+            V_bias = self.awb_transform_bias_linear(self.A_feed[i], self.feed_layers[i].bias, bias_shape='col')
+            x = V_weight @ x + V_bias.squeeze(1)
             # Apply relu to all layers except the final output layer
             if i < len(self.feed_sizes) - 2:
                 x = jax.nn.relu(x)
-            #print(x.shape)
         return x
 
     # Added by Claude: AWBModel interface for CNN
@@ -212,19 +221,18 @@ class CNN(eqx.Module):
     def partition_for_standard_training(self):
         """Partition for standard training (freeze A/B, train W).
 
-        Note: A_conv, B_conv, A_feed, B_feed are lists of arrays.
-        We must preserve the list structure by replacing each element with None,
-        not replacing the entire list with None (which would change the PyTree structure
-        and cause optimizer state mismatch errors).
+        A_conv, B_conv are stacked arrays, A_feed, B_feed are lists of arrays.
+        Use filter_spec approach to mark AWB matrices as non-trainable.
         """
-        params, static = eqx.partition(self, eqx.is_array)
-        static = eqx.tree_at(lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed), static,
-                            replace=(self.A_conv, self.B_conv, self.A_feed, self.B_feed))
-        # Preserve list structure by replacing each element with None
-        params = eqx.tree_at(lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed), params,
-                            replace=([None]*len(self.A_conv), [None]*len(self.B_conv),
-                                     [None]*len(self.A_feed), [None]*len(self.B_feed)))
-        return params, static
+        # Create filter spec: True for trainable W, False for frozen A/B
+        filter_spec = jtu.tree_map(lambda _: True, self)  # Default: train everything
+        # Set A/B matrices to non-trainable (False)
+        filter_spec = eqx.tree_at(
+            lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
+            filter_spec,
+            replace=(False, False, False, False)
+        )
+        return eqx.partition(self, filter_spec)
 
     # Added by Claude: Architecture search interface methods
     def generate_search_candidates(self, iteration, current_best, config):
@@ -347,8 +355,11 @@ class CNN(eqx.Module):
         )
 
 
-class CNN3D(eqx.Module):
-    """CNN3D with AWB support for CIFAR-10/100 (3-channel 32x32 images)."""
+class CNN3D(AWBMixin, eqx.Module):
+    """CNN3D with AWB support for CIFAR-10/100 (3-channel 32x32 images).
+
+    Inherits from AWBMixin for unified AWB interface using einsum-based transforms.
+    """
     conv_layers: list
     feed_layers: list
     A_conv: jax.Array
@@ -432,21 +443,32 @@ class CNN3D(eqx.Module):
         self.A_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[1:], new_arch[1:])]
         self.B_feed = [initializer(jax.random.PRNGKey(5), (y, x)) for x, y in zip(feed_sizes[:-1], new_arch[:-1])]
 
-        # Conv AWB matrices for first conv layer (channel_in -> channel_out)
-        # For 3-channel input: each output filter has channel_in input channels
-        # A_conv1[i][c] transforms the (i,c) filter: shape (new_filter_size, filter_size)
-        self.A_conv1 = [[jax.random.normal(jax.random.PRNGKey(j * channel_in + c), shape=(new_filter_size, filter_size))
-                         for c in range(channel_in)] for j in range(channel_out)]
-        self.B_conv1 = [[jax.random.normal(jax.random.PRNGKey(j * channel_in + c + 100), shape=(new_filter_size, filter_size))
-                         for c in range(channel_in)] for j in range(channel_out)]
+        # Conv AWB matrices stored as stacked 4D arrays for efficient einsum
+        # Shape: (out_channels, in_channels, new_filter_size, filter_size)
+        self.A_conv1 = jnp.stack([
+            jnp.stack([jax.random.normal(jax.random.PRNGKey(j * channel_in + c), shape=(new_filter_size, filter_size))
+                       for c in range(channel_in)])
+            for j in range(channel_out)
+        ])
+        self.B_conv1 = jnp.stack([
+            jnp.stack([jax.random.normal(jax.random.PRNGKey(j * channel_in + c + 100), shape=(new_filter_size, filter_size))
+                       for c in range(channel_in)])
+            for j in range(channel_out)
+        ])
 
-        # Conv AWB matrices for second conv layer (channel_out -> channel_out * 2)
-        self.A_conv2 = [[jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 200), shape=(new_filter_size, filter_size))
-                         for c in range(channel_out)] for j in range(channel_out * 2)]
-        self.B_conv2 = [[jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 300), shape=(new_filter_size, filter_size))
-                         for c in range(channel_out)] for j in range(channel_out * 2)]
+        # Conv2 AWB matrices: (channel_out*2, channel_out, new_filter_size, filter_size)
+        self.A_conv2 = jnp.stack([
+            jnp.stack([jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 200), shape=(new_filter_size, filter_size))
+                       for c in range(channel_out)])
+            for j in range(channel_out * 2)
+        ])
+        self.B_conv2 = jnp.stack([
+            jnp.stack([jax.random.normal(jax.random.PRNGKey(j * channel_out + c + 300), shape=(new_filter_size, filter_size))
+                       for c in range(channel_out)])
+            for j in range(channel_out * 2)
+        ])
 
-        # Keep old attributes for backward compatibility
+        # Aliases for partition functions
         self.A_conv = self.A_conv1
         self.B_conv = self.B_conv1
 
@@ -476,18 +498,13 @@ class CNN3D(eqx.Module):
     def get_AWBT(self, x):
         """Forward pass using AWB transformation.
 
-        Fixed by Claude: Use simple list comprehension matching MLP/GCN pattern
-        instead of double nested vmap to reduce JIT compilation time (192s -> ~12-20s).
-        Direct A @ W @ B.T computation per filter, same pattern as MLP and GCN.
+        Uses AWBMixin.awb_transform_conv for efficient batched computation.
+        Single einsum call replaces nested Python loops, enabling JIT optimization.
         """
-        # AWB transformation on first conv layer (channel_out, channel_in, filter, filter)
-        # Direct computation: A @ W @ B.T for each (i, c) filter pair
-        # Matches MLP/GCN pattern: simple loop with direct matrix multiplication
-        weights_transformed1 = jnp.array([
-            [self.A_conv1[i][c] @ self.conv_layers[0].weight[i][c] @ self.B_conv1[i][c].T
-             for c in range(self.channel_in)]
-            for i in range(self.channel_out)
-        ])
+        # AWB transformation on first conv layer using AWBMixin
+        # A_conv1, B_conv1: (channel_out, channel_in, new_f, old_f)
+        # conv weight: (channel_out, channel_in, old_f, old_f)
+        weights_transformed1 = self.awb_transform_conv(self.A_conv1, self.conv_layers[0].weight, self.B_conv1)
 
         x = jnp.expand_dims(x, axis=0)
         x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed1, window_strides=(1, 1), padding="VALID")
@@ -495,13 +512,8 @@ class CNN3D(eqx.Module):
         x = jax.nn.relu(x)
         x = eqx.nn.MaxPool2d(kernel_size=2, stride=2)(x)
 
-        # AWB transformation on second conv layer
-        # Same pattern as first conv layer: direct A @ W @ B.T computation
-        weights_transformed2 = jnp.array([
-            [self.A_conv2[i][c] @ self.conv_layers[1].weight[i][c] @ self.B_conv2[i][c].T
-             for c in range(self.channel_out)]
-            for i in range(self.channel_out * 2)
-        ])
+        # AWB transformation on second conv layer using AWBMixin
+        weights_transformed2 = self.awb_transform_conv(self.A_conv2, self.conv_layers[1].weight, self.B_conv2)
 
         x = jnp.expand_dims(x, axis=0)
         x = jax.lax.conv_general_dilated(lhs=x, rhs=weights_transformed2, window_strides=(1, 1), padding="VALID")
@@ -511,9 +523,11 @@ class CNN3D(eqx.Module):
 
         x = jnp.ravel(x)
 
-        # AWB transformation on feed layers
+        # AWB transformation on feed layers using AWBMixin
         for i in range(0, len(self.feed_sizes) - 1):
-            x = (self.A_feed[i] @ self.feed_layers[i].weight @ jnp.transpose(self.B_feed[i]) @ x) + (self.A_feed[i] @ self.feed_layers[i].bias).squeeze(1)
+            V_weight = self.awb_transform_linear(self.A_feed[i], self.feed_layers[i].weight, self.B_feed[i])
+            V_bias = self.awb_transform_bias_linear(self.A_feed[i], self.feed_layers[i].bias, bias_shape='col')
+            x = V_weight @ x + V_bias.squeeze(1)
             # Apply relu to all layers except the final output layer
             if i < len(self.feed_sizes) - 2:
                 x = jax.nn.relu(x)
@@ -538,25 +552,19 @@ class CNN3D(eqx.Module):
     def partition_for_standard_training(self):
         """Partition for standard training (freeze A/B, train W).
 
-        Note: A_conv1, B_conv1, A_conv2, B_conv2 are lists of lists of arrays.
+        A_conv1, B_conv1, A_conv2, B_conv2 are now stacked 4D arrays.
         A_feed, B_feed are lists of arrays.
-        We must preserve the nested list structure by replacing each element with None,
-        not replacing the entire list with None (which would change the PyTree structure
-        and cause optimizer state mismatch errors).
+        Use filter_spec approach to mark AWB matrices as non-trainable.
         """
-        params, static = eqx.partition(self, eqx.is_array)
-        static = eqx.tree_at(lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed), static,
-                            replace=(self.A_conv1, self.B_conv1, self.A_conv2, self.B_conv2, self.A_feed, self.B_feed))
-        # Preserve nested list structure by replacing each element with None
-        # A_conv1/B_conv1: [[array for channel_in] for channel_out]
-        # A_conv2/B_conv2: [[array for channel_out] for channel_out*2]
-        # A_feed/B_feed: [array for each layer]
-        none_conv1 = [[None for _ in row] for row in self.A_conv1]
-        none_conv2 = [[None for _ in row] for row in self.A_conv2]
-        none_feed = [None] * len(self.A_feed)
-        params = eqx.tree_at(lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed), params,
-                            replace=(none_conv1, none_conv1, none_conv2, none_conv2, none_feed, none_feed))
-        return params, static
+        # Create filter spec: True for trainable W, False for frozen A/B
+        filter_spec = jtu.tree_map(lambda _: True, self)  # Default: train everything
+        # Set A/B matrices to non-trainable (False)
+        filter_spec = eqx.tree_at(
+            lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_conv, x.B_conv, x.A_feed, x.B_feed),
+            filter_spec,
+            replace=(False, False, False, False, False, False, False, False)
+        )
+        return eqx.partition(self, filter_spec)
 
     # Added by Claude: Architecture search interface methods
     def generate_search_candidates(self, iteration, current_best, config):

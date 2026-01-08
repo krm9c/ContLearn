@@ -266,6 +266,9 @@ class TestAWBPerformanceBaseline:
 
         def loss_fn(m):
             pred = m.get_AWBT(x, adj, batch, n_nodes)
+            # GCN returns (batch_size, n_class) = (1, 10) for single graph
+            # We need to squeeze to get (n_class,) for the loss function
+            pred = pred.squeeze(0)
             return optax.softmax_cross_entropy_with_integer_labels(pred, target)
 
         forward_stats = profile_function(

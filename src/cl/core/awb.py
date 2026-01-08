@@ -397,10 +397,9 @@ def partition_for_AB_training_cnn(model):
 def partition_for_standard_training_cnn(model):
     """Partition CNN model for standard training (freeze A/B, train W).
 
-    Note: A_conv, B_conv, A_feed, B_feed are lists of arrays.
-    We must preserve the list structure by replacing each element with None,
-    not replacing the entire list with None (which would change the PyTree structure
-    and cause optimizer state mismatch errors).
+    A_conv and B_conv are now stacked 3D arrays (not lists).
+    A_feed and B_feed remain lists.
+    Uses filter_spec approach to mark AWB matrices as non-trainable.
 
     Args:
         model: Equinox CNN model
@@ -408,23 +407,15 @@ def partition_for_standard_training_cnn(model):
     Returns:
         Tuple of (params, static)
     """
-    params, static = eqx.partition(model, eqx.is_array)
-
-    static = eqx.tree_at(
+    # Create filter spec: True for trainable W, False for frozen A/B
+    filter_spec = jtu.tree_map(lambda _: True, model)  # Default: train everything
+    # Set A/B matrices to non-trainable (False)
+    filter_spec = eqx.tree_at(
         lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-        static,
-        replace=(model.A_conv, model.B_conv, model.A_feed, model.B_feed)
+        filter_spec,
+        replace=(False, False, False, False)
     )
-
-    # Preserve list structure by replacing each element with None
-    params = eqx.tree_at(
-        lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-        params,
-        replace=([None]*len(model.A_conv), [None]*len(model.B_conv),
-                 [None]*len(model.A_feed), [None]*len(model.B_feed))
-    )
-
-    return params, static
+    return eqx.partition(model, filter_spec)
 
 
 # Added by Claude: CNN3D versions for two-conv-layer models (CIFAR)
@@ -450,11 +441,9 @@ def partition_for_AB_training_cnn3d(model):
 def partition_for_standard_training_cnn3d(model):
     """Partition CNN3D model for standard training (freeze A/B, train W).
 
-    Note: A_conv1, B_conv1, A_conv2, B_conv2 are lists of lists of arrays.
-    A_feed, B_feed are lists of arrays.
-    We must preserve the nested list structure by replacing each element with None,
-    not replacing the entire list with None (which would change the PyTree structure
-    and cause optimizer state mismatch errors).
+    A_conv1, B_conv1, A_conv2, B_conv2 are now stacked 4D arrays (not nested lists).
+    A_feed, B_feed remain lists of arrays.
+    Uses filter_spec approach to mark AWB matrices as non-trainable.
 
     Args:
         model: Equinox CNN3D model
@@ -462,25 +451,15 @@ def partition_for_standard_training_cnn3d(model):
     Returns:
         Tuple of (params, static)
     """
-    params, static = eqx.partition(model, eqx.is_array)
-
-    static = eqx.tree_at(
-        lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed),
-        static,
-        replace=(model.A_conv1, model.B_conv1, model.A_conv2, model.B_conv2, model.A_feed, model.B_feed)
+    # Create filter spec: True for trainable W, False for frozen A/B
+    filter_spec = jtu.tree_map(lambda _: True, model)  # Default: train everything
+    # Set A/B matrices to non-trainable (False)
+    filter_spec = eqx.tree_at(
+        lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_conv, x.B_conv, x.A_feed, x.B_feed),
+        filter_spec,
+        replace=(False, False, False, False, False, False, False, False)
     )
-
-    # Preserve nested list structure by replacing each element with None
-    none_conv1 = [[None for _ in row] for row in model.A_conv1]
-    none_conv2 = [[None for _ in row] for row in model.A_conv2]
-    none_feed = [None] * len(model.A_feed)
-    params = eqx.tree_at(
-        lambda x: (x.A_conv1, x.B_conv1, x.A_conv2, x.B_conv2, x.A_feed, x.B_feed),
-        params,
-        replace=(none_conv1, none_conv1, none_conv2, none_conv2, none_feed, none_feed)
-    )
-
-    return params, static
+    return eqx.partition(model, filter_spec)
 
 
 def partition_for_AB_training_gnn(model):
@@ -695,6 +674,11 @@ def compute_V_from_AWB_cnn(model):
     This is STEP 4 of the AWB algorithm for CNN: after training A and B matrices,
     we compute the effective weights V and update the model to use them.
 
+    A_conv and B_conv are stacked 3D arrays with shape:
+    (channel_out, new_filter_size, filter_size)
+
+    This uses einsum-based awb_transform for efficient batched computation.
+
     Args:
         model: Equinox CNN model with trained A_conv, B_conv, A_feed, B_feed matrices
 
@@ -702,15 +686,17 @@ def compute_V_from_AWB_cnn(model):
         Updated model with weights set to V = A @ W @ B.T
     """
     import jax.numpy as jnp
+    from ..models.layers import awb_transform
 
-    # Transform conv layer weights
-    new_conv_weights = []
-    for i in range(model.channel_out):
-        # For single input channel (MNIST): weight[i][0] is [H, W]
-        transformed = model.A_conv[i] @ model.conv_layers[0].weight[i][0] @ jnp.transpose(model.B_conv[i])
-        new_conv_weights.append([transformed])
+    # Transform conv layer weights using einsum
+    # A_conv: (out_ch, new_f, old_f), W[:, 0]: (out_ch, H, W), B_conv: (out_ch, new_f, old_f)
+    # For single input channel (MNIST): weight[:, 0] is (out_ch, H, W)
+    conv_weights = model.conv_layers[0].weight[:, 0]  # (channel_out, H, W)
+    new_conv_weights = awb_transform(model.A_conv, conv_weights, model.B_conv)
+    # Add back the channel_in dimension: (out_ch, new_H, new_W) -> (out_ch, 1, new_H, new_W)
+    new_conv_weights = new_conv_weights[:, jnp.newaxis, :, :]
 
-    model = eqx.tree_at(lambda x: x.conv_layers[0].weight, model, jnp.array(new_conv_weights))
+    model = eqx.tree_at(lambda x: x.conv_layers[0].weight, model, new_conv_weights)
 
     # Transform feed layer weights
     for j in range(len(model.feed_sizes) - 1):
@@ -728,6 +714,11 @@ def compute_V_from_AWB_cnn3d(model):
     This is STEP 4 of the AWB algorithm for CNN3D: after training A and B matrices,
     we compute the effective weights V and update the model to use them.
 
+    A_conv1/2 and B_conv1/2 are stacked 4D arrays with shape:
+    (channel_out, channel_in, new_filter_size, filter_size)
+
+    This uses einsum-based awb_transform for efficient batched computation.
+
     Args:
         model: Equinox CNN3D model with trained A_conv1, B_conv1, A_conv2, B_conv2, A_feed, B_feed
 
@@ -735,28 +726,17 @@ def compute_V_from_AWB_cnn3d(model):
         Updated model with weights set to V = A @ W @ B.T
     """
     import jax.numpy as jnp
+    from ..models.layers import awb_transform
 
-    # Transform conv layer 1 weights
-    new_conv1_weights = []
-    for i in range(model.channel_out):
-        channel_weights = []
-        for c in range(model.channel_in):
-            transformed = model.A_conv1[i][c] @ model.conv_layers[0].weight[i][c] @ jnp.transpose(model.B_conv1[i][c])
-            channel_weights.append(transformed)
-        new_conv1_weights.append(channel_weights)
+    # Transform conv layer 1 weights using einsum
+    # A_conv1: (out, in, new_f, old_f), W: (out, in, H, W), B_conv1: (out, in, new_f, old_f)
+    # Result V: (out, in, new_f, new_f)
+    new_conv1_weights = awb_transform(model.A_conv1, model.conv_layers[0].weight, model.B_conv1)
+    model = eqx.tree_at(lambda x: x.conv_layers[0].weight, model, new_conv1_weights)
 
-    model = eqx.tree_at(lambda x: x.conv_layers[0].weight, model, jnp.array(new_conv1_weights))
-
-    # Transform conv layer 2 weights
-    new_conv2_weights = []
-    for i in range(model.channel_out * 2):
-        channel_weights = []
-        for c in range(model.channel_out):
-            transformed = model.A_conv2[i][c] @ model.conv_layers[1].weight[i][c] @ jnp.transpose(model.B_conv2[i][c])
-            channel_weights.append(transformed)
-        new_conv2_weights.append(channel_weights)
-
-    model = eqx.tree_at(lambda x: x.conv_layers[1].weight, model, jnp.array(new_conv2_weights))
+    # Transform conv layer 2 weights using einsum
+    new_conv2_weights = awb_transform(model.A_conv2, model.conv_layers[1].weight, model.B_conv2)
+    model = eqx.tree_at(lambda x: x.conv_layers[1].weight, model, new_conv2_weights)
 
     # Transform feed layer weights
     for j in range(len(model.feed_sizes) - 1):

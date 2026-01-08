@@ -178,16 +178,17 @@ def prepABs(model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_filter
 
     # A_conv/B_conv: Transform conv filter from old→new size
     # A_conv @ W_old @ B_conv.T: (new, old) @ (old, old) @ (old, new) = (new, new)
+    # Stored as stacked 3D arrays: (channel_out, new_filter_size, prev_filter_size)
     if filter_changed:
         print(f"  Conv filter changed: A_conv/B_conv shape = ({new_filter_size}, {prev_filter_size})")
-        A_conv = [initializer(jax.random.PRNGKey(5), (new_filter_size, prev_filter_size))
-                  for _ in range(model.channel_out)]
-        B_conv = [initializer(jax.random.PRNGKey(6), (new_filter_size, prev_filter_size))
-                  for _ in range(model.channel_out)]
+        A_conv = jnp.stack([initializer(jax.random.PRNGKey(5 + i), (new_filter_size, prev_filter_size))
+                            for i in range(model.channel_out)])
+        B_conv = jnp.stack([initializer(jax.random.PRNGKey(6 + i), (new_filter_size, prev_filter_size))
+                            for i in range(model.channel_out)])
     else:
-        # No filter change - identity matrices
-        A_conv = [jnp.eye(prev_filter_size) for _ in range(model.channel_out)]
-        B_conv = [jnp.eye(prev_filter_size) for _ in range(model.channel_out)]
+        # No filter change - identity matrices stacked
+        A_conv = jnp.stack([jnp.eye(prev_filter_size) for _ in range(model.channel_out)])
+        B_conv = jnp.stack([jnp.eye(prev_filter_size) for _ in range(model.channel_out)])
 
     # A_feed/B_feed: Transform feed layers from old→new dimensions
     # A_feed[i] shape: (new_out, old_out) for layer i
@@ -237,24 +238,37 @@ def prepABs_CNN3D(model, prev_feed_sizes, prev_filter_size, new_feed_sizes, new_
 
     # A_conv/B_conv: Transform conv filter from old→new size
     # Shape: (new_filter, old_filter) to transform W_old of shape (old_filter, old_filter)
+    # Stored as stacked 4D arrays: (channel_out, channel_in, new_filter_size, prev_filter_size)
     if filter_changed:
         print(f"  Conv filter changed: A_conv/B_conv shape = ({new_filter_size}, {prev_filter_size})")
-        # Conv1: channel_out filters, each with channel_in input channels
-        A_conv1 = [[initializer(jax.random.PRNGKey(5), (new_filter_size, prev_filter_size))
-                    for c in range(model.channel_in)] for j in range(model.channel_out)]
-        B_conv1 = [[initializer(jax.random.PRNGKey(6), (new_filter_size, prev_filter_size))
-                    for c in range(model.channel_in)] for j in range(model.channel_out)]
-        # Conv2: channel_out*2 filters, each with channel_out input channels
-        A_conv2 = [[initializer(jax.random.PRNGKey(7), (new_filter_size, prev_filter_size))
-                    for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        B_conv2 = [[initializer(jax.random.PRNGKey(8), (new_filter_size, prev_filter_size))
-                    for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        # Conv1: (channel_out, channel_in, new_filter, old_filter)
+        A_conv1 = jnp.stack([
+            jnp.stack([initializer(jax.random.PRNGKey(5 + j * model.channel_in + c), (new_filter_size, prev_filter_size))
+                       for c in range(model.channel_in)])
+            for j in range(model.channel_out)
+        ])
+        B_conv1 = jnp.stack([
+            jnp.stack([initializer(jax.random.PRNGKey(1000 + j * model.channel_in + c), (new_filter_size, prev_filter_size))
+                       for c in range(model.channel_in)])
+            for j in range(model.channel_out)
+        ])
+        # Conv2: (channel_out*2, channel_out, new_filter, old_filter)
+        A_conv2 = jnp.stack([
+            jnp.stack([initializer(jax.random.PRNGKey(2000 + j * model.channel_out + c), (new_filter_size, prev_filter_size))
+                       for c in range(model.channel_out)])
+            for j in range(model.channel_out * 2)
+        ])
+        B_conv2 = jnp.stack([
+            jnp.stack([initializer(jax.random.PRNGKey(3000 + j * model.channel_out + c), (new_filter_size, prev_filter_size))
+                       for c in range(model.channel_out)])
+            for j in range(model.channel_out * 2)
+        ])
     else:
-        # No filter change - identity matrices
-        A_conv1 = [[jnp.eye(prev_filter_size) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        B_conv1 = [[jnp.eye(prev_filter_size) for c in range(model.channel_in)] for j in range(model.channel_out)]
-        A_conv2 = [[jnp.eye(prev_filter_size) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
-        B_conv2 = [[jnp.eye(prev_filter_size) for c in range(model.channel_out)] for j in range(model.channel_out * 2)]
+        # No filter change - identity matrices stacked
+        A_conv1 = jnp.stack([jnp.stack([jnp.eye(prev_filter_size) for c in range(model.channel_in)]) for j in range(model.channel_out)])
+        B_conv1 = jnp.stack([jnp.stack([jnp.eye(prev_filter_size) for c in range(model.channel_in)]) for j in range(model.channel_out)])
+        A_conv2 = jnp.stack([jnp.stack([jnp.eye(prev_filter_size) for c in range(model.channel_out)]) for j in range(model.channel_out * 2)])
+        B_conv2 = jnp.stack([jnp.stack([jnp.eye(prev_filter_size) for c in range(model.channel_out)]) for j in range(model.channel_out * 2)])
 
     # A_feed/B_feed: Transform feed layers from old→new dimensions
     # A_feed[i] shape: (new_out, old_out) for layer i
