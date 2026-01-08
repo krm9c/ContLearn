@@ -1,26 +1,38 @@
 {
     "__comment": "CONDITION 2: Heuristics (2-task synthetic graph)",
     "__comment_": "Fixed arch, cosine LR, warmup, adaptive grad weights",
-    "data": "synthetic",
+    "__comment__": "Task-shift: Same 5 classes with progressive perturbations",
+    "data": "synthetic_taskshift",
     "problem": "graph",
     "network": "gcn",
     "n_task": 2,
-    "epochs_per_task": 125,
+    "epochs_per_task": 200,
     "batch_size": 64,
 
+    "num_graphs": 2000,
+    "num_channels": 10,
+    "avg_num_nodes": 20,
+    "num_classes": 5,
+    "feature_noise_base": 0.1,
+    "edge_dropout_base": 0.05,
+    "feature_shift_base": 0.05,
+
+    "gcn_sizes": [10, 64, 64],
+    "mlp_sizes": [64, 64, 32, 5],
 
     "model_path": "runs__/results/synthetic_graph_2task_condition2",
     "save_iter": 25,
     "log_interval": 1,
     "eval_interval": 25,
-    "grad_weights": [1.0, 1.0, 1e-05],
+    "grad_weights": [0.4, 0.4, 0.1],
     "debug_mode": false,
     "per_task_eval_enabled": true,
     "use_jax_prefetch": false,
 
     "lr_schedule": "cosine",
-    "lr": 0.001,
+    "lr": 0.01,
     "task_warmup_enabled": true,
-    "warmup_epochs": 15,
+    "task_warmup_epochs": 25,
+    "task_warmup_lr_factor": 0.1,
     "awb_enabled": false
 }

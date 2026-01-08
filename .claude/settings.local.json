@@ -5,7 +5,8 @@
       "Bash(python -m pytest:*)",
       "Bash(rm:*)",
       "WebFetch(domain:arxiv.org)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
