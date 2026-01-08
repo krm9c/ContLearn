@@ -6,10 +6,10 @@
     "problem": "graph",
     "network": "gcn",
     "n_task": 2,
-    "epochs_per_task": 1000,
+    "epochs_per_task": 400,
     "batch_size": 64,
 
-    "num_graphs": 2000,
+    "num_graphs": 1000,
     "num_channels": 10,
     "avg_num_nodes": 20,
     "num_classes": 5,
