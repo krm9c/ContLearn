@@ -33,7 +33,7 @@ from ..models.gcn import GCNAWBOps, GCN
 from ..datasets.sine import SineDataset
 from ..datasets.mnist import MNISTDataset, PermutedMNISTDataset
 from ..datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
-from ..datasets.synthetic_graph import SyntheticGraphDataset
+from ..datasets.synthetic_graph import SyntheticGraphDataset, TaskShiftGraphDataset
 
 from ..config.constants import (
     DEFAULT_OPTIMIZER,
@@ -702,6 +702,19 @@ def load_checkpoint(config: Dict[str, Any]):
         dataset = CIFAR100Dataset(dataset_config)
     elif data_type == 'synthetic':
         dataset = SyntheticGraphDataset(dataset_config)
+    # Added by Claude: Task-shift synthetic graph dataset for domain-shift CL
+    elif data_type == 'synthetic_taskshift':
+        # Pass through task-shift specific config parameters
+        dataset_config.update({
+            'num_graphs': config.get('num_graphs', 2000),
+            'num_channels': config.get('num_channels', 10),
+            'avg_num_nodes': config.get('avg_num_nodes', 20),
+            'num_classes': config.get('num_classes', 5),
+            'feature_noise_base': config.get('feature_noise_base', 0.1),
+            'edge_dropout_base': config.get('edge_dropout_base', 0.05),
+            'feature_shift_base': config.get('feature_shift_base', 0.05),
+        })
+        dataset = TaskShiftGraphDataset(dataset_config)
     else:
         raise ValueError(f"Unknown dataset: {data_type}")
 
