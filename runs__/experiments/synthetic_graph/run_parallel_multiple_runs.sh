@@ -17,12 +17,12 @@ SUMMARY_FILE="${LOG_DIR}/run_summary_$(date +%Y%m%d_%H%M%S).txt"
 # Create logs directory
 mkdir -p "${LOG_DIR}"
 
-# All Synthetic Graph config files (4 conditions)
+# All Synthetic Graph config files (4 conditions, 10-task)
 CONFIGS=(
-    "synthetic_graph_2task_condition1_baseline.json"
-    "synthetic_graph_2task_condition2_heuristics.json"
-    "synthetic_graph_2task_condition3_arch_no_transfer.json"
-    "synthetic_graph_2task_condition4_awb_full.json"
+    "synthetic_graph_10task_condition1_baseline.json"
+    "synthetic_graph_10task_condition2_heuristics.json"
+    "synthetic_graph_10task_condition3_arch_no_transfer.json"
+    "synthetic_graph_10task_condition4_awb_full.json"
 )
 
 echo ""
