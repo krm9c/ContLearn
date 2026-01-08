@@ -1,15 +1,30 @@
 #!/bin/bash
-# Run all 4 synthetic graph task-shift conditions
+# Run Synthetic Graph 2-task all 4 conditions
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/kraghavan/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/kraghavan/miniconda3/etc/profile.d/conda.sh" ]; then
+        . "/home/kraghavan/miniconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/kraghavan/miniconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+conda activate jax__kkt
 
 # Get the directory of this script and repo root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 RUN_SCRIPT="$REPO_ROOT/run.py"
-CONFIG_DIR="$REPO_ROOT/runs__/configs"
+CONFIG_DIR="$SCRIPT_DIR/configs"
 
 # Create output directories
 mkdir -p "$SCRIPT_DIR/logs"
-mkdir -p "$SCRIPT_DIR/results"
 
 # Function to run a config
 run_config() {
@@ -23,35 +38,31 @@ run_config() {
     echo "Log: $logfile"
     echo "Started at: $(date)"
 
-    cd "$REPO_ROOT"
-    python "$RUN_SCRIPT" "$CONFIG_DIR/$config" > "$logfile" 2>&1
-    local status=$?
+    # GPU optimization flags (conservative, deterministic)
+    export JAX_PLATFORMS=cuda
+    export XLA_PYTHON_CLIENT_PREALLOCATE=true
+    export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
-    if [ $status -eq 0 ]; then
-        echo "SUCCESS: $name ($(date))"
-        echo "$name" >> "$SCRIPT_DIR/logs/${name}.success"
+    python "$RUN_SCRIPT" "$CONFIG_DIR/$config" > "$logfile" 2>&1
+    if [ $? -eq 0 ]; then
+        echo "✓ SUCCESS: $name ($(date))"
     else
-        echo "FAILED: $name ($(date))"
+        echo "✗ FAILED: $name ($(date))"
         echo "  Check log: $logfile"
-        echo "$name" >> "$SCRIPT_DIR/logs/${name}.failed"
     fi
     echo ""
-    return $status
 }
 
 echo "========================================"
-echo "Synthetic Graph Task-Shift Test (All 4 Conditions)"
+echo "Synthetic Graph 2-Task All Conditions"
 echo "Started at: $(date)"
 echo ""
 
-# Run all 4 conditions sequentially
-run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1_baseline"
-run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2_heuristics"
-run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "synthetic_2task_C3_arch_no_transfer"
-run_config "synthetic_graph_2task_condition4_awb_full.json" "synthetic_2task_C4_awb_full"
+run_config "synthetic_graph_2task_condition1_baseline.json" "synthetic_2task_C1"
+run_config "synthetic_graph_2task_condition2_heuristics.json" "synthetic_2task_C2"
+run_config "synthetic_graph_2task_condition3_arch_no_transfer.json" "synthetic_2task_C3"
+run_config "synthetic_graph_2task_condition4_awb_full.json" "synthetic_2task_C4"
 
 echo "========================================"
-echo "All Synthetic Graph Tests Completed"
+echo "Synthetic Graph 2-Task All Conditions completed"
 echo "Finished at: $(date)"
-echo ""
-echo "Check logs in: $SCRIPT_DIR/logs/"
