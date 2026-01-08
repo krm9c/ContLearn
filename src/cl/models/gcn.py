@@ -476,9 +476,7 @@ class GCN(AWBMixin, eqx.Module):
         step_mlp = config.get('arch_search_step_size_mlp', DEFAULT_ARCH_SEARCH_STEP_SIZE_MLP)
 
         # Extract base dimensions from current architecture
-        # gcn_sizes = [in_size, z2]
-        z2 = current_gcn[1] if len(current_gcn) > 1 else current_gcn[0]
-
+        # gcn_sizes = [in_size, h1, h2, ..., out] - preserve structure, vary dimensions
         # mlp_sizes = [gcn_out, x1, x2, n_class]
         x1 = current_mlp[1] if len(current_mlp) > 1 else current_mlp[0]
         x2 = current_mlp[2] if len(current_mlp) > 2 else x1
@@ -489,10 +487,15 @@ class GCN(AWBMixin, eqx.Module):
         # Generate candidate architectures
         candidates = []
 
-        # Search over GCN architecture (3 candidates)
+        # Search over GCN architecture (3 candidates for hidden size scaling)
         for j in range(3):
-            new_gcn_hidden = z2 + n * (j + 1) * step_gcn
-            curr_gcn = [current_gcn[0], new_gcn_hidden]  # Preserve input size
+            # Preserve layer count, scale hidden dimensions
+            # curr_gcn keeps same structure as current_gcn
+            curr_gcn = [current_gcn[0]]  # Keep input size
+            for layer_idx in range(1, len(current_gcn)):
+                base_size = current_gcn[layer_idx]
+                new_size = base_size + n * (j + 1) * step_gcn
+                curr_gcn.append(new_size)
 
             # Search over MLP architecture (3x3 = 9 candidates per GCN size)
             for k in range(3):
@@ -502,7 +505,7 @@ class GCN(AWBMixin, eqx.Module):
 
                     # MLP connects from GCN output to final class count
                     curr_mlp = [
-                        new_gcn_hidden,  # First MLP layer takes GCN output
+                        curr_gcn[-1],  # First MLP layer takes GCN output
                         new_mlp_h1,
                         new_mlp_h2,
                         current_mlp[-1]  # Preserve output size (n_class)
