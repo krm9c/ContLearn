@@ -10,12 +10,14 @@ import jax.numpy as jnp
 import equinox as eqx
 from typing import List, Optional, Dict, Any
 
-from .layers import Linear, AWBLayerSpec
+from .layers import Linear, AWBLayerSpec, AWBMixin
 import jax.tree_util as jtu
 
 
-class MLP(eqx.Module):
+class MLP(AWBMixin, eqx.Module):
     """Multi-Layer Perceptron with optional AWB (Adaptive Weight Basis) support.
+
+    Inherits from AWBMixin for unified AWB interface using einsum-based transforms.
 
     The MLP supports two forward pass modes:
     1. Standard: x -> tanh(W1 @ x + b1) -> ... -> Wn @ x + bn
@@ -93,6 +95,7 @@ class MLP(eqx.Module):
     def getAWB(self, x: jax.Array) -> jax.Array:
         """Forward pass using AWB transformation: A @ W @ B.T.
 
+        Uses AWBMixin.awb_transform_linear for efficient computation.
         Used during AWB training (Step 3b) when A/B matrices are being optimized
         while W is frozen. The effective weight becomes V = A @ W @ B.T.
 
@@ -112,15 +115,13 @@ class MLP(eqx.Module):
             )
 
         for i in range(len(self.sizes) - 1):
-            # Compute transformed weight and bias
+            # Compute transformed weight and bias using AWBMixin
             # V = A @ W @ B.T
-            # bias_transformed = bias @ A.T
-            weight_transformed = self.A[i] @ self.layers[i].weight @ jnp.transpose(self.B[i])
-            # Fixed by Claude: Keep bias shape as (1, new_out) for proper broadcasting
-            # Don't squeeze - bias should match the shape used in compute_V_from_AWB
-            bias_transformed = self.layers[i].bias @ self.A[i].T
+            V_weight = self.awb_transform_linear(self.A[i], self.layers[i].weight, self.B[i])
+            # bias_transformed = bias @ A.T (for row-shaped bias)
+            V_bias = self.awb_transform_bias_linear(self.A[i], self.layers[i].bias, bias_shape='row')
 
-            x = weight_transformed @ x + bias_transformed.squeeze(0)
+            x = V_weight @ x + V_bias.squeeze(0)
             x = jax.nn.tanh(x)
 
         return x

@@ -12,6 +12,38 @@ from typing import Optional, Tuple, List
 from dataclasses import dataclass
 
 
+# =============================================================================
+# Unified AWB Transform (Added by Claude)
+# =============================================================================
+
+def awb_transform(A: jax.Array, W: jax.Array, B: jax.Array) -> jax.Array:
+    """Unified AWB weight transformation: V = A @ W @ B.T
+
+    Works for any number of batch dimensions using einsum with ellipsis.
+    This enables efficient batched computation for:
+    - MLP: 2D matrices (no batch dims)
+    - CNN: 3D matrices (batch over output channels)
+    - CNN3D: 4D matrices (batch over output and input channels)
+    - Transformers: arbitrary batch dims (layers, heads, etc.)
+
+    Args:
+        A: Transformation matrix with shape (..., new_out, old_out)
+        W: Weight matrix with shape (..., old_out, old_in)
+        B: Transformation matrix with shape (..., new_in, old_in)
+
+    Returns:
+        Transformed weight V with shape (..., new_out, new_in)
+
+    Example:
+        # Single layer (MLP-style)
+        V = awb_transform(A, W, B)  # A: (m,k), W: (k,n), B: (p,n) -> V: (m,p)
+
+        # Batched over channels (CNN3D-style)
+        V = awb_transform(A, W, B)  # A: (o,i,m,k), W: (o,i,k,n), B: (o,i,p,n) -> V: (o,i,m,p)
+    """
+    return jnp.einsum('...ij,...jk,...lk->...il', A, W, B)
+
+
 # Added by Claude: AWBLayerSpec for tracking AWB transformations
 @dataclass
 class AWBLayerSpec:
@@ -386,3 +418,167 @@ def compute_V_conv2d_multi_channel(
         new_conv_weights.append(channel_weights)
 
     return new_conv_weights
+
+
+# =============================================================================
+# AWBMixin - Unified AWB Interface for All Models (Added by Claude)
+# =============================================================================
+
+class AWBMixin:
+    """Mixin providing unified AWB (Adaptive Weight Basis) interface for all models.
+
+    This mixin standardizes AWB operations across different model architectures:
+    - MLP: Linear layers with 2D weight matrices
+    - CNN/CNN3D: Convolutional layers with 3D/4D weight tensors
+    - GCN: Graph layers with linear transformations
+    - Transformers: Multi-head attention with batched projections
+
+    The core AWB transformation is: V = A @ W @ B.T
+    This mixin uses einsum with ellipsis notation to handle arbitrary batch dimensions.
+
+    Models using this mixin should:
+    1. Define A/B matrices as class attributes (lists or stacked arrays)
+    2. Implement get_awb_layer_specs() for layer-level tracking
+    3. Use awb_transform_linear() for linear layers
+    4. Use awb_transform_conv() for convolutional layers
+
+    Example:
+        class MyModel(AWBMixin, eqx.Module):
+            A: jax.Array  # Stacked A matrices
+            B: jax.Array  # Stacked B matrices
+            layers: List[Linear]
+
+            def get_AWBT(self, x):
+                # Transform all linear layers at once
+                W_stacked = jnp.stack([l.weight for l in self.layers])
+                V = self.awb_transform_linear(self.A, W_stacked, self.B)
+                ...
+    """
+
+    @staticmethod
+    def awb_transform_linear(
+        A: jax.Array,
+        W: jax.Array,
+        B: jax.Array
+    ) -> jax.Array:
+        """Transform linear layer weights: V = A @ W @ B.T
+
+        Uses einsum with ellipsis for arbitrary batch dimensions.
+        Works for single layers (2D) or batched layers (3D+).
+
+        Args:
+            A: Transformation matrix (..., new_out, old_out)
+            W: Weight matrix (..., old_out, old_in)
+            B: Transformation matrix (..., new_in, old_in)
+
+        Returns:
+            Transformed weight V (..., new_out, new_in)
+
+        Example:
+            # Single layer
+            V = AWBMixin.awb_transform_linear(A, W, B)
+            # A: (m,k), W: (k,n), B: (p,n) -> V: (m,p)
+
+            # Batched layers
+            V = AWBMixin.awb_transform_linear(A_stacked, W_stacked, B_stacked)
+            # A: (L,m,k), W: (L,k,n), B: (L,p,n) -> V: (L,m,p)
+        """
+        return awb_transform(A, W, B)
+
+    @staticmethod
+    def awb_transform_conv(
+        A: jax.Array,
+        W: jax.Array,
+        B: jax.Array
+    ) -> jax.Array:
+        """Transform convolutional layer weights: V = A @ W @ B.T
+
+        Uses einsum with ellipsis for arbitrary channel dimensions.
+        Works for single-channel (3D) or multi-channel (4D) conv weights.
+
+        Args:
+            A: Transformation matrix (out_ch, [in_ch], new_f, old_f)
+            W: Conv weight (out_ch, [in_ch], old_f, old_f)
+            B: Transformation matrix (out_ch, [in_ch], new_f, old_f)
+
+        Returns:
+            Transformed weight V (out_ch, [in_ch], new_f, new_f)
+
+        Example:
+            # CNN single-channel (MNIST)
+            V = AWBMixin.awb_transform_conv(A, W, B)
+            # A: (o,m,k), W: (o,k,n), B: (o,p,n) -> V: (o,m,p)
+
+            # CNN3D multi-channel (CIFAR)
+            V = AWBMixin.awb_transform_conv(A, W, B)
+            # A: (o,i,m,k), W: (o,i,k,n), B: (o,i,p,n) -> V: (o,i,m,p)
+        """
+        return awb_transform(A, W, B)
+
+    @staticmethod
+    def awb_transform_bias_linear(
+        A: jax.Array,
+        bias: jax.Array,
+        bias_shape: str = 'row'
+    ) -> jax.Array:
+        """Transform linear layer bias.
+
+        Args:
+            A: Transformation matrix (new_out, old_out)
+            bias: Original bias
+            bias_shape: 'row' for (1, out) or 'col' for (out, 1)
+
+        Returns:
+            Transformed bias with same shape convention
+        """
+        if bias_shape == 'row':
+            # Linear layer: bias @ A.T -> (1, new_out)
+            return bias @ A.T
+        else:
+            # Linear2/LinearGCN: A @ bias -> (new_out, 1)
+            return A @ bias
+
+    def get_awb_matrices_spec(self) -> dict:
+        """Get specification of AWB matrices for this model.
+
+        Override in subclasses to specify which attributes hold A/B matrices.
+
+        Returns:
+            Dict with keys:
+                - 'linear_A': attribute name(s) for linear layer A matrices
+                - 'linear_B': attribute name(s) for linear layer B matrices
+                - 'conv_A': attribute name(s) for conv layer A matrices (optional)
+                - 'conv_B': attribute name(s) for conv layer B matrices (optional)
+        """
+        raise NotImplementedError("Subclasses must implement get_awb_matrices_spec()")
+
+    def get_awb_layer_specs(self) -> List[AWBLayerSpec]:
+        """Get AWB layer specifications for all transformable layers.
+
+        Override in subclasses to provide layer-specific tracking.
+
+        Returns:
+            List of AWBLayerSpec for each layer
+        """
+        raise NotImplementedError("Subclasses must implement get_awb_layer_specs()")
+
+    def get_AWBT(self, *args, **kwargs):
+        """Forward pass using AWB transformation.
+
+        Override in subclasses with model-specific implementation.
+        """
+        raise NotImplementedError("Subclasses must implement get_AWBT()")
+
+    def partition_for_AB_training(self):
+        """Partition model for A/B training (freeze W, train A/B).
+
+        Override in subclasses with model-specific partition logic.
+        """
+        raise NotImplementedError("Subclasses must implement partition_for_AB_training()")
+
+    def partition_for_standard_training(self):
+        """Partition model for standard training (freeze A/B, train W).
+
+        Override in subclasses with model-specific partition logic.
+        """
+        raise NotImplementedError("Subclasses must implement partition_for_standard_training()")

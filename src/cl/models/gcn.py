@@ -17,7 +17,7 @@ from ..config.constants import (
     DEFAULT_GCN_SIZES,
     DEFAULT_GCN_MLP_SIZES,
 )
-from .layers import Linear, Dropout, AWBLayerSpec
+from .layers import Linear, Dropout, AWBLayerSpec, AWBMixin
 import jax.tree_util as jtu
 
 
@@ -199,8 +199,10 @@ class Linear3(eqx.Module):
         return x @ self.weight.T + self.bias
 
 
-class GCN(eqx.Module):
+class GCN(AWBMixin, eqx.Module):
     """Graph Neural Network with GCN + MLP and AWB support.
+
+    Inherits from AWBMixin for unified AWB interface using einsum-based transforms.
 
     Architecture:
     - GCN layers for message passing on graph
@@ -353,6 +355,7 @@ class GCN(eqx.Module):
                  n_nodes: jax.Array) -> jax.Array:
         """Forward pass using AWB transformation.
 
+        Uses AWBMixin.awb_transform_linear for efficient computation.
         Uses V = A @ W @ B.T for both GCN and feed layers.
 
         Note: Adjacency normalization is applied via T.GCNNorm() transform
@@ -367,17 +370,16 @@ class GCN(eqx.Module):
         Returns:
             Class logits (batch_size, n_class)
         """
-        # GCN layers with AWB transformation
+        # GCN layers with AWB transformation using AWBMixin
         for i in range(len(self.gcn_layers)):
             # Compute AWB transformed weight: V = A_gcn @ W @ B_gcn^T
-            transformed_weight = (self.A_gcn[i] @ self.gcn_layers[i].weight
-                                  @ jnp.transpose(self.B_gcn[i]))
-            support = x @ transformed_weight
+            V_weight = self.awb_transform_linear(self.A_gcn[i], self.gcn_layers[i].weight, self.B_gcn[i])
+            support = x @ V_weight
             # adj is already normalized by T.GCNNorm() transform
             x = self.matmul(adj, support, support.shape)
 
             if self.gcn_layers[i].bias_flag:
-                # Transform bias: bias @ B.T
+                # Transform bias: bias @ B.T (GCN bias shape is (1, out))
                 x += (self.gcn_layers[i].bias @ self.B_gcn[i].T)
 
             x = jax.nn.leaky_relu(x)
@@ -385,18 +387,17 @@ class GCN(eqx.Module):
         # Graph pooling
         x = self.pool_layer(x, batch, n_nodes)
 
-        # Feed-forward layers with AWB transformation (all but last with LeakyReLU)
+        # Feed-forward layers with AWB transformation using AWBMixin
         for i in range(len(self.feed_sizes) - 2):
             # Compute AWB transformed: x @ (A @ W.T @ B.T) + bias @ B.T
-            transformed_weight = (self.A_feed[i] @ self.feed_layers[i].weight.T
-                                  @ jnp.transpose(self.B_feed[i]))
-            x = x @ transformed_weight + (self.feed_layers[i].bias @ self.B_feed[i].T)
+            # Linear3 uses x @ W.T, so we transform W.T not W
+            V_weight = self.awb_transform_linear(self.A_feed[i], self.feed_layers[i].weight.T, self.B_feed[i])
+            x = x @ V_weight + (self.feed_layers[i].bias @ self.B_feed[i].T)
             x = jax.nn.leaky_relu(x)
 
         # Final layer with AWB transformation (no activation)
-        transformed_weight = (self.A_feed[-1] @ self.feed_layers[-1].weight.T
-                              @ jnp.transpose(self.B_feed[-1]))
-        x = x @ transformed_weight + (self.feed_layers[-1].bias @ self.B_feed[-1].T)
+        V_weight = self.awb_transform_linear(self.A_feed[-1], self.feed_layers[-1].weight.T, self.B_feed[-1])
+        x = x @ V_weight + (self.feed_layers[-1].bias @ self.B_feed[-1].T)
 
         return x
 

@@ -246,7 +246,7 @@ class TestCNNPartitioning:
         assert jnp.allclose(out1, out2)
 
     def test_cnn_freeze_awb(self, jax_key, cnn_config):
-        """Test freezing AWB matrices in CNN."""
+        """Test freezing AWB matrices in CNN using model's partition_for_standard_training."""
         model = CNN(
             key=jax_key,
             filter_size=cnn_config['filter_size'],
@@ -256,22 +256,13 @@ class TestCNNPartitioning:
             channel_out=3
         )
 
-        params, static = eqx.partition(model, eqx.is_array)
+        # Use the model's partition function for freezing AWB
+        params, static = model.partition_for_standard_training()
 
-        # Move AWB to static (frozen)
-        static = eqx.tree_at(
-            lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-            static,
-            replace=(model.A_conv, model.B_conv, model.A_feed, model.B_feed)
-        )
-        params = eqx.tree_at(
-            lambda x: (x.A_conv, x.B_conv, x.A_feed, x.B_feed),
-            params,
-            replace=(None, None, None, None)
-        )
-
-        # AWB should be in static, not params
-        assert params.A_conv is None
+        # AWB should be in static, not params (via filter_spec approach)
+        # Params should have conv and feed weights
+        assert params.conv_layers[0].weight is not None
+        # Static should have the AWB matrices
         assert static.A_conv is not None
 
 
@@ -313,7 +304,10 @@ class TestCNN3DExtended:
         assert output.shape == (10,)  # 10 classes
 
     def test_cnn3d_awb_matrices_shapes(self, jax_key, cnn3d_config):
-        """Test CNN3D AWB matrices have correct shapes."""
+        """Test CNN3D AWB matrices have correct shapes.
+
+        A_conv and B_conv are now stacked 4D arrays for einsum optimization.
+        """
         model = CNN3D(
             key=jax_key,
             filter_size=cnn3d_config['filter_size'],
@@ -325,20 +319,18 @@ class TestCNN3DExtended:
 
         channel_in = cnn3d_config['channel_in']
         channel_out = cnn3d_config['channel_out']
+        filter_size = cnn3d_config['filter_size']
+        new_filter_size = filter_size + 2  # awb_filter_increment default
 
-        # Conv1 AWB matrices: [channel_out][channel_in] each
-        assert len(model.A_conv1) == channel_out
-        assert len(model.A_conv1[0]) == channel_in
-        assert len(model.B_conv1) == channel_out
-        assert len(model.B_conv1[0]) == channel_in
+        # Conv1 AWB matrices: (channel_out, channel_in, new_filter, filter) stacked 4D arrays
+        assert model.A_conv1.shape == (channel_out, channel_in, new_filter_size, filter_size)
+        assert model.B_conv1.shape == (channel_out, channel_in, new_filter_size, filter_size)
 
-        # Conv2 AWB matrices: [channel_out * 2][channel_out] each
-        assert len(model.A_conv2) == channel_out * 2
-        assert len(model.A_conv2[0]) == channel_out
-        assert len(model.B_conv2) == channel_out * 2
-        assert len(model.B_conv2[0]) == channel_out
+        # Conv2 AWB matrices: (channel_out * 2, channel_out, new_filter, filter)
+        assert model.A_conv2.shape == (channel_out * 2, channel_out, new_filter_size, filter_size)
+        assert model.B_conv2.shape == (channel_out * 2, channel_out, new_filter_size, filter_size)
 
-        # Feed AWB matrices
+        # Feed AWB matrices remain as lists
         assert len(model.A_feed) == len(cnn3d_config['feed_sizes']) - 1
         assert len(model.B_feed) == len(cnn3d_config['feed_sizes']) - 1
 
@@ -371,7 +363,11 @@ class TestCNNAWBPartitioning:
             assert layer.bias is None
 
     def test_partition_for_standard_training_cnn(self, jax_key, cnn_config):
-        """Test partitioning CNN for standard training."""
+        """Test partitioning CNN for standard training.
+
+        A_conv and B_conv are now stacked arrays (not lists), so the partition
+        uses filter_spec approach - A/B go to static and params has None.
+        """
         model = CNN(
             key=jax_key,
             filter_size=cnn_config['filter_size'],
@@ -381,14 +377,14 @@ class TestCNNAWBPartitioning:
             channel_out=cnn_config['channel_out']
         )
 
-        params, static = partition_for_standard_training_cnn(model)
+        # Use model's partition method (filter_spec based)
+        params, static = model.partition_for_standard_training()
 
-        # A/B should be frozen (list of None in params to preserve PyTree structure, values in static)
-        # The list structure is preserved to ensure optimizer state matches gradient structure
-        assert all(x is None for x in params.A_conv)
-        assert all(x is None for x in params.B_conv)
+        # A/B should be frozen (in static as arrays)
         assert static.A_conv is not None
         assert static.B_conv is not None
+        # Params should have conv/feed weights as trainable
+        assert params.conv_layers[0].weight is not None
 
     def test_partition_for_AB_training_cnn3d(self, jax_key, cnn3d_config):
         """Test partitioning CNN3D for A/B training."""
@@ -412,7 +408,11 @@ class TestCNNAWBPartitioning:
         assert diff_model.B_feed is not None
 
     def test_partition_for_standard_training_cnn3d(self, jax_key, cnn3d_config):
-        """Test partitioning CNN3D for standard training."""
+        """Test partitioning CNN3D for standard training.
+
+        A_conv1/2, B_conv1/2 are now stacked 4D arrays (not nested lists),
+        so the partition uses filter_spec approach.
+        """
         model = CNN3D(
             key=jax_key,
             filter_size=cnn3d_config['filter_size'],
@@ -422,16 +422,16 @@ class TestCNNAWBPartitioning:
             channel_out=cnn3d_config['channel_out']
         )
 
-        params, static = partition_for_standard_training_cnn3d(model)
+        # Use model's partition method (filter_spec based)
+        params, static = model.partition_for_standard_training()
 
-        # All A/B should be frozen (nested lists of None in params to preserve PyTree structure)
-        # The nested list structure is preserved to ensure optimizer state matches gradient structure
-        assert all(all(x is None for x in row) for row in params.A_conv1)
-        assert all(all(x is None for x in row) for row in params.B_conv1)
-        assert all(all(x is None for x in row) for row in params.A_conv2)
-        assert all(all(x is None for x in row) for row in params.B_conv2)
+        # All A/B should be frozen (in static as stacked arrays)
         assert static.A_conv1 is not None
         assert static.B_conv1 is not None
+        assert static.A_conv2 is not None
+        assert static.B_conv2 is not None
+        # Params should have conv/feed weights as trainable
+        assert params.conv_layers[0].weight is not None
 
     def test_cnn_partition_recombine(self, jax_key, cnn_config):
         """Test CNN can be recombined after partitioning for standard training."""
@@ -444,7 +444,8 @@ class TestCNNAWBPartitioning:
             channel_out=cnn_config['channel_out']
         )
 
-        params, static = partition_for_standard_training_cnn(model)
+        # Use model's partition method
+        params, static = model.partition_for_standard_training()
         recombined = eqx.combine(params, static)
 
         # Test forward pass works
@@ -465,7 +466,8 @@ class TestCNNAWBPartitioning:
             channel_out=cnn3d_config['channel_out']
         )
 
-        params, static = partition_for_standard_training_cnn3d(model)
+        # Use model's partition method
+        params, static = model.partition_for_standard_training()
         recombined = eqx.combine(params, static)
 
         # Test forward pass works
@@ -609,8 +611,8 @@ class TestCNNAWBIntegration:
             channel_out=cnn_config['channel_out']
         )
 
-        # 1. Partition for AB training
-        diff_model, static_model = partition_for_AB_training_cnn(model)
+        # 1. Partition for AB training (using model's method)
+        diff_model, static_model = model.partition_for_AB_training()
 
         # 2. Simulate training (just modify A/B slightly)
         # In real training, optimizer would update diff_model
@@ -618,8 +620,8 @@ class TestCNNAWBIntegration:
         # 3. Recombine
         model = eqx.combine(diff_model, static_model)
 
-        # 4. Partition for standard training
-        params, static = partition_for_standard_training_cnn(model)
+        # 4. Partition for standard training (using model's method)
+        params, static = model.partition_for_standard_training()
 
         # 5. Verify model still works
         final_model = eqx.combine(params, static)
@@ -639,14 +641,14 @@ class TestCNNAWBIntegration:
             channel_out=cnn3d_config['channel_out']
         )
 
-        # 1. Partition for AB training
-        diff_model, static_model = partition_for_AB_training_cnn3d(model)
+        # 1. Partition for AB training (using model's method)
+        diff_model, static_model = model.partition_for_AB_training()
 
         # 2. Recombine (simulating after AB training)
         model = eqx.combine(diff_model, static_model)
 
-        # 3. Partition for standard training
-        params, static = partition_for_standard_training_cnn3d(model)
+        # 3. Partition for standard training (using model's method)
+        params, static = model.partition_for_standard_training()
 
         # 4. Verify model still works
         final_model = eqx.combine(params, static)
