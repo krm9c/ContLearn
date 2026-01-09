@@ -374,7 +374,7 @@ class TrainingLoopsMixin:
 
         # Added by Claude: Initialize JAX PRNG key for GPU-accelerated random generation
         # Use deterministic seed based on task_id for reproducibility
-        rng_seed = config.get('random_seed', 42) + task_id * 1000
+        rng_seed = config.get('seed', 42) + task_id * 1000  # Fixed: was 'random_seed', now matches rest of codebase
         rng_key = jax.random.PRNGKey(rng_seed)
 
         # Added by Claude: Profile JAX pre-conversion (Phase 3 optimization)

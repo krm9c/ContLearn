@@ -1,12 +1,10 @@
 {
-    "__comment": "CONDITION 4: Tuned AWB for CNN",
-    "__comment_": "AWB with tuned parameters to reduce forgetting on CNN",
+    "__comment": "CONDITION 4: AWB Full",
+    "__comment_": "AWB arch search + A/B transfer + heuristics",
     "data": "mnist",
     "n_task": 10,
     "epochs_per_task": 200,
     "batch_size": 512,
-
-
 
     "model_path": "runs__/kkt/results/mnist_condition4",
     "save_iter": 50,
@@ -14,27 +12,23 @@
     "eval_interval": 50,
     "debug_mode": false,
     "per_task_eval_enabled": true,
-    "use_jax_prefetch": true, 
+    "use_jax_prefetch": true,
     "prefetch_size": 3,
 
-    "grad_weights": [
-        0.4,
-        0.4,
-        0.1
-    ],
+    "grad_weights": [0.4, 0.4, 0.1],
 
-    
     "lr_schedule": "cosine",
     "lr": 0.0001,
-    "force_arch_change":false,
     "task_warmup_enabled": true,
     "task_warmup_epochs": 50,
     "task_warmup_lr_factor": 0.001,
-    "awb_ab_warmup_epochs":20, 
+
     "awb_enabled": true,
     "awb_skip_transfer": false,
     "awb_preliminary_epochs": 1,
     "awb_ab_training_epochs": 200,
+    "awb_ab_warmup_epochs": 20,
     "awb_ab_lr": 0.001,
-    "awb_loss_ratio_threshold": 1.1
+    "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": false
 }

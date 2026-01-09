@@ -332,7 +332,7 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         self.feature_noise_base = config.get('feature_noise_base', DEFAULT_SYNTHETIC_FEATURE_NOISE_BASE)
         self.edge_dropout_base = config.get('edge_dropout_base', DEFAULT_SYNTHETIC_EDGE_DROPOUT_BASE)
         self.feature_shift_base = config.get('feature_shift_base', DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE)
-        self.n_tasks = config.get('n_tasks', 5)
+        self.n_tasks = config.get('n_task', 5)  # Fixed: was 'n_tasks', now matches rest of codebase
 
         # Store base (unperturbed) datasets for generating task-shifted versions
         self._base_train_data = None
