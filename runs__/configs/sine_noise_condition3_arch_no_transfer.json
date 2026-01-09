@@ -26,11 +26,14 @@
     "use_jax_prefetch": true,
     "prefetch_size": 3,
 
-    "lr_schedule": "cosine",
+    "lr_schedule": "constant",
     "lr": 0.0001,
-    "force_arch_change": true,
     "task_warmup_enabled": false,
-    "warmup_epochs": 0,
+
     "awb_enabled": true,
-    "awb_skip_transfer": true
+    "awb_skip_transfer": true,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_warmup_epochs": 0,
+    "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": true
 }

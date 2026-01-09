@@ -26,6 +26,7 @@
     "awb_enabled": true,
     "awb_skip_transfer": true,
     "awb_preliminary_epochs": 1,
+    "awb_ab_warmup_epochs": 0,
     "awb_loss_ratio_threshold": 1.1,
     "force_arch_change": true,
     "lr_schedule": "constant",
