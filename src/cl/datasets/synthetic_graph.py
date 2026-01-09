@@ -334,9 +334,9 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         self.feature_shift_base = config.get('feature_shift_base', DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE)
         self.n_tasks = config.get('n_task', 5)  # Fixed: was 'n_tasks', now matches rest of codebase
 
-        # Store base (unperturbed) datasets for generating task-shifted versions
-        self._base_train_data = None
-        self._base_test_data = None
+        # Store base (unperturbed) full dataset for generating task-shifted versions
+        self._base_full_data = None
+        self._train_split_idx = None  # Index to split train/test
 
         self._load_dataset()
 
@@ -366,20 +366,19 @@ class TaskShiftGraphDataset(BaseGraphDataset):
             print(f"DEBUG MODE: Limiting synthetic graph data from {len(self.dataset)} to {self.debug_limit} samples")
             self.dataset = self.dataset[:self.debug_limit]
 
-        # Split into train/test
-        length = len(self.dataset)
-        train_split = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
-        self.train_data = list(self.dataset[:int(train_split * length)])
-        self.test_data = list(self.dataset[int(train_split * length):])
+        # Store full dataset and train/test split ratio
+        self._base_full_data = list(self.dataset)
+        self._train_split_ratio = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
 
-        # Store base data for task-shift generation
-        self._base_train_data = self.train_data.copy()
-        self._base_test_data = self.test_data.copy()
+        # Initialize train/test for compatibility (will be overwritten per task)
+        split_idx = int(self._train_split_ratio * len(self._base_full_data))
+        self.train_data = self._base_full_data[:split_idx]
+        self.test_data = self._base_full_data[split_idx:]
 
         print(f'Task-Shift Synthetic Graph Dataset:')
         print('====================================')
-        print(f'Number of training graphs: {len(self.train_data)}')
-        print(f'Number of test graphs: {len(self.test_data)}')
+        print(f'Total graphs: {len(self._base_full_data)}')
+        print(f'Train/Test split: {self._train_split_ratio:.0%}/{1-self._train_split_ratio:.0%}')
         print(f'Number of features: {self.dataset.num_features}')
         print(f'Number of classes: {self.dataset.num_classes}')
         print(f'Task-shift enabled: {self.task_shift_enabled}')
@@ -448,6 +447,47 @@ class TaskShiftGraphDataset(BaseGraphDataset):
 
         return perturbed_list
 
+    def _get_or_generate_task_data(self, task_id: int) -> Tuple[List, List]:
+        """Generate or retrieve cached train/test data for a task.
+
+        For each task:
+        1. Apply perturbations to full base dataset
+        2. Shuffle the perturbed dataset (with fixed seed for reproducibility)
+        3. Split into train/test
+
+        This ensures train and test come from the same perturbed distribution.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            Tuple of (train_data, test_data) for this task
+        """
+        # Check if already generated
+        if task_id in self._task_train_data and task_id in self._task_test_data:
+            return self._task_train_data[task_id], self._task_test_data[task_id]
+
+        # Apply task-specific perturbations to FULL dataset
+        perturbed_full = self._apply_task_perturbation(
+            self._base_full_data, task_id, seed=DEFAULT_GRAPH_SEED
+        )
+
+        # Shuffle with fixed seed (based on task_id for reproducibility)
+        import random
+        rng = random.Random(DEFAULT_GRAPH_SEED + task_id)
+        rng.shuffle(perturbed_full)
+
+        # Split into train/test
+        split_idx = int(self._train_split_ratio * len(perturbed_full))
+        train_data = perturbed_full[:split_idx]
+        test_data = perturbed_full[split_idx:]
+
+        # Cache both
+        self._task_train_data[task_id] = train_data
+        self._task_test_data[task_id] = test_data
+
+        return train_data, test_data
+
     def generate_dataset(self, task_id: int, batch_size: int = None,
                          phase: str = 'training') -> Tuple[DataLoader, DataLoader]:
         """Generate train/memory dataloaders for a task with domain shift.
@@ -466,28 +506,21 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         if batch_size is None:
             batch_size = self.batch_size
 
-        # Choose base data based on phase
-        base_data = self._base_train_data if phase == 'training' else self._base_test_data
-        cache_dict = self._task_train_data if phase == 'training' else self._task_test_data
+        # Track if this is first time generating this task's data
+        is_new_task = task_id not in self._task_train_data
 
-        # Check cache first
-        if task_id in cache_dict:
-            task_data = cache_dict[task_id]
-        else:
-            # Apply task-specific perturbations
-            task_data = self._apply_task_perturbation(
-                base_data, task_id, seed=DEFAULT_GRAPH_SEED
-            )
+        # Get or generate train/test data for this task
+        train_data, test_data = self._get_or_generate_task_data(task_id)
 
-            # Update memory buffer (only for training, only first time)
-            if phase == 'training':
-                self.memory_train.extend(task_data)
+        # Select appropriate data based on phase
+        task_data = train_data if phase == 'training' else test_data
 
-            # Cache for future use
-            cache_dict[task_id] = task_data
+        # Update memory buffer (only for training, only first time task is generated)
+        if phase == 'training' and is_new_task:
+            self.memory_train.extend(train_data)
 
         # Create DataLoaders
-        train_loader = DataLoader(task_data, batch_size=batch_size, shuffle=False)
+        current_loader = DataLoader(task_data, batch_size=batch_size, shuffle=False)
         mem_train_loader = DataLoader(self.memory_train, batch_size=batch_size, shuffle=False)
 
         # Compute perturbation info for logging
@@ -499,7 +532,7 @@ class TaskShiftGraphDataset(BaseGraphDataset):
               f"(noise_σ={noise_std:.2f}, edge_drop={dropout_prob:.2f}, shift={shift:.2f}), "
               f"current={len(task_data)}, memory={len(self.memory_train)}")
 
-        return train_loader, mem_train_loader
+        return current_loader, mem_train_loader
 
     @property
     def num_features(self) -> int:
