@@ -214,7 +214,7 @@ class RecordingMixin:
                 'epochs_per_task': config.get('epochs_per_task', 0),
                 'save_iter': config.get('save_iter', 10),
                 'learning_rate': config.get('lr', 0),
-                'batch_size': config.get('batch_size', config.get('batch', 0)),
+                'batch_size': config.get('batch_size', 64),  # Fixed: removed legacy 'batch' fallback
                 'awb_enabled': config.get('awb_enabled', False),
                 'run_id': run_id,
             },
