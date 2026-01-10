@@ -1,5 +1,0 @@
-SYNTHETIC GRAPH EXPERIMENTS - MULTIPLE RUNS
-Started: Thu Jan  8 06:40:20 PM CST 2026
-Runs per condition: 3
-Total experiments: 12
-
