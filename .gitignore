@@ -55,6 +55,7 @@ polaris_run/venvs/
 # Output directories
 outputs/
 analysis/
+runs__/analysis/
 output/
 results/
 figures/
