@@ -1,0 +1,117 @@
+{
+  "generated_at": "2026-01-12T01:10:25.623087",
+  "config_path": "runs__/configs/mnist_condition4_profiling.json",
+  "config": {
+    "n_task": 3,
+    "epochs_per_task": 10,
+    "batch_size": 1024,
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 5,
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 3,
+    "debug_mode": true,
+    "debug_limit": 10000
+  },
+  "system_info": {
+    "timestamp": "2026-01-12T01:02:45.071602",
+    "jax_version": "0.4.30",
+    "jax_backend": "gpu",
+    "jax_devices": [
+      "cuda:0"
+    ],
+    "gpu": {
+      "name": "NVIDIA A40",
+      "memory_total": "46068 MiB",
+      "memory_used": "271 MiB",
+      "utilization": "0 %"
+    }
+  },
+  "totals": {
+    "total_time_sec": 460.0844378429465,
+    "success": true
+  },
+  "gpu_before": "271 MiB, 0 %",
+  "gpu_after": "34463 MiB, 0 %",
+  "profiling_data": {
+    "data_prep": {
+      "count": 789,
+      "total_ms": 2134.6745672635734,
+      "mean_ms": 2.7055444452009803,
+      "min_ms": 0.3876429982483387,
+      "max_ms": 513.8785568997264,
+      "std_ms": 30.270964012962146,
+      "first_ms": 467.70054707303643,
+      "rest_mean_ms": 2.115449264201189
+    },
+    "hamiltonian": {
+      "count": 789,
+      "total_ms": 271150.117283687,
+      "mean_ms": 343.6630130338238,
+      "min_ms": 14.857108239084482,
+      "max_ms": 2300.3919147886336,
+      "std_ms": 486.7853395850852,
+      "first_ms": 2300.3919147886336,
+      "rest_mean_ms": 341.17985452905884
+    },
+    "gradient_clip": {
+      "count": 789,
+      "total_ms": 6890.191283077002,
+      "mean_ms": 8.73281531441952,
+      "min_ms": 1.5905629843473434,
+      "max_ms": 501.7760330811143,
+      "std_ms": 39.19802658317806,
+      "first_ms": 501.7760330811143,
+      "rest_mean_ms": 8.107125951771431
+    },
+    "optimizer_step": {
+      "count": 789,
+      "total_ms": 80214.72719544545,
+      "mean_ms": 101.66632090677497,
+      "min_ms": 0.35167206078767776,
+      "max_ms": 828.9462090469897,
+      "std_ms": 158.17311180420887,
+      "first_ms": 343.3888549916446,
+      "rest_mean_ms": 101.35956642189569
+    },
+    "loss_accumulate": {
+      "count": 789,
+      "total_ms": 520.5060462467372,
+      "mean_ms": 0.6597034806676011,
+      "min_ms": 0.3591831773519516,
+      "max_ms": 36.79941827431321,
+      "std_ms": 1.3060352699712137,
+      "first_ms": 0.5897153168916702,
+      "rest_mean_ms": 0.6597922981343218
+    },
+    "train_metric": {
+      "count": 789,
+      "total_ms": 35181.122737471014,
+      "mean_ms": 44.58950917296706,
+      "min_ms": 0.17501087859272957,
+      "max_ms": 760.8675668016076,
+      "std_ms": 74.26881582625904,
+      "first_ms": 171.23850900679827,
+      "rest_mean_ms": 44.42878709195966
+    },
+    "test_metrics": {
+      "count": 118,
+      "total_ms": 8879.587432835251,
+      "mean_ms": 75.25074095623094,
+      "min_ms": 38.42908004298806,
+      "max_ms": 670.5550826154649,
+      "std_ms": 95.00371827051056,
+      "first_ms": 670.5550826154649,
+      "rest_mean_ms": 70.16266965999817
+    },
+    "gpu": {
+      "samples": 740,
+      "utilization_mean": 5.489189189189189,
+      "utilization_min": 0.0,
+      "utilization_max": 100.0,
+      "utilization_std": 16.152270090371648,
+      "memory_mean_mb": 33926.67567567567,
+      "memory_max_mb": 34463.0
+    }
+  }
+}
