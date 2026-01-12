@@ -33,7 +33,7 @@ from torch_geometric.data import Batch
 import time
 
 # Added by Claude: Profiling support
-from .profiling import profile, profile_section
+from .profiling import profile, profile_section, timed_section, is_detailed_profiling
 
 from .awb_operations import AWBOperations
 from .awb import (
@@ -219,6 +219,7 @@ def run_awb_task(
 
     # STEP 1: Preliminary Training
     print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
+    step1_start = time.perf_counter()
     params, static = awb_ops.partition_for_standard_training(model)
 
     # Added by Claude: Store current iteration count to compute preliminary offset
@@ -251,11 +252,14 @@ def run_awb_task(
             trainWLoss = 0.0
 
     print(f"  Preliminary loss: {trainWLoss:.6f}")
+    step1_time = time.perf_counter() - step1_start
+    print(f"  Step 1 time: {step1_time:.2f}s")
 
     # Added by Claude: Store preliminary loss in metadata
     task_metadata['preliminary_loss'] = trainWLoss
 
     # STEP 2: Decision
+    step2_start = time.perf_counter()
     print(f"\n[STEP 2] Architecture change decision")
     if previous_task_loss is None:
         previous_task_loss = trainWLoss
@@ -278,12 +282,15 @@ def run_awb_task(
         change_arch = True
 
     print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
+    step2_time = time.perf_counter() - step2_start
+    print(f"  Step 2 time: {step2_time:.2f}s")
 
     original_arch = awb_ops.get_model_architecture(model)
     saved_weights = awb_ops.save_weights(model)
 
     if change_arch:
         # STEP 3a: Architecture Search
+        step3a_start = time.perf_counter()
         print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
         # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
@@ -306,6 +313,8 @@ def run_awb_task(
             )
         print(f"  Original: {original_arch}")
         print(f"  Optimal: {new_arch}")
+        step3a_time = time.perf_counter() - step3a_start
+        print(f"  Step 3a time: {step3a_time:.2f}s")
 
         model = awb_ops.restore_weights(model, saved_weights)
 
@@ -338,6 +347,7 @@ def run_awb_task(
 
             else:
                 # STEP 3b: Train A/B
+                step3b_start = time.perf_counter()
                 print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
 
                 # Added by Claude: Profile A/B training
@@ -383,17 +393,23 @@ def run_awb_task(
                 model = eqx.combine(diff_model, static_model)
 
                 # Added by Claude: Report A/B training time
+                step3b_time = time.perf_counter() - step3b_start
+                print(f"  Step 3b time: {step3b_time:.2f}s")
                 if config.get('profiling_enabled'):
                     from .profiling import format_memory_stats
                     ab_elapsed = time.time() - ab_training_start
                     print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
 
                 # STEP 4: Compute V
+                step4_start = time.perf_counter()
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")
                 model = awb_ops.compute_V(model)
                 params, static = awb_ops.partition_for_standard_training(model)
+                step4_time = time.perf_counter() - step4_start
+                print(f"  Step 4 time: {step4_time:.4f}s")
 
                 # STEP 5: Train V
+                step5_start = time.perf_counter()
                 print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
                 from ..runners.generic_runner import create_optimizer
                 optim = create_optimizer(config)
@@ -420,6 +436,8 @@ def run_awb_task(
                 global_iteration_offset=task_id * epochs_per_task
             )
             model = eqx.combine(params, static)
+            step5_time = time.perf_counter() - step5_start
+            print(f"  Step 5 time: {step5_time:.2f}s")
 
         else:
             # Added by Claude: Same architecture found by search
