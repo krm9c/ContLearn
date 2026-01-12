@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-01-12T00:45:48.224222",
+  "config": {
+    "batch_size": 512,
+    "debug_limit": 5000,
+    "n_task": 1
+  },
+  "system_info": {
+    "timestamp": "2026-01-12T00:45:48.224235",
+    "python_version": "3.9.25 (main, Nov  3 2025, 22:33:05) \n[GCC 11.2.0]",
+    "jax_version": "0.4.30",
+    "jax_backend": "gpu",
+    "jax_devices": [
+      "cuda:0"
+    ],
+    "cuda_visible_devices": "not set",
+    "device_details": [
+      {
+        "id": "cuda:0",
+        "platform": "gpu",
+        "kind": "NVIDIA A40"
+      }
+    ],
+    "gpus": [
+      {
+        "name": "NVIDIA A40",
+        "memory_total": "46068 MiB",
+        "memory_free": "45220 MiB",
+        "memory_used": "271 MiB",
+        "utilization": "0 %",
+        "temperature": "22",
+        "power": "24.74 W"
+      }
+    ],
+    "nvidia_smi_available": true
+  },
+  "jax_warmup": {
+    "first_call_ms": 97.29216061532497,
+    "subsequent_avg_ms": 0.15089726075530052,
+    "jit_overhead_ratio": 644.7576326325553
+  },
+  "data_loading": {
+    "batch_size": 512,
+    "without_prefetch": {
+      "batches_per_sec": 281.2672180724896,
+      "samples_per_sec": 0.0,
+      "avg_batch_time_ms": 3.5553378984332085,
+      "total_time_sec": 0.007110675796866417
+    },
+    "with_prefetch": {
+      "batches_per_sec": 293.3556519375281,
+      "samples_per_sec": 150198.09379201438,
+      "avg_batch_time_ms": 3.4088315442204475,
+      "total_time_sec": 0.006817663088440895
+    },
+    "prefetch_speedup": 1.0429784670530748
+  },
+  "hamiltonian": {
+    "batch_size": 512,
+    "compile_time_ms": 1824.1697996854782,
+    "mean_ms": 17.41064210422337,
+    "min_ms": 17.127314116805792,
+    "max_ms": 17.963239923119545,
+    "std_ms": 0.16930776675417247,
+    "jit_overhead_ratio": 104.77326389030661,
+    "throughput_samples_per_sec": 29407.301404225756
+  },
+  "batch_size_sweep": {
+    "batch_128": {
+      "batch_size": 128,
+      "mean_ms": 6.729203602299094,
+      "throughput_samples_per_sec": 19021.56741939977
+    },
+    "batch_256": {
+      "batch_size": 256,
+      "mean_ms": 11.024662433192134,
+      "throughput_samples_per_sec": 23220.66562593849
+    },
+    "batch_512": {
+      "batch_size": 512,
+      "mean_ms": 17.431192938238382,
+      "throughput_samples_per_sec": 29372.63111102615
+    },
+    "batch_1024": {
+      "batch_size": 1024,
+      "mean_ms": 31.823653960600495,
+      "throughput_samples_per_sec": 32177.323234716245
+    },
+    "optimal": "batch_1024"
+  },
+  "full_training": {
+    "success": true,
+    "total_time_sec": 11.108022555243224,
+    "samples_trained": 4000,
+    "samples_per_sec": 360.1000970340949
+  }
+}
