@@ -409,58 +409,98 @@ python run_files/scripts/run.py kkt_run/configs/mnist_condition1_baseline.json
 
 ---
 
-## 🎯 FUTURE OPTIMIZATION OPPORTUNITIES
+## 🎯 OPTIMIZATION OPTIONS
 
-### High Priority (Safe + High Impact)
+### IMPLEMENTED (January 2026)
 
-1. **XLA Compilation Flags** ✅ SAFE
-   ```python
-   # Add to config or environment
-   XLA_FLAGS="--xla_gpu_enable_fast_min_max=true"
-   XLA_FLAGS="--xla_gpu_enable_triton_gemm=true"  # For newer GPUs
-   ```
+#### **Option 4: XLA Optimization Flags** ✅ IMPLEMENTED
+**Purpose**: Improve GPU kernel fusion and scheduling
 
-2. **JIT Compilation Tuning** ⚠️ VALIDATE
-   - Increase static argument caching
-   - Pre-compile common operations
-   - **Test**: Verify numerics unchanged
+**Files Modified**:
+- `src/cl/config/constants.py` (XLA_GPU_FLAGS, JAX_GPU_CONFIG, GPU_THREAD_CONFIG)
+- `src/cl/core/profiling.py` (set_xla_flags(), configure_jax_for_gpu())
 
-3. **Memory Layout Optimization** ✅ SAFE
-   - Optimize array strides for GPU memory access
-   - Use JAX array sharding on multi-GPU
+**Usage**:
+```python
+# At the very start of script, BEFORE importing JAX:
+from cl.core.profiling import set_xla_flags, configure_jax_for_gpu
+set_xla_flags(enable=True, verbose=True)
 
-4. **Batch Prefetch Tuning** ✅ SAFE
-   ```python
-   # Benchmark optimal prefetch_size per dataset
-   from cl.datasets.jax_dataloader import benchmark_dataloader
-   stats = benchmark_dataloader(loader, num_batches=100)
-   ```
+# After importing JAX:
+import jax
+configure_jax_for_gpu(verbose=True)
+```
 
-### Medium Priority (Requires Testing)
+**Flags Applied**:
+- `--xla_gpu_enable_fast_min_max=true`: Faster min/max operations
+- `--xla_gpu_enable_async_collectives=true`: Async collective ops
+- `--xla_gpu_enable_latency_hiding_scheduler=true`: Better kernel scheduling
+- `TF_GPU_THREAD_MODE=gpu_private`: Dedicated GPU threads
+- `TF_GPU_THREAD_COUNT=2`: Number of GPU threads
 
-1. **Experience Replay Sampling** ⚠️ VALIDATE
-   - Current: Random sampling every epoch
-   - Proposed: Pre-sample at task start (faster but different random order)
-   - **Test**: Verify training convergence unchanged
+**Expected Impact**: 5-15% speedup from better kernel fusion
 
-2. **Gradient Accumulation** ⚠️ VALIDATE
-   - Larger effective batch size without memory increase
-   - **Test**: Verify gradients mathematically equivalent
+---
 
-3. **Mixed Precision Training** ⚠️ VALIDATE CAREFULLY
-   - Use float16 for forward pass, float32 for gradients
-   - **Risk**: Numerical stability issues
-   - **Test**: Extensive metric comparison required
+#### **Option 2: Fused Train Step** ✅ IMPLEMENTED
+**Purpose**: Reduce Python overhead between hamiltonian and optimizer
 
-### Low Priority (Future Work)
+**Files Modified**:
+- `src/cl/core/hamiltonian.py` (added fused train step functions)
+- `src/cl/config/constants.py` (DEFAULT_USE_FUSED_TRAIN_STEP)
 
-1. **Multi-GPU Training**
+**Functions Added**:
+- `_fused_train_step_class_standard`: Fused step for classification (standard)
+- `_fused_train_step_class_awb`: Fused step for classification (AWB)
+- `_fused_train_step_mse_standard`: Fused step for regression (standard)
+- `_fused_train_step_mse_awb`: Fused step for regression (AWB)
+- `get_fused_train_step()`: Factory to get appropriate function
+
+**Expected Impact**: 10-20% speedup from eliminated Python overhead
+
+---
+
+### BENCHMARKING
+
+**Comprehensive Benchmark Script**:
+```bash
+# Run all benchmark configurations (separate subprocesses for proper XLA isolation)
+./scripts/run_optimization_benchmark.sh
+
+# Quick mode (fewer epochs for fast testing)
+./scripts/run_optimization_benchmark.sh --quick
+
+# Single configuration
+python scripts/benchmark_single.py --name "test" --xla true --fused true --awb false --output results.json
+```
+
+**Benchmark Configurations** (8 total):
+1. `baseline_no_xla`: No optimizations (Condition 1)
+2. `baseline_xla_only`: XLA flags only (Condition 1)
+3. `baseline_fused_only`: Fused train step only (Condition 1)
+4. `baseline_xla_and_fused`: Both optimizations (Condition 1)
+5. `awb_no_xla`: No optimizations (Condition 4)
+6. `awb_xla_only`: XLA flags only (Condition 4)
+7. `awb_fused_only`: Fused train step only (Condition 4)
+8. `awb_xla_and_fused`: Both optimizations (Condition 4)
+
+**Results Location**: `benchmark_results/<timestamp>/combined_results.json`
+
+---
+
+### FUTURE OPPORTUNITIES
+
+1. **jax.lax.scan for Training Loop** (High Effort, High Impact)
+   - Replace Python training loop with JAX scan
+   - Keeps everything on GPU, eliminates all Python overhead
+   - Requires pre-loading all batches
+
+2. **Gradient Checkpointing** (Medium Effort)
+   - Use `jax.checkpoint` for memory-compute tradeoff
+   - Allows larger batch sizes
+
+3. **Multi-GPU Training**
    - Use `jax.pmap` for data parallelism
-   - Requires architecture changes
-
-2. **TPU Support**
-   - JAX already supports TPUs
-   - Requires cloud infrastructure
 
 ---
 
@@ -500,8 +540,11 @@ python run_files/scripts/run.py kkt_run/configs/mnist_condition1_baseline.json
 # GPU utilization (real-time)
 watch -n 0.5 nvidia-smi
 
-# Profile training speed
-python run_files/scripts/profile_training.py kkt_run/configs/mnist_condition1_baseline.json
+# Run comprehensive optimization benchmark
+./scripts/run_optimization_benchmark.sh --quick
+
+# Run single benchmark configuration
+python scripts/benchmark_single.py --name "test" --xla true --fused true --awb false --output results.json --quick
 
 # Benchmark data loader
 python -c "
@@ -616,6 +659,5 @@ Before implementing ANY optimization, confirm:
 
 **END OF PROFILING CONTEXT**
 
-**Last Updated**: 2025-12-28
-**Git Commit**: `521b29c` - "Add JAX asynchronous data pipeline + profiling context doc"
-**Status**: JAX prefetching implemented, awaiting testing
+**Last Updated**: 2026-01-12
+**Status**: XLA optimization flags and fused train step implemented, benchmark scripts ready

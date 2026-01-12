@@ -6,6 +6,7 @@ Uses Python decorators and global flag to minimize overhead when disabled.
 
 Added by Claude: December 26, 2024 - CIFAR-10 AWB performance debugging
 Enhanced by Claude: January 2025 - Detailed timing collection for bottleneck analysis
+Enhanced by Claude: January 2026 - XLA optimization flags for GPU utilization
 
 """
 import time
@@ -17,6 +18,158 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any
 from collections import defaultdict
 import threading
+
+
+# ============================================================================
+# XLA OPTIMIZATION FLAGS (must be called BEFORE importing JAX)
+# ============================================================================
+
+_XLA_FLAGS_APPLIED = False
+
+
+def set_xla_flags(enable: bool = True, verbose: bool = False) -> Dict[str, Any]:
+    """Apply XLA optimization flags for improved GPU utilization.
+
+    IMPORTANT: This must be called BEFORE importing JAX for flags to take effect.
+
+    Args:
+        enable: Whether to apply optimizations (default True)
+        verbose: Print applied flags
+
+    Returns:
+        Dict with applied flags and status
+
+    Example:
+        # At the very start of your script, before any JAX imports:
+        from cl.core.profiling import set_xla_flags
+        set_xla_flags(enable=True, verbose=True)
+
+        # Now import JAX
+        import jax
+    """
+    global _XLA_FLAGS_APPLIED
+
+    result = {
+        'enabled': enable,
+        'flags_applied': {},
+        'env_vars_set': {},
+        'already_applied': _XLA_FLAGS_APPLIED,
+    }
+
+    if not enable:
+        if verbose:
+            print("[XLA] Optimization flags disabled")
+        return result
+
+    if _XLA_FLAGS_APPLIED:
+        if verbose:
+            print("[XLA] Flags already applied, skipping")
+        return result
+
+    # Import constants for flag configuration
+    from ..config.constants import (
+        XLA_GPU_FLAGS,
+        JAX_GPU_CONFIG,
+        GPU_THREAD_CONFIG,
+    )
+
+    # Build XLA_FLAGS string from config
+    xla_flag_parts = []
+    for flag_name, flag_value in XLA_GPU_FLAGS.items():
+        if isinstance(flag_value, bool):
+            flag_str = f"--{flag_name}={'true' if flag_value else 'false'}"
+        else:
+            flag_str = f"--{flag_name}={flag_value}"
+        xla_flag_parts.append(flag_str)
+        result['flags_applied'][flag_name] = flag_value
+
+    # Set XLA_FLAGS environment variable
+    existing_xla_flags = os.environ.get('XLA_FLAGS', '')
+    new_xla_flags = ' '.join(xla_flag_parts)
+    if existing_xla_flags:
+        os.environ['XLA_FLAGS'] = f"{existing_xla_flags} {new_xla_flags}"
+    else:
+        os.environ['XLA_FLAGS'] = new_xla_flags
+    result['env_vars_set']['XLA_FLAGS'] = os.environ['XLA_FLAGS']
+
+    # Set GPU thread configuration
+    for var_name, var_value in GPU_THREAD_CONFIG.items():
+        os.environ[var_name] = str(var_value)
+        result['env_vars_set'][var_name] = var_value
+
+    _XLA_FLAGS_APPLIED = True
+
+    if verbose:
+        print("[XLA] Applied optimization flags:")
+        for flag, value in result['flags_applied'].items():
+            print(f"  --{flag}={value}")
+        print("[XLA] Set environment variables:")
+        for var, value in result['env_vars_set'].items():
+            print(f"  {var}={value}")
+
+    return result
+
+
+def configure_jax_for_gpu(verbose: bool = False):
+    """Configure JAX settings for GPU optimization.
+
+    This should be called AFTER importing JAX but before heavy computation.
+
+    Args:
+        verbose: Print configuration info
+    """
+    try:
+        import jax
+
+        # Import constants
+        from ..config.constants import JAX_GPU_CONFIG
+
+        # Apply JAX configuration
+        for config_name, config_value in JAX_GPU_CONFIG.items():
+            try:
+                jax.config.update(config_name, config_value)
+                if verbose:
+                    print(f"[JAX] Set {config_name}={config_value}")
+            except Exception as e:
+                if verbose:
+                    print(f"[JAX] Failed to set {config_name}: {e}")
+
+        # Log compile events for debugging (useful for detecting recompilation)
+        # Uncomment for debugging: jax.config.update("jax_log_compiles", True)
+
+        if verbose:
+            print(f"[JAX] Backend: {jax.default_backend()}")
+            print(f"[JAX] Devices: {jax.devices()}")
+
+    except ImportError:
+        if verbose:
+            print("[JAX] JAX not yet imported, skipping configuration")
+
+
+def get_optimization_status() -> Dict[str, Any]:
+    """Get current status of XLA/JAX optimizations.
+
+    Returns:
+        Dict with optimization status, flags, and device info
+    """
+    status = {
+        'xla_flags_applied': _XLA_FLAGS_APPLIED,
+        'xla_flags': os.environ.get('XLA_FLAGS', ''),
+        'tf_gpu_thread_mode': os.environ.get('TF_GPU_THREAD_MODE', ''),
+        'tf_gpu_thread_count': os.environ.get('TF_GPU_THREAD_COUNT', ''),
+    }
+
+    try:
+        import jax
+        status['jax_backend'] = str(jax.default_backend())
+        status['jax_devices'] = [str(d) for d in jax.devices()]
+        status['jax_version'] = jax.__version__
+    except ImportError:
+        status['jax_backend'] = 'not imported'
+        status['jax_devices'] = []
+        status['jax_version'] = 'unknown'
+
+    return status
 
 _PROFILING_ENABLED = False
 _DETAILED_PROFILING = False  # Added by Claude: For fine-grained timing

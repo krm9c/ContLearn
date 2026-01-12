@@ -20,6 +20,34 @@ DEFAULT_GRAPH_SEED = 10
 DEFAULT_PROFILING_ENABLED = False
 
 # ============================================================================
+# XLA/GPU OPTIMIZATION FLAGS
+# ============================================================================
+# Added by Claude: XLA optimization flags for improved GPU utilization
+# These are applied via set_xla_flags() before JAX initialization
+DEFAULT_XLA_OPTIMIZATION_ENABLED = True  # Master switch for XLA optimizations
+
+# XLA GPU optimization flags
+XLA_GPU_FLAGS = {
+    'xla_gpu_enable_fast_min_max': True,  # Faster min/max operations
+    'xla_gpu_enable_async_collectives': True,  # Async collective operations
+    'xla_gpu_enable_latency_hiding_scheduler': True,  # Better kernel scheduling
+}
+
+# JAX configuration for GPU optimization
+JAX_GPU_CONFIG = {
+    'jax_default_matmul_precision': 'high',  # Use TF32 on Ampere+ GPUs
+}
+
+# Thread configuration for GPU
+GPU_THREAD_CONFIG = {
+    'TF_GPU_THREAD_MODE': 'gpu_private',  # Dedicated GPU threads
+    'TF_GPU_THREAD_COUNT': '2',  # Number of GPU threads
+}
+
+# Fused train step (combines hamiltonian + gradient clip in single JIT)
+DEFAULT_USE_FUSED_TRAIN_STEP = True  # Enable fused training by default
+
+# ============================================================================
 # DATA LOADING OPTIMIZATION
 # ============================================================================
 # Added by Claude: JAX-native data pipeline with GPU prefetching

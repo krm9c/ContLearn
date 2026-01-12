@@ -140,6 +140,73 @@ Defaults: `src/cl/config/constants.py`
 
 ---
 
+## Performance Benchmarks (MNIST, A40 GPU)
+
+Profiled on NVIDIA A40 (46GB), batch_size=1024, debug_limit=10000.
+
+### Condition 1 (Baseline) vs Condition 4 (AWB)
+
+| Metric | Condition 1 | Condition 4 | Difference |
+|--------|-------------|-------------|------------|
+| Total Time | 7.9s | 460s | 58x slower |
+| GPU Utilization | 71.4% | 5.5% | 13x worse |
+| Throughput | 9,076 samples/sec | ~170 samples/sec | 53x slower |
+
+### Condition 1 Time Breakdown
+
+| Component | % of Time | Mean (ms) |
+|-----------|-----------|-----------|
+| hamiltonian | 72.6% | 77.4 |
+| optimizer_step | 14.7% | 15.7 |
+| data_prep | 6.7% | 7.1 |
+| evaluation | 1.6% | 121.4 |
+
+### Condition 4 (AWB) Time Breakdown
+
+| Component | % of Time | Mean (ms) |
+|-----------|-----------|-----------|
+| hamiltonian | 66.8% | 343.7 |
+| optimizer_step | 19.8% | 101.7 |
+| train_metric | 8.7% | 44.6 |
+| test_metrics | 2.2% | 75.3 |
+
+### Optimal Config Settings (for speed)
+
+```json
+{
+  "batch_size": 1024,
+  "eval_interval": 50,
+  "log_interval": 10,
+  "use_jax_prefetch": true,
+  "prefetch_size": 3
+}
+```
+
+### Benchmarking & Profiling
+
+```bash
+# Run comprehensive optimization benchmark (all configurations)
+./scripts/run_optimization_benchmark.sh
+
+# Quick benchmark (fewer epochs for fast testing)
+./scripts/run_optimization_benchmark.sh --quick
+
+# Run single configuration benchmark
+python scripts/benchmark_single.py --name "test" --xla true --fused true --awb false --output results.json
+
+# Enable XLA optimization flags in custom scripts
+from cl.core.profiling import set_xla_flags, configure_jax_for_gpu
+set_xla_flags(enable=True, verbose=True)  # BEFORE importing JAX
+import jax
+configure_jax_for_gpu(verbose=True)  # AFTER importing JAX
+```
+
+**Benchmark Configurations**:
+- `baseline_no_xla`, `baseline_xla_only`, `baseline_fused_only`, `baseline_xla_and_fused` (Condition 1)
+- `awb_no_xla`, `awb_xla_only`, `awb_fused_only`, `awb_xla_and_fused` (Condition 4)
+
+---
+
 ## Testing
 
 ```bash

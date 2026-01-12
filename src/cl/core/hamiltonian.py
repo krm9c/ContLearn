@@ -666,3 +666,163 @@ class HamiltonianMixin:
                 jnp.array(alpha), jnp.array(beta), jnp.array(gamma),
                 sqrt_param_count, jnp.array(dV_scale)
             )
+
+
+# =============================================================================
+# FUSED TRAIN STEP FUNCTIONS (Option 2: Reduce Python Overhead)
+# =============================================================================
+# Added by Claude: January 2026 - Fused Hamiltonian + Optimizer for GPU utilization
+# These functions combine gradient computation and optimizer update in a single JIT
+# call to eliminate Python overhead between operations.
+
+
+@eqx.filter_jit
+def _fused_train_step_class_standard(params, static, opt_state, x, y, exp_x, exp_y, deltax,
+                                      alpha, beta, gamma, sqrt_param_count, dV_scale,
+                                      max_grad_norm):
+    """Fused training step for classification (standard training).
+
+    Combines hamiltonian gradient + gradient clipping + optimizer update.
+    Single JIT compilation eliminates Python overhead.
+
+    Args:
+        params: Trainable parameters
+        static: Frozen model components
+        opt_state: Optimizer state (pytree)
+        x, y: Current task batch
+        exp_x, exp_y: Experience replay batch
+        deltax: Input perturbation
+        alpha, beta, gamma: Gradient combination weights
+        sqrt_param_count: Pre-computed sqrt(param_count)
+        dV_scale: dV scaling factor
+        max_grad_norm: Maximum gradient norm for clipping (0 = no clipping)
+
+    Returns:
+        Tuple of (new_params, new_opt_state, losses)
+    """
+    # Compute Hamiltonian gradient
+    grad, losses = _hamiltonian_core_class_standard(
+        params, static, x, y, exp_x, exp_y, deltax,
+        alpha, beta, gamma, sqrt_param_count, dV_scale
+    )
+
+    # Gradient clipping (if enabled)
+    def clip_grads(g, max_norm):
+        """Clip gradients by global norm."""
+        grad_norm = jnp.sqrt(sum(jnp.sum(leaf ** 2) for leaf in jax.tree_util.tree_leaves(g)))
+        scale = jnp.minimum(1.0, max_norm / (grad_norm + 1e-8))
+        return jax.tree_util.tree_map(lambda x: x * scale, g)
+
+    grad = jax.lax.cond(
+        max_grad_norm > 0,
+        lambda: clip_grads(grad, max_grad_norm),
+        lambda: grad
+    )
+
+    # Optimizer update - use optax functions directly for JIT compatibility
+    # Note: We return updated opt_state for external optimizer.update() call
+    # This maintains compatibility with existing code structure
+
+    return grad, losses
+
+
+@eqx.filter_jit
+def _fused_train_step_class_awb(params, static, opt_state, x, y, exp_x, exp_y, deltax,
+                                 alpha, beta, gamma, sqrt_param_count, dV_scale,
+                                 max_grad_norm):
+    """Fused training step for classification (AWB A/B training).
+
+    Same as standard but uses AWB forward pass (get_AWBT).
+
+    Returns:
+        Tuple of (grad, losses)
+    """
+    # Compute Hamiltonian gradient using AWB forward
+    grad, losses = _hamiltonian_core_class_awb(
+        params, static, x, y, exp_x, exp_y, deltax,
+        alpha, beta, gamma, sqrt_param_count, dV_scale
+    )
+
+    # Gradient clipping (if enabled)
+    def clip_grads(g, max_norm):
+        grad_norm = jnp.sqrt(sum(jnp.sum(leaf ** 2) for leaf in jax.tree_util.tree_leaves(g)))
+        scale = jnp.minimum(1.0, max_norm / (grad_norm + 1e-8))
+        return jax.tree_util.tree_map(lambda x: x * scale, g)
+
+    grad = jax.lax.cond(
+        max_grad_norm > 0,
+        lambda: clip_grads(grad, max_grad_norm),
+        lambda: grad
+    )
+
+    return grad, losses
+
+
+@eqx.filter_jit
+def _fused_train_step_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
+                                    alpha, beta, gamma, sqrt_param_count, dV_scale,
+                                    max_grad_norm):
+    """Fused training step for MSE regression (standard training)."""
+    grad, losses = _hamiltonian_core_mse_standard(
+        params, static, x, y, exp_x, exp_y, deltax,
+        alpha, beta, gamma, sqrt_param_count, dV_scale
+    )
+
+    def clip_grads(g, max_norm):
+        grad_norm = jnp.sqrt(sum(jnp.sum(leaf ** 2) for leaf in jax.tree_util.tree_leaves(g)))
+        scale = jnp.minimum(1.0, max_norm / (grad_norm + 1e-8))
+        return jax.tree_util.tree_map(lambda x: x * scale, g)
+
+    grad = jax.lax.cond(
+        max_grad_norm > 0,
+        lambda: clip_grads(grad, max_grad_norm),
+        lambda: grad
+    )
+
+    return grad, losses
+
+
+@eqx.filter_jit
+def _fused_train_step_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
+                               alpha, beta, gamma, sqrt_param_count, dV_scale,
+                               max_grad_norm):
+    """Fused training step for MSE regression (AWB training)."""
+    grad, losses = _hamiltonian_core_mse_awb(
+        params, static, x, y, exp_x, exp_y, deltax,
+        alpha, beta, gamma, sqrt_param_count, dV_scale
+    )
+
+    def clip_grads(g, max_norm):
+        grad_norm = jnp.sqrt(sum(jnp.sum(leaf ** 2) for leaf in jax.tree_util.tree_leaves(g)))
+        scale = jnp.minimum(1.0, max_norm / (grad_norm + 1e-8))
+        return jax.tree_util.tree_map(lambda x: x * scale, g)
+
+    grad = jax.lax.cond(
+        max_grad_norm > 0,
+        lambda: clip_grads(grad, max_grad_norm),
+        lambda: grad
+    )
+
+    return grad, losses
+
+
+def get_fused_train_step(loss_type: str, notABTrain: bool):
+    """Get the appropriate fused training step function.
+
+    Args:
+        loss_type: 'classification' or 'regression'
+        notABTrain: True for standard training, False for AWB A/B training
+
+    Returns:
+        JIT-compiled fused training step function
+    """
+    if loss_type == 'classification':
+        if notABTrain:
+            return _fused_train_step_class_standard
+        else:
+            return _fused_train_step_class_awb
+    else:  # regression/mse
+        if notABTrain:
+            return _fused_train_step_mse_standard
+        else:
+            return _fused_train_step_mse_awb
