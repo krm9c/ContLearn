@@ -32,6 +32,48 @@ sys.path.insert(0, str(project_root))
 
 import jax
 import jax.numpy as jnp
+import subprocess
+
+
+def get_system_info():
+    """Collect system and environment information."""
+    info = {
+        'timestamp': datetime.now().isoformat(),
+        'python_version': sys.version,
+        'jax_version': jax.__version__,
+        'jax_backend': jax.default_backend(),
+        'jax_devices': [str(d) for d in jax.devices()],
+        'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES', 'not set'),
+    }
+
+    # Check nvidia-smi
+    try:
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=name,memory.total,memory.free,utilization.gpu,temperature.gpu',
+             '--format=csv,noheader'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            info['gpus'] = []
+            for line in lines:
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) >= 5:
+                    info['gpus'].append({
+                        'name': parts[0],
+                        'memory_total': parts[1],
+                        'memory_free': parts[2],
+                        'utilization': parts[3],
+                        'temperature': parts[4],
+                    })
+            info['nvidia_smi_available'] = True
+        else:
+            info['nvidia_smi_available'] = False
+    except Exception as e:
+        info['nvidia_smi_available'] = False
+        info['nvidia_smi_error'] = str(e)
+
+    return info
 
 
 def create_dataset(config):
@@ -348,7 +390,7 @@ def compare_prefetch_sizes(base_config: Dict, output_dir: Path) -> Dict:
     return results
 
 
-def generate_comparison_report(all_results: Dict, output_dir: Path) -> Dict:
+def generate_comparison_report(all_results: Dict, output_dir: Path, system_info: Dict = None) -> Dict:
     """Generate comprehensive comparison report."""
     print("\n" + "="*70)
     print("COMPARISON SUMMARY")
@@ -356,6 +398,7 @@ def generate_comparison_report(all_results: Dict, output_dir: Path) -> Dict:
 
     report = {
         'generated_at': datetime.now().isoformat(),
+        'system_info': system_info or {},
         'comparisons': all_results,
     }
 
@@ -457,28 +500,49 @@ def main():
 
     all_results = {}
 
+    # Collect system info
+    print("\nCollecting system information...")
+    system_info = get_system_info()
+    print(f"  JAX backend: {system_info['jax_backend']}")
+    print(f"  Devices: {system_info['jax_devices']}")
+    if system_info.get('gpus'):
+        for gpu in system_info['gpus']:
+            print(f"  GPU: {gpu['name']} ({gpu['memory_total']}, {gpu['utilization']} util)")
+
     # Run comparisons
+    import traceback
+
     try:
         all_results['prefetch_comparison'] = compare_prefetch(base_config, output_dir)
     except Exception as e:
         print(f"\nPrefetch comparison failed: {e}")
-        all_results['prefetch_comparison'] = {'error': str(e)}
+        traceback.print_exc()
+        all_results['prefetch_comparison'] = {'error': str(e), 'traceback': traceback.format_exc()}
 
     if not args.quick:
         try:
             all_results['batch_size_comparison'] = compare_batch_sizes(base_config, output_dir)
         except Exception as e:
             print(f"\nBatch size comparison failed: {e}")
-            all_results['batch_size_comparison'] = {'error': str(e)}
+            traceback.print_exc()
+            all_results['batch_size_comparison'] = {'error': str(e), 'traceback': traceback.format_exc()}
 
         try:
             all_results['prefetch_size_comparison'] = compare_prefetch_sizes(base_config, output_dir)
         except Exception as e:
             print(f"\nPrefetch size comparison failed: {e}")
-            all_results['prefetch_size_comparison'] = {'error': str(e)}
+            traceback.print_exc()
+            all_results['prefetch_size_comparison'] = {'error': str(e), 'traceback': traceback.format_exc()}
 
-    # Generate final report
-    generate_comparison_report(all_results, output_dir)
+    # Generate final report with system info
+    report = generate_comparison_report(all_results, output_dir, system_info)
+
+    # Print the output file path clearly
+    report_file = output_dir / f"comparison_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    print(f"\n{'='*70}")
+    print(f"ANALYSIS FILE (share this with Claude):")
+    print(f"  {output_dir.absolute()}/comparison_report_*.json")
+    print(f"{'='*70}")
 
     print("\nComparison complete!")
     return 0
