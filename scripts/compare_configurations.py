@@ -92,7 +92,7 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
     trainloader, exploader = dataset.generate_dataset(
         task_id=task_id,
         batch_size=config.get('batch_size', 512),
-        phase='train'
+        phase='training'  # Must be 'training' not 'train'
     )
 
     # Determine loss type from config
@@ -117,14 +117,16 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
 
     if network == 'fcnn':
         # MLP for regression or flattened input
+        # MLP constructor: MLP(sizes, key, awb_enabled)
         input_size = dataset.input_size
         output_size = dataset.output_size
         n_layers = config.get('n_layers', 4)
         hln = config.get('hln', 256)
-        feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
-        model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
+        sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+        model = MLP(sizes=sizes, key=jax.random.PRNGKey(0), awb_enabled=False)
     elif network == 'cnn':
         # CNN for image classification (MNIST)
+        # CNN constructor: CNN(key, filter_size, feed_sizes, input_size, channel_in, channel_out, ...)
         channel_out = config.get('channel_out', 3)
         filter_size = config.get('filter_size', 4)
         input_size = 28  # MNIST
@@ -142,9 +144,7 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
             filter_size=filter_size,
             feed_sizes=feed_sizes,
             input_size=input_size,
-            channel_out=channel_out,
-            num_classes=num_classes,
-            awb_arch=None
+            channel_out=channel_out
         )
     else:
         raise ValueError(f"Unsupported network type: {network}")

@@ -173,8 +173,8 @@ def run_data_loading_benchmark(config):
     # Get dataset class
     dataset = create_dataset(config)
 
-    # Generate data for task 0
-    trainloader, exploader = dataset.generate_dataset(task_id=0, batch_size=batch_size, phase='train')
+    # Generate data for task 0 (phase must be 'training' not 'train')
+    trainloader, exploader = dataset.generate_dataset(task_id=0, batch_size=batch_size, phase='training')
 
     results = {}
 
@@ -193,7 +193,7 @@ def run_data_loading_benchmark(config):
     print("\nBenchmarking WITH prefetch...")
     try:
         # Re-create loaders
-        trainloader, _ = dataset.generate_dataset(task_id=0, batch_size=batch_size, phase='train')
+        trainloader, _ = dataset.generate_dataset(task_id=0, batch_size=batch_size, phase='training')
         prefetch_loader = PrefetchDataLoader(trainloader, prefetch_size=3, loss_type='classification')
         prefetch_stats = benchmark_dataloader(prefetch_loader, num_batches=50, warmup=5)
         results['with_prefetch'] = prefetch_stats
@@ -219,33 +219,50 @@ def run_hamiltonian_benchmark(config):
     print("="*70)
 
     from cl.models.mlp import MLP
+    from cl.models.cnn import CNN
     from cl.core.hamiltonian import _hamiltonian_core_class_standard
     import equinox as eqx
 
     # Create model
     network_type = config.get('network', 'fcnn')
     batch_size = config.get('batch_size', 512)
+    data_type = config.get('data', 'mnist')
 
-    print(f"\nNetwork: {network_type}, Batch size: {batch_size}")
+    print(f"\nNetwork: {network_type}, Dataset: {data_type}, Batch size: {batch_size}")
 
-    # Create MLP for MNIST (784 input, 10 output)
     key = jax.random.PRNGKey(42)
-    # Default MLP configuration for MNIST
-    input_size = 784
-    output_size = 10
-    n_layers = config.get('n_layers', 4)
-    hln = config.get('hln', 256)
-    feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
 
-    model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
-    params, static = eqx.partition(model, eqx.is_array)
+    # Create model and synthetic data based on network type
+    if network_type == 'cnn':
+        # CNN for MNIST (1x28x28 images, 10 classes)
+        filter_size = config.get('filter_size', 4)
+        feed_sizes = config.get('feed_sizes', [512, 64, 10])
+        model = CNN(key=jax.random.PRNGKey(0), filter_size=filter_size, feed_sizes=feed_sizes,
+                   channel_in=1, input_size=28)
+        params, static = eqx.partition(model, eqx.is_array)
 
-    # Generate synthetic data
-    x = jax.random.normal(key, (batch_size, 784))
+        # Synthetic data for CNN: (batch, channels, height, width)
+        x = jax.random.normal(key, (batch_size, 1, 28, 28))
+        exp_x = jax.random.normal(key, (batch_size, 1, 28, 28))
+        deltax = jax.random.normal(key, (batch_size, 1, 28, 28)) * 0.01
+    else:
+        # MLP: MLP(sizes, key, awb_enabled)
+        input_size = 784
+        output_size = 10
+        n_layers = config.get('n_layers', 4)
+        hln = config.get('hln', 256)
+        sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+        model = MLP(sizes=sizes, key=jax.random.PRNGKey(0), awb_enabled=False)
+        params, static = eqx.partition(model, eqx.is_array)
+
+        # Synthetic data for MLP: flattened (batch, 784)
+        x = jax.random.normal(key, (batch_size, 784))
+        exp_x = jax.random.normal(key, (batch_size, 784))
+        deltax = jax.random.normal(key, (batch_size, 784)) * 0.01
+
+    # Labels are the same for both network types
     y = jax.random.randint(key, (batch_size,), 0, 10)
-    exp_x = jax.random.normal(key, (batch_size, 784))
     exp_y = jax.random.randint(key, (batch_size,), 0, 10)
-    deltax = jax.random.normal(key, (batch_size, 784)) * 0.01
 
     results = {}
 
