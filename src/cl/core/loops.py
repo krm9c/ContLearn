@@ -23,8 +23,7 @@ import time
 
 # Added by Claude: Profiling support
 from .profiling import (profile, profile_section, timed_section,
-                        is_detailed_profiling, get_collector, init_collector,
-                        set_detailed_profiling, GPUMonitor)
+                        is_detailed_profiling, get_collector)
 
 # Added by Claude: Async checkpointing support
 from .async_checkpoint import AsyncCheckpointManager
@@ -331,20 +330,8 @@ class TrainingLoopsMixin:
             exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size, loss_type=loss_type)
             # Don't prefetch test loaders - they're only used at eval_interval
 
-        # Added by Claude: Initialize detailed profiling if enabled
-        detailed_profiling = config.get("detailed_profiling", False)
-        profiling_enabled = config.get('profiling_enabled', False)
-        if detailed_profiling and profiling_enabled:
-            set_detailed_profiling(True)
-            collector = get_collector()
-            if collector is None:
-                collector = init_collector(config)
-            # Start GPU monitoring in background
-            gpu_monitor = GPUMonitor(interval_sec=0.5)
-            gpu_monitor.start()
-        else:
-            set_detailed_profiling(False)
-            gpu_monitor = None
+        # Added by Claude: Check if detailed profiling is already enabled (initialized in generic_runner)
+        # Don't re-initialize here - use the global state set by train_model()
 
         # Added by Claude: Get gradient combination weights from config
         # [alpha, beta, gamma] for [current_task, experience_replay, hamiltonian_regularization]
@@ -412,10 +399,16 @@ class TrainingLoopsMixin:
                 print(f"[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)")
                 train_batches_jax = list(trainloader)
                 exp_batches_jax = list(exploader)
-                # Added by Claude: Check first batch device
+                # Added by Claude: Check first batch device (compatible with JAX 0.4+)
                 if train_batches_jax:
                     x_sample, y_sample = train_batches_jax[0]
-                    print(f"[DEBUG] First train batch device: {list(x_sample.devices())}")
+                    try:
+                        # JAX 0.4.1+ uses .devices() which returns a set
+                        devices = x_sample.devices()
+                        print(f"[DEBUG] First train batch device: {devices}")
+                    except Exception:
+                        # Fallback for older JAX
+                        print(f"[DEBUG] First train batch shape: {x_sample.shape}")
             else:
                 # Original path: Manually convert PyTorch tensors to JAX
                 # Added by Claude: Diagnostic logging
@@ -759,12 +752,5 @@ class TrainingLoopsMixin:
         if checkpoint_manager is not None:
             checkpoint_manager.wait_all(timeout=30.0)
             checkpoint_manager.shutdown()
-
-        # Added by Claude: Stop GPU monitoring and print summary if detailed profiling
-        if gpu_monitor is not None:
-            gpu_monitor.stop()
-            collector = get_collector()
-            if collector:
-                collector.print_summary()
 
         return params, static, opt_state, record_dict

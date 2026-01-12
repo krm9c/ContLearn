@@ -121,13 +121,47 @@ def run_warmup_benchmark():
     return results
 
 
+def create_dataset(config):
+    """Create dataset instance based on config."""
+    from cl.datasets.sine import SineDataset
+    from cl.datasets.mnist import MNISTDataset, PermutedMNISTDataset
+    from cl.datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
+
+    data_type = config.get('data', 'mnist')
+
+    # Build dataset config
+    dataset_config = {
+        'n_task': config.get('n_task', 10),
+        'batch_size': config.get('batch_size', 512),
+        'seed': config.get('seed', 42),
+        'debug_mode': config.get('debug_mode', False),
+        'debug_limit': config.get('debug_limit', None),
+    }
+
+    if data_type == 'sine':
+        dataset_config.update({
+            'n_layers': config.get('n_layers', 4),
+            'hln': config.get('hln', 64),
+        })
+        return SineDataset(dataset_config)
+    elif data_type == 'mnist':
+        return MNISTDataset(dataset_config)
+    elif data_type == 'permuted_mnist':
+        return PermutedMNISTDataset(dataset_config)
+    elif data_type == 'cifar10':
+        return CIFAR10Dataset(dataset_config)
+    elif data_type == 'cifar100':
+        return CIFAR100Dataset(dataset_config)
+    else:
+        raise ValueError(f"Unknown dataset: {data_type}")
+
+
 def run_data_loading_benchmark(config):
     """Benchmark data loading pipeline with and without prefetch."""
     print("\n" + "="*70)
     print("PHASE 2: Data Loading Benchmark")
     print("="*70)
 
-    from cl.datasets import get_dataset
     from cl.datasets.jax_dataloader import PrefetchDataLoader, benchmark_dataloader
 
     # Create dataset
@@ -137,7 +171,7 @@ def run_data_loading_benchmark(config):
     print(f"\nDataset: {dataset_name}, Batch size: {batch_size}")
 
     # Get dataset class
-    dataset = get_dataset(dataset_name, config)
+    dataset = create_dataset(config)
 
     # Generate data for task 0
     trainloader, exploader = dataset.generate_dataset(task_id=0, batch_size=batch_size, phase='train')
@@ -184,7 +218,7 @@ def run_hamiltonian_benchmark(config):
     print("PHASE 3: Hamiltonian Computation Benchmark")
     print("="*70)
 
-    from cl.models import get_model
+    from cl.models.mlp import MLP
     from cl.core.hamiltonian import _hamiltonian_core_class_standard
     import equinox as eqx
 
@@ -194,9 +228,16 @@ def run_hamiltonian_benchmark(config):
 
     print(f"\nNetwork: {network_type}, Batch size: {batch_size}")
 
-    # Create a simple MLP for MNIST
+    # Create MLP for MNIST (784 input, 10 output)
     key = jax.random.PRNGKey(42)
-    model = get_model(network_type, config, key)
+    # Default MLP configuration for MNIST
+    input_size = 784
+    output_size = 10
+    n_layers = config.get('n_layers', 4)
+    hln = config.get('hln', 256)
+    feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+
+    model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
     params, static = eqx.partition(model, eqx.is_array)
 
     # Generate synthetic data

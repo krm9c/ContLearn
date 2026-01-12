@@ -26,7 +26,8 @@ from ..core.awb import (
 # Added by Claude: AWB pipeline refactoring
 from ..core.awb_pipeline import run_awb_task
 # Added by Claude: Profiling support
-from ..core.profiling import enable_profiling
+from ..core.profiling import (enable_profiling, set_detailed_profiling,
+                               init_collector, get_collector, GPUMonitor)
 from ..models.mlp import MLPAWBOps, create_mlp
 from ..models.cnn import CNNAWBOps, CNN, CNN3D
 from ..models.gcn import GCNAWBOps, GCN
@@ -881,8 +882,24 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         Dictionary of training records
     """
     # Added by Claude: Enable profiling if requested
-    enable_profiling(config.get('profiling_enabled', False))
-    if config.get('profiling_enabled'):
+    profiling_enabled = config.get('profiling_enabled', False)
+    detailed_profiling = config.get('detailed_profiling', False)
+    enable_profiling(profiling_enabled)
+
+    # Added by Claude: Initialize detailed profiling infrastructure
+    gpu_monitor = None
+    if profiling_enabled and detailed_profiling:
+        set_detailed_profiling(True)
+        collector = init_collector(config)
+        # Start GPU monitoring in background
+        gpu_monitor = GPUMonitor(interval_sec=0.5)
+        gpu_monitor.start()
+        print(f"\n{'='*60}")
+        print(f"DETAILED PROFILING ENABLED")
+        print(f"  - Fine-grained timing collection active")
+        print(f"  - GPU monitoring started (0.5s interval)")
+        print(f"{'='*60}\n")
+    elif profiling_enabled:
         print(f"\n{'='*60}")
         print(f"PROFILING ENABLED - Detailed timing information will be shown")
         print(f"{'='*60}\n")
@@ -1319,5 +1336,16 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # This creates files like: regression_sine_fcnn_run0_records.pkl (non-AWB)
         #                          regression_sine_fcnn_awb_run0_records.pkl (AWB)
         trainer.save_record_dict(record_dict, model_path)
+
+    # Added by Claude: Stop GPU monitoring and print final profiling summary
+    if gpu_monitor is not None:
+        gpu_monitor.stop()
+        collector = get_collector()
+        if collector:
+            collector.print_summary()
+            # Save profiling report to same directory as model
+            if config.get('model_path'):
+                report_path = f"{config['model_path']}_profiling_report.json"
+                collector.generate_report(report_path)
 
     return record_dict

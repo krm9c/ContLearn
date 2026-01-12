@@ -34,11 +34,45 @@ import jax
 import jax.numpy as jnp
 
 
+def create_dataset(config):
+    """Create dataset instance based on config."""
+    from cl.datasets.sine import SineDataset
+    from cl.datasets.mnist import MNISTDataset, PermutedMNISTDataset
+    from cl.datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
+
+    data_type = config.get('data', 'mnist')
+
+    # Build dataset config
+    dataset_config = {
+        'n_task': config.get('n_task', 10),
+        'batch_size': config.get('batch_size', 512),
+        'seed': config.get('seed', 42),
+        'debug_mode': config.get('debug_mode', False),
+        'debug_limit': config.get('debug_limit', None),
+    }
+
+    if data_type == 'sine':
+        dataset_config.update({
+            'n_layers': config.get('n_layers', 4),
+            'hln': config.get('hln', 64),
+        })
+        return SineDataset(dataset_config)
+    elif data_type == 'mnist':
+        return MNISTDataset(dataset_config)
+    elif data_type == 'permuted_mnist':
+        return PermutedMNISTDataset(dataset_config)
+    elif data_type == 'cifar10':
+        return CIFAR10Dataset(dataset_config)
+    elif data_type == 'cifar100':
+        return CIFAR100Dataset(dataset_config)
+    else:
+        raise ValueError(f"Unknown dataset: {data_type}")
+
+
 def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Dict:
     """Run a single configuration and return timing results."""
-    from cl.datasets import get_dataset
     from cl.datasets.jax_dataloader import PrefetchDataLoader
-    from cl.models import get_model
+    from cl.models.mlp import MLP
     from cl.core.hamiltonian import _hamiltonian_core_class_standard
     import equinox as eqx
     import optax
@@ -52,7 +86,7 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
     }
 
     # Create dataset
-    dataset = get_dataset(config.get('data', 'mnist'), config)
+    dataset = create_dataset(config)
     trainloader, exploader = dataset.generate_dataset(
         task_id=task_id,
         batch_size=config.get('batch_size', 512),
@@ -73,9 +107,15 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
             loss_type=loss_type
         )
 
-    # Create model
+    # Create MLP for MNIST (784 input, 10 output)
     key = jax.random.PRNGKey(42)
-    model = get_model(config.get('network', 'fcnn'), config, key)
+    input_size = 784
+    output_size = 10
+    n_layers = config.get('n_layers', 4)
+    hln = config.get('hln', 256)
+    feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+
+    model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
     params, static = eqx.partition(model, eqx.is_array)
 
     # Create optimizer
