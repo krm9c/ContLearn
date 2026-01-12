@@ -129,13 +129,15 @@ def create_dataset(config):
 
     data_type = config.get('data', 'mnist')
 
-    # Build dataset config
+    # Build dataset config - must include 'problem' and 'network' for ContinualDataset
     dataset_config = {
         'n_task': config.get('n_task', 10),
         'batch_size': config.get('batch_size', 512),
         'seed': config.get('seed', 42),
         'debug_mode': config.get('debug_mode', False),
         'debug_limit': config.get('debug_limit', None),
+        'problem': config.get('prob', 'classification'),  # Needed by ContinualDataset
+        'network': config.get('network', 'cnn'),  # Needed by ContinualDataset
     }
 
     if data_type == 'sine':
@@ -235,10 +237,21 @@ def run_hamiltonian_benchmark(config):
     # Create model and synthetic data based on network type
     if network_type == 'cnn':
         # CNN for MNIST (1x28x28 images, 10 classes)
+        # Must calculate flatten_size based on conv/pool architecture
         filter_size = config.get('filter_size', 4)
-        feed_sizes = config.get('feed_sizes', [512, 64, 10])
+        channel_out = config.get('channel_out', 3)
+        input_size = 28  # MNIST
+
+        # Calculate flatten size: conv_output -> pool_output -> flatten
+        # Conv: ((input - filter + 2*padding) / stride) + 1 = ((28 - 4 + 0) / 1) + 1 = 25
+        # Pool: ((conv_out - pool_size) / pool_stride) + 1 = ((25 - 2) / 2) + 1 = 12
+        conv_output = (input_size - filter_size) + 1  # 25
+        pool_output = (conv_output - 2) // 2 + 1  # 12
+        flatten_size = channel_out * pool_output * pool_output  # 3 * 12 * 12 = 432
+
+        feed_sizes = [flatten_size, 512, 64, 10]
         model = CNN(key=jax.random.PRNGKey(0), filter_size=filter_size, feed_sizes=feed_sizes,
-                   channel_in=1, input_size=28)
+                   channel_in=1, input_size=input_size, channel_out=channel_out)
         params, static = eqx.partition(model, eqx.is_array)
 
         # Synthetic data for CNN: (batch, channels, height, width)

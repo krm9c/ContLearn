@@ -42,13 +42,15 @@ def create_dataset(config):
 
     data_type = config.get('data', 'mnist')
 
-    # Build dataset config
+    # Build dataset config - must include 'problem' and 'network' for ContinualDataset
     dataset_config = {
         'n_task': config.get('n_task', 10),
         'batch_size': config.get('batch_size', 512),
         'seed': config.get('seed', 42),
         'debug_mode': config.get('debug_mode', False),
         'debug_limit': config.get('debug_limit', None),
+        'problem': config.get('prob', 'classification'),  # Needed by ContinualDataset
+        'network': config.get('network', 'cnn'),  # Needed by ContinualDataset
     }
 
     if data_type == 'sine':
@@ -155,9 +157,13 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
     optim = optax.adam(config.get('lr', 0.0001))
     opt_state = optim.init(params)
 
-    # Pre-convert data to JAX
-    train_batches = list(trainloader)
-    exp_batches = list(exploader)
+    # Pre-convert data to JAX arrays (from PyTorch tensors)
+    def to_jax(tensor):
+        """Convert PyTorch tensor to JAX array."""
+        return jnp.array(tensor.numpy())
+
+    train_batches = [(to_jax(x), to_jax(y)) for x, y in trainloader]
+    exp_batches = [(to_jax(x), to_jax(y)) for x, y in exploader]
 
     results['num_batches'] = len(train_batches)
     results['samples_per_batch'] = config.get('batch_size', 512)
