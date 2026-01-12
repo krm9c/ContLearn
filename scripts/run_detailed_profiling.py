@@ -210,7 +210,13 @@ def run_detailed_training(config_path: str, output_path: str):
         return jnp.mean(preds == y)
 
     def to_jax(tensor):
-        return jnp.array(tensor.numpy())
+        """Convert to JAX array if needed (handles both PyTorch and JAX inputs)."""
+        if hasattr(tensor, 'numpy'):
+            # PyTorch tensor
+            return jnp.array(tensor.numpy())
+        else:
+            # Already a JAX array
+            return tensor
 
     # Training loop
     n_tasks = config.get('n_task', 1)
