@@ -73,6 +73,7 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
     """Run a single configuration and return timing results."""
     from cl.datasets.jax_dataloader import PrefetchDataLoader
     from cl.models.mlp import MLP
+    from cl.models.cnn import CNN
     from cl.core.hamiltonian import _hamiltonian_core_class_standard
     import equinox as eqx
     import optax
@@ -82,6 +83,7 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
             'batch_size': config.get('batch_size', 512),
             'use_jax_prefetch': config.get('use_jax_prefetch', True),
             'prefetch_size': config.get('prefetch_size', 3),
+            'network': config.get('network', 'cnn'),
         }
     }
 
@@ -93,8 +95,10 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
         phase='train'
     )
 
+    # Determine loss type from config
+    loss_type = 'regression' if config.get('prob') == 'regression' else 'classification'
+
     # Optionally wrap with prefetch
-    loss_type = 'classification'
     if config.get('use_jax_prefetch', True):
         trainloader = PrefetchDataLoader(
             trainloader,
@@ -107,15 +111,44 @@ def run_single_config(config: Dict, num_epochs: int = 5, task_id: int = 0) -> Di
             loss_type=loss_type
         )
 
-    # Create MLP for MNIST (784 input, 10 output)
+    # Create model based on network type
     key = jax.random.PRNGKey(42)
-    input_size = 784
-    output_size = 10
-    n_layers = config.get('n_layers', 4)
-    hln = config.get('hln', 256)
-    feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+    network = config.get('network', 'cnn')
 
-    model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
+    if network == 'fcnn':
+        # MLP for regression or flattened input
+        input_size = dataset.input_size
+        output_size = dataset.output_size
+        n_layers = config.get('n_layers', 4)
+        hln = config.get('hln', 256)
+        feed_sizes = [input_size] + [hln] * (n_layers - 1) + [output_size]
+        model = MLP(jax.random.PRNGKey(0), feed_sizes=feed_sizes, awb_arch=None)
+    elif network == 'cnn':
+        # CNN for image classification (MNIST)
+        channel_out = config.get('channel_out', 3)
+        filter_size = config.get('filter_size', 4)
+        input_size = 28  # MNIST
+        num_classes = dataset.output_size
+
+        # Calculate flatten_size
+        conv_output = (input_size - filter_size + 1)
+        pool_output = conv_output // 2
+        flatten_size = channel_out * pool_output * pool_output
+
+        feed_sizes = [flatten_size, 512, 64, num_classes]
+
+        model = CNN(
+            key=jax.random.PRNGKey(0),
+            filter_size=filter_size,
+            feed_sizes=feed_sizes,
+            input_size=input_size,
+            channel_out=channel_out,
+            num_classes=num_classes,
+            awb_arch=None
+        )
+    else:
+        raise ValueError(f"Unsupported network type: {network}")
+
     params, static = eqx.partition(model, eqx.is_array)
 
     # Create optimizer
@@ -400,17 +433,21 @@ def main():
     print(f"\nOutput: {output_dir}")
     print(f"Epochs per config: {args.epochs}")
 
-    # Base configuration
-    base_config = {
+    # Base configuration with dataset-specific defaults applied
+    from cl.config.params import apply_defaults
+    base_config = apply_defaults({
         'data': 'mnist',
-        'network': 'fcnn',
         'batch_size': 512,
         'lr': 0.0001,
         'use_jax_prefetch': True,
         'prefetch_size': 3,
         'debug_mode': True,
-        'debug_limit': 2000,
-    }
+        'debug_limit': 5000,
+    })
+    print(f"\nBase config:")
+    print(f"  Dataset: {base_config.get('data')}")
+    print(f"  Network: {base_config.get('network')}")
+    print(f"  Problem type: {base_config.get('prob')}")
 
     all_results = {}
 

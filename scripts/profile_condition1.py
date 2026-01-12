@@ -471,15 +471,21 @@ def main():
     print(f"\nConfig: {args.config}")
     print(f"Output: {output_dir}")
 
-    # Load config
+    # Load config using proper loader that applies dataset-specific defaults
+    from cl.config import load_config
+
     config_path = Path(args.config)
     if config_path.exists():
-        with open(config_path) as f:
-            config = json.load(f)
+        config = load_config(str(config_path))
         print(f"\nLoaded config from {config_path}")
+        print(f"  Dataset: {config.get('data')}")
+        print(f"  Network: {config.get('network')}")
+        print(f"  Problem type: {config.get('prob')}")
     else:
         print(f"\nConfig not found, using defaults")
-        config = {
+        # Use load_config's apply_defaults by creating a temp config
+        from cl.config.params import apply_defaults
+        config = apply_defaults({
             'data': 'mnist',
             'n_task': 2,
             'epochs_per_task': 10,
@@ -490,7 +496,7 @@ def main():
             'prefetch_size': 3,
             'debug_mode': True,
             'debug_limit': 2000,
-        }
+        })
 
     if args.quick:
         config['n_task'] = 1
