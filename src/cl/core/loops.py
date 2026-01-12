@@ -22,7 +22,9 @@ from tqdm import tqdm
 import time
 
 # Added by Claude: Profiling support
-from .profiling import profile, profile_section
+from .profiling import (profile, profile_section, timed_section,
+                        is_detailed_profiling, get_collector, init_collector,
+                        set_detailed_profiling, GPUMonitor)
 
 # Added by Claude: Async checkpointing support
 from .async_checkpoint import AsyncCheckpointManager
@@ -329,6 +331,21 @@ class TrainingLoopsMixin:
             exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size, loss_type=loss_type)
             # Don't prefetch test loaders - they're only used at eval_interval
 
+        # Added by Claude: Initialize detailed profiling if enabled
+        detailed_profiling = config.get("detailed_profiling", False)
+        profiling_enabled = config.get('profiling_enabled', False)
+        if detailed_profiling and profiling_enabled:
+            set_detailed_profiling(True)
+            collector = get_collector()
+            if collector is None:
+                collector = init_collector(config)
+            # Start GPU monitoring in background
+            gpu_monitor = GPUMonitor(interval_sec=0.5)
+            gpu_monitor.start()
+        else:
+            set_detailed_profiling(False)
+            gpu_monitor = None
+
         # Added by Claude: Get gradient combination weights from config
         # [alpha, beta, gamma] for [current_task, experience_replay, hamiltonian_regularization]
         grad_weights = config.get("grad_weights", None)  # None uses defaults in hamiltonian.py
@@ -494,38 +511,42 @@ class TrainingLoopsMixin:
             # Inner loop: iterate over batches
             batch_idx = 0
             for batch, batch_ex in zip(trainiter, expiter):
-                if problem_type == 'graph':
-                    # Graph data processing
-                    batch = transforms(batch)
-                    batch_ex = transforms(batch_ex)
-                    # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
-                    rng_key, subkey1, subkey2 = jax.random.split(rng_key, 3)
-                    delta_x = jax.random.normal(subkey1, batch_ex.x.numpy().shape) * var_x
-                    delta_adj = jax.random.normal(subkey2, batch_ex.adj.shape) * var_adj
-                    data = (static, (batch, batch_ex, delta_x, delta_adj))
-                else:
-                    # Vector data processing (MLP, CNN)
-                    # Added by Claude: Data already in JAX format from pre-conversion, just unpack
-                    (x, y) = batch
-                    (exp_x, exp_y) = batch_ex
-                    min_batch = min(exp_x.shape[0], x.shape[0])
+                # Added by Claude: Time data preparation (batch processing and perturbation)
+                with timed_section("data_prep", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    if problem_type == 'graph':
+                        # Graph data processing
+                        batch = transforms(batch)
+                        batch_ex = transforms(batch_ex)
+                        # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
+                        rng_key, subkey1, subkey2 = jax.random.split(rng_key, 3)
+                        delta_x = jax.random.normal(subkey1, batch_ex.x.numpy().shape) * var_x
+                        delta_adj = jax.random.normal(subkey2, batch_ex.adj.shape) * var_adj
+                        data = (static, (batch, batch_ex, delta_x, delta_adj))
+                    else:
+                        # Vector data processing (MLP, CNN)
+                        # Added by Claude: Data already in JAX format from pre-conversion, just unpack
+                        (x, y) = batch
+                        (exp_x, exp_y) = batch_ex
+                        min_batch = min(exp_x.shape[0], x.shape[0])
 
-                    # Slice to min batch size (data already correct dtype from pre-conversion)
-                    x = x[:min_batch]
-                    y = y[:min_batch]
-                    exp_x = exp_x[:min_batch]
-                    exp_y = exp_y[:min_batch]
+                        # Slice to min batch size (data already correct dtype from pre-conversion)
+                        x = x[:min_batch]
+                        y = y[:min_batch]
+                        exp_x = exp_x[:min_batch]
+                        exp_y = exp_y[:min_batch]
 
-                    # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
-                    rng_key, subkey = jax.random.split(rng_key)
-                    delta_x = jax.random.normal(subkey, exp_x.shape) * var_x
-                    data = (static, (x, y, exp_x, exp_y, delta_x, flag))
+                        # Added by Claude: GPU-accelerated random using JAX (replaces NumPy random)
+                        rng_key, subkey = jax.random.split(rng_key)
+                        delta_x = jax.random.normal(subkey, exp_x.shape) * var_x
+                        data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
                 # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
-                grad, losses = hamiltonian_fn(params, data, notABTrain,
-                                             grad_weights=grad_weights,
-                                             normalize_dV=normalize_dV,
-                                             dV_scale=dV_scale)
+                # Added by Claude: Timed section for detailed profiling (zero overhead when disabled)
+                with timed_section("hamiltonian", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    grad, losses = hamiltonian_fn(params, data, notABTrain,
+                                                 grad_weights=grad_weights,
+                                                 normalize_dV=normalize_dV,
+                                                 dV_scale=dV_scale)
 
                 # Unpack losses
                 if problem_type == 'graph':
@@ -535,26 +556,30 @@ class TrainingLoopsMixin:
                     (H, V, dV, dV_dtheta, dV_dx) = losses
 
                 # Added by Claude: Apply gradient clipping if enabled
-                grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
+                with timed_section("gradient_clip", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
                 # Update parameters (using JIT-compiled optimizer step)
-                params, opt_state = optimizer_step(grad, opt_state, params)
+                with timed_section("optimizer_step", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    params, opt_state = optimizer_step(grad, opt_state, params)
 
-                # Accumulate loss metrics
-                epoch_H.append(float(H))
-                epoch_V.append(float(V))
-                epoch_dV.append(float(dV))
-                epoch_dV_dtheta.append(float(dV_dtheta))
-                epoch_dV_dx.append(float(dV_dx))
-                epoch_grad_norm.append(float(grad_norm))
+                # Accumulate loss metrics (zero overhead - simple Python list append)
+                with timed_section("loss_accumulate", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    epoch_H.append(float(H))
+                    epoch_V.append(float(V))
+                    epoch_dV.append(float(dV))
+                    epoch_dV_dtheta.append(float(dV_dtheta))
+                    epoch_dV_dx.append(float(dV_dx))
+                    epoch_grad_norm.append(float(grad_norm))
 
                 # Compute training metric (using JIT-compiled function for vectors)
-                if problem_type == 'graph':
-                    # Graph uses non-JIT method (different data structure)
-                    train_metric = self.return_metric(params, static, data=(batch, batch_ex), notABTrain=notABTrain)
-                else:
-                    # Vectors use JIT-compiled metric function
-                    train_metric = compute_metric(params, static, x, y)
+                with timed_section("train_metric", epoch=epoch, batch=batch_idx, task_id=task_id):
+                    if problem_type == 'graph':
+                        # Graph uses non-JIT method (different data structure)
+                        train_metric = self.return_metric(params, static, data=(batch, batch_ex), notABTrain=notABTrain)
+                    else:
+                        # Vectors use JIT-compiled metric function
+                        train_metric = compute_metric(params, static, x, y)
                 epoch_train_metrics.append(float(train_metric))
 
                 # Added by Claude: Report first batch time
@@ -589,11 +614,12 @@ class TrainingLoopsMixin:
 
                 # Compute expensive test metrics only at eval_interval (not every log_interval)
                 if should_eval:
-                    test_current, test_exp = self._compute_metrics_on_sampled_batches(
-                        params, static, testloader, num_batches=10,
-                        problem_type=problem_type, notABTrain=notABTrain,
-                        transforms=transforms
-                    )
+                    with timed_section("test_metrics", epoch=epoch, task_id=task_id):
+                        test_current, test_exp = self._compute_metrics_on_sampled_batches(
+                            params, static, testloader, num_batches=10,
+                            problem_type=problem_type, notABTrain=notABTrain,
+                            transforms=transforms
+                        )
                 else:
                     # Skip expensive test evaluation, use placeholder values for progress bar
                     test_current, test_exp = 0.0, 0.0
@@ -733,5 +759,12 @@ class TrainingLoopsMixin:
         if checkpoint_manager is not None:
             checkpoint_manager.wait_all(timeout=30.0)
             checkpoint_manager.shutdown()
+
+        # Added by Claude: Stop GPU monitoring and print summary if detailed profiling
+        if gpu_monitor is not None:
+            gpu_monitor.stop()
+            collector = get_collector()
+            if collector:
+                collector.print_summary()
 
         return params, static, opt_state, record_dict
