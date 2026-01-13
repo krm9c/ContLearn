@@ -1,0 +1,25 @@
+{
+  "config_path": "../runs__/configs/mnist_condition4_awb_full.json",
+  "total_time_sec": 10451.39382648468,
+  "success": true,
+  "error": null,
+  "gpu": {
+    "samples": 13928,
+    "utilization_mean": 67.75021539345204,
+    "utilization_min": 0.0,
+    "utilization_max": 100.0,
+    "utilization_std": 25.362075377955918,
+    "memory_mean_mb": 34433.41915565767,
+    "memory_max_mb": 34491.0
+  },
+  "config": {
+    "data": "mnist",
+    "network": "cnn",
+    "awb_enabled": true,
+    "n_task": 10,
+    "epochs_per_task": 200,
+    "batch_size": 512,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 200
+  }
+}
