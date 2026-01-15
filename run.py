@@ -31,7 +31,7 @@ from cl.runners import train_model
 from cl.core.recording import RecordingMixin
 
 # Added by Claude: Import plotting module for post-training visualization
-from runs__.analysis.scripts.additional_python_scripts.scripts.plot_results import generate_plots
+# from runs__.analysis.scripts.additional_python_scripts.scripts.plot_results import generate_plots
 
 # Suppress JAX MaxPool gradient warning (expected behavior for second-order derivatives)
 warnings.filterwarnings('ignore', message='.*reduce-window min/max.*')
@@ -106,15 +106,15 @@ Examples:
     # Generic unified runner works for all problem types
     record_dict = train_model(config, run_id=run_id)
 
-    # Generate plots for each run (unless --no-plots)
-    # Use AWB-aware figures directory
-    if not args.no_plots:
-        figures_dir = args.figures_dir if args.figures_dir != 'figures' or args.output_dir else args.figures_dir
-        # If using default figures dir and no custom output, add AWB suffix
-        if figures_dir == 'figures' and not args.output_dir and config.get('awb_enabled', False):
-            dataset_name = config.get('data', 'unknown')
-            figures_dir = f'figures/{dataset_name}_awb'
-        generate_plots(record_dict, output_dir=figures_dir, run_id=str(run_id))
+    # # Generate plots for each run (unless --no-plots)
+    # # Use AWB-aware figures directory
+    # if not args.no_plots:
+    #     figures_dir = args.figures_dir if args.figures_dir != 'figures' or args.output_dir else args.figures_dir
+    #     # If using default figures dir and no custom output, add AWB suffix
+    #     if figures_dir == 'figures' and not args.output_dir and config.get('awb_enabled', False):
+    #         dataset_name = config.get('data', 'unknown')
+    #         figures_dir = f'figures/{dataset_name}_awb'
+    #     generate_plots(record_dict, output_dir=figures_dir, run_id=str(run_id))
 
     print("\nTraining complete!")
 

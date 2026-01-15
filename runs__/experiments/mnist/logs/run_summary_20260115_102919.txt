@@ -1,0 +1,5 @@
+MNIST EXPERIMENTS - MULTIPLE RUNS
+Started: Thu Jan 15 10:29:19 AM CST 2026
+Runs per condition: 3
+Total experiments: 12
+
