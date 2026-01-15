@@ -297,6 +297,7 @@ class SyntheticGraphDataset(BaseGraphDataset):
 
 
 # Added by Claude: Task-shift synthetic graph dataset for continual learning
+# Fixed by Claude: Train/test split now happens ONCE at initialization to prevent data leakage
 class TaskShiftGraphDataset(BaseGraphDataset):
     """Synthetic graph dataset with domain shift across tasks.
 
@@ -305,12 +306,19 @@ class TaskShiftGraphDataset(BaseGraphDataset):
 
     - All tasks have the same N classes (default: 5)
     - Each task introduces progressive perturbations:
-        1. Feature noise: Gaussian noise N(0, σ²) where σ = task_id * noise_base
-        2. Edge dropout: Random edge removal with probability task_id * dropout_base
-        3. Feature shift: Constant additive shift task_id * shift_base
+        1. Feature noise: Gaussian noise N(0, σ²)
+        2. Edge dropout: Random edge removal with probability p
+        3. Feature shift: Constant additive shift
 
-    This tests continual learning under distribution shift (real-world scenario)
-    and avoids mode collapse issues from class-incremental approaches.
+    IMPORTANT: Train/test split happens ONCE at initialization. The same underlying
+    graphs are always in train or test across all tasks. Only perturbations differ.
+    This prevents data leakage between train and test sets.
+
+    Perturbation Modes:
+        - 'linear': perturbation = task_id * base_value (default)
+        - 'exponential': perturbation = base_value * (growth_rate ^ task_id)
+        - 'step': perturbation increases every N tasks
+        - 'custom': user provides per-task perturbation values via config
 
     Args:
         config: Configuration dictionary with optional keys:
@@ -319,10 +327,14 @@ class TaskShiftGraphDataset(BaseGraphDataset):
             - avg_num_nodes: Average number of nodes per graph (default: 20)
             - num_classes: Total classes in dataset (default: 5)
             - task_shift_enabled: Enable domain shift (default: True)
-            - feature_noise_base: Base noise σ, scaled by task_id (default: 0.1)
+            - perturbation_mode: 'linear', 'exponential', 'step', or 'custom' (default: 'linear')
+            - feature_noise_base: Base noise σ (default: 0.1)
             - edge_dropout_base: Base edge dropout rate (default: 0.05)
             - feature_shift_base: Base feature shift (default: 0.05)
-            - n_tasks: Number of tasks (default: 5)
+            - perturbation_growth_rate: Growth rate for exponential mode (default: 1.5)
+            - perturbation_step_size: Tasks per step for step mode (default: 2)
+            - custom_perturbations: Dict mapping task_id -> {noise, dropout, shift} for custom mode
+            - n_task: Number of tasks (default: 5)
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -332,27 +344,32 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         self.feature_noise_base = config.get('feature_noise_base', DEFAULT_SYNTHETIC_FEATURE_NOISE_BASE)
         self.edge_dropout_base = config.get('edge_dropout_base', DEFAULT_SYNTHETIC_EDGE_DROPOUT_BASE)
         self.feature_shift_base = config.get('feature_shift_base', DEFAULT_SYNTHETIC_FEATURE_SHIFT_BASE)
-        self.n_tasks = config.get('n_task', 5)  # Fixed: was 'n_tasks', now matches rest of codebase
+        self.n_tasks = config.get('n_task', 5)
 
-        # Store base (unperturbed) full dataset for generating task-shifted versions
-        self._base_full_data = None
-        self._train_split_idx = None  # Index to split train/test
+        # Added by Claude: Perturbation control modes
+        self.perturbation_mode = config.get('perturbation_mode', 'linear')
+        self.perturbation_growth_rate = config.get('perturbation_growth_rate', 1.5)
+        self.perturbation_step_size = config.get('perturbation_step_size', 2)
+        self.custom_perturbations = config.get('custom_perturbations', {})
+
+        # Fixed by Claude: Store base train/test splits (indices) - split ONCE
+        self._base_train_data = None  # List of unperturbed train graphs
+        self._base_test_data = None   # List of unperturbed test graphs
 
         self._load_dataset()
 
     def _load_dataset(self) -> None:
-        """Load synthetic graph dataset."""
+        """Load synthetic graph dataset with FIXED train/test split."""
         # Get dataset parameters from config
         num_graphs = self.config.get('num_graphs', DEFAULT_SYNTHETIC_NUM_GRAPHS)
         num_channels = self.config.get('num_channels', DEFAULT_SYNTHETIC_NUM_CHANNELS)
         avg_num_nodes = self.config.get('avg_num_nodes', DEFAULT_SYNTHETIC_AVG_NUM_NODES)
-        # Use smaller number of classes for task-shift (all tasks see same classes)
         num_classes = self.config.get('num_classes', DEFAULT_SYNTHETIC_NUM_CLASSES_PER_TASK)
 
         # Set seed for reproducibility
         torch_geometric.seed.seed_everything(DEFAULT_GRAPH_SEED)
 
-        # Create synthetic dataset
+        # Create synthetic dataset and shuffle ONCE
         self.dataset = FakeDataset(
             num_graphs=num_graphs,
             num_channels=num_channels,
@@ -366,32 +383,97 @@ class TaskShiftGraphDataset(BaseGraphDataset):
             print(f"DEBUG MODE: Limiting synthetic graph data from {len(self.dataset)} to {self.debug_limit} samples")
             self.dataset = self.dataset[:self.debug_limit]
 
-        # Store full dataset and train/test split ratio
-        self._base_full_data = list(self.dataset)
+        # Fixed by Claude: Split ONCE at initialization - no per-task shuffling
+        full_data = list(self.dataset)
         self._train_split_ratio = self.config.get('train_test_split', DEFAULT_TRAIN_TEST_SPLIT)
+        split_idx = int(self._train_split_ratio * len(full_data))
 
-        # Initialize train/test for compatibility (will be overwritten per task)
-        split_idx = int(self._train_split_ratio * len(self._base_full_data))
-        self.train_data = self._base_full_data[:split_idx]
-        self.test_data = self._base_full_data[split_idx:]
+        # Store base (unperturbed) train and test sets SEPARATELY
+        self._base_train_data = full_data[:split_idx]
+        self._base_test_data = full_data[split_idx:]
+
+        # Set train_data/test_data for compatibility (task 0, no perturbation)
+        self.train_data = self._base_train_data
+        self.test_data = self._base_test_data
 
         print(f'Task-Shift Synthetic Graph Dataset:')
         print('====================================')
-        print(f'Total graphs: {len(self._base_full_data)}')
-        print(f'Train/Test split: {self._train_split_ratio:.0%}/{1-self._train_split_ratio:.0%}')
+        print(f'Total graphs: {len(full_data)}')
+        print(f'Training graphs: {len(self._base_train_data)} (FIXED split)')
+        print(f'Test graphs: {len(self._base_test_data)} (FIXED split)')
         print(f'Number of features: {self.dataset.num_features}')
         print(f'Number of classes: {self.dataset.num_classes}')
         print(f'Task-shift enabled: {self.task_shift_enabled}')
+        print(f'Perturbation mode: {self.perturbation_mode}')
         print(f'  Feature noise base: {self.feature_noise_base}')
         print(f'  Edge dropout base: {self.edge_dropout_base}')
         print(f'  Feature shift base: {self.feature_shift_base}')
+        if self.perturbation_mode == 'exponential':
+            print(f'  Growth rate: {self.perturbation_growth_rate}')
+        elif self.perturbation_mode == 'step':
+            print(f'  Step size: {self.perturbation_step_size} tasks')
+        elif self.perturbation_mode == 'custom':
+            print(f'  Custom perturbations: {len(self.custom_perturbations)} tasks defined')
+
+    def _get_perturbation_params(self, task_id: int) -> Tuple[float, float, float]:
+        """Get perturbation parameters for a specific task based on mode.
+
+        Added by Claude: Flexible perturbation control for different experimental designs.
+
+        Args:
+            task_id: Current task ID
+
+        Returns:
+            Tuple of (feature_noise_std, edge_dropout_prob, feature_shift)
+        """
+        # Task 0 always has no perturbation (baseline)
+        if task_id == 0:
+            return 0.0, 0.0, 0.0
+
+        if self.perturbation_mode == 'linear':
+            # Linear scaling: perturbation = task_id * base
+            noise_std = task_id * self.feature_noise_base
+            dropout_prob = task_id * self.edge_dropout_base
+            shift = task_id * self.feature_shift_base
+
+        elif self.perturbation_mode == 'exponential':
+            # Exponential scaling: perturbation = base * (rate ^ task_id)
+            rate = self.perturbation_growth_rate
+            noise_std = self.feature_noise_base * (rate ** task_id)
+            dropout_prob = self.edge_dropout_base * (rate ** task_id)
+            shift = self.feature_shift_base * (rate ** task_id)
+
+        elif self.perturbation_mode == 'step':
+            # Step function: perturbation increases every N tasks
+            step = task_id // self.perturbation_step_size
+            noise_std = (step + 1) * self.feature_noise_base
+            dropout_prob = (step + 1) * self.edge_dropout_base
+            shift = (step + 1) * self.feature_shift_base
+
+        elif self.perturbation_mode == 'custom':
+            # User-defined per-task perturbations
+            if task_id in self.custom_perturbations:
+                params = self.custom_perturbations[task_id]
+                noise_std = params.get('noise', 0.0)
+                dropout_prob = params.get('dropout', 0.0)
+                shift = params.get('shift', 0.0)
+            else:
+                # Fall back to linear if task not specified
+                noise_std = task_id * self.feature_noise_base
+                dropout_prob = task_id * self.edge_dropout_base
+                shift = task_id * self.feature_shift_base
+
+        else:
+            raise ValueError(f"Unknown perturbation_mode: {self.perturbation_mode}. "
+                           f"Supported: 'linear', 'exponential', 'step', 'custom'")
+
+        # Cap edge dropout at 50% to maintain graph connectivity
+        dropout_prob = min(dropout_prob, 0.5)
+
+        return noise_std, dropout_prob, shift
 
     def _apply_task_perturbation(self, data_list: List, task_id: int, seed: int = None) -> List:
         """Apply task-specific perturbations to graph data.
-
-        Perturbations scale linearly with task_id:
-        - Task 0: No perturbation (baseline)
-        - Task k: feature_noise = k * noise_base, edge_dropout = k * dropout_base, etc.
 
         Args:
             data_list: List of graph data objects
@@ -408,14 +490,12 @@ class TaskShiftGraphDataset(BaseGraphDataset):
             np.random.seed(seed + task_id)
             torch.manual_seed(seed + task_id)
 
-        # Task 0 has no perturbation
-        if task_id == 0:
-            return [copy.deepcopy(d) for d in data_list]
+        # Get perturbation parameters based on mode
+        feature_noise_std, edge_dropout_prob, feature_shift = self._get_perturbation_params(task_id)
 
-        # Compute perturbation magnitudes
-        feature_noise_std = task_id * self.feature_noise_base
-        edge_dropout_prob = min(task_id * self.edge_dropout_base, 0.5)  # Cap at 50%
-        feature_shift = task_id * self.feature_shift_base
+        # Task 0 has no perturbation - return copies
+        if task_id == 0 or (feature_noise_std == 0 and edge_dropout_prob == 0 and feature_shift == 0):
+            return [copy.deepcopy(d) for d in data_list]
 
         perturbed_list = []
         for data in data_list:
@@ -450,12 +530,8 @@ class TaskShiftGraphDataset(BaseGraphDataset):
     def _get_or_generate_task_data(self, task_id: int) -> Tuple[List, List]:
         """Generate or retrieve cached train/test data for a task.
 
-        For each task:
-        1. Apply perturbations to full base dataset
-        2. Shuffle the perturbed dataset (with fixed seed for reproducibility)
-        3. Split into train/test
-
-        This ensures train and test come from the same perturbed distribution.
+        Fixed by Claude: Now applies perturbations to FIXED train/test splits
+        instead of shuffling and re-splitting per task. This prevents data leakage.
 
         Args:
             task_id: Task ID
@@ -467,20 +543,14 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         if task_id in self._task_train_data and task_id in self._task_test_data:
             return self._task_train_data[task_id], self._task_test_data[task_id]
 
-        # Apply task-specific perturbations to FULL dataset
-        perturbed_full = self._apply_task_perturbation(
-            self._base_full_data, task_id, seed=DEFAULT_GRAPH_SEED
+        # Fixed by Claude: Apply perturbations to FIXED train and test sets SEPARATELY
+        # This ensures the same underlying graphs are always in train or test
+        train_data = self._apply_task_perturbation(
+            self._base_train_data, task_id, seed=DEFAULT_GRAPH_SEED
         )
-
-        # Shuffle with fixed seed (based on task_id for reproducibility)
-        import random
-        rng = random.Random(DEFAULT_GRAPH_SEED + task_id)
-        rng.shuffle(perturbed_full)
-
-        # Split into train/test
-        split_idx = int(self._train_split_ratio * len(perturbed_full))
-        train_data = perturbed_full[:split_idx]
-        test_data = perturbed_full[split_idx:]
+        test_data = self._apply_task_perturbation(
+            self._base_test_data, task_id, seed=DEFAULT_GRAPH_SEED + 1000  # Different seed for test
+        )
 
         # Cache both
         self._task_train_data[task_id] = train_data
@@ -523,16 +593,32 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         current_loader = DataLoader(task_data, batch_size=batch_size, shuffle=False)
         mem_train_loader = DataLoader(self.memory_train, batch_size=batch_size, shuffle=False)
 
-        # Compute perturbation info for logging
-        noise_std = task_id * self.feature_noise_base
-        dropout_prob = min(task_id * self.edge_dropout_base, 0.5)
-        shift = task_id * self.feature_shift_base
+        # Get perturbation info for logging
+        noise_std, dropout_prob, shift = self._get_perturbation_params(task_id)
 
-        print(f"Task {task_id} ({phase}): All {self.num_classes} classes with perturbation "
-              f"(noise_σ={noise_std:.2f}, edge_drop={dropout_prob:.2f}, shift={shift:.2f}), "
+        print(f"Task {task_id} ({phase}): {self.num_classes} classes, mode={self.perturbation_mode}, "
+              f"perturbation(noise={noise_std:.3f}, drop={dropout_prob:.3f}, shift={shift:.3f}), "
               f"current={len(task_data)}, memory={len(self.memory_train)}")
 
         return current_loader, mem_train_loader
+
+    def get_perturbation_schedule(self) -> Dict[int, Dict[str, float]]:
+        """Return the perturbation schedule for all tasks.
+
+        Added by Claude: Useful for logging and visualization.
+
+        Returns:
+            Dict mapping task_id -> {noise, dropout, shift}
+        """
+        schedule = {}
+        for task_id in range(self.n_tasks):
+            noise, dropout, shift = self._get_perturbation_params(task_id)
+            schedule[task_id] = {
+                'noise': noise,
+                'dropout': dropout,
+                'shift': shift
+            }
+        return schedule
 
     @property
     def num_features(self) -> int:
