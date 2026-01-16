@@ -74,6 +74,8 @@ class BaseGraphDataset(ABC):
 
         # Experience replay buffer (list of graph data objects)
         self.memory_train: List = []
+        # Added by Claude: Separate test buffer for proper experience evaluation
+        self.memory_test: List = []
 
         # Added by Claude: Task persistence for CL metrics
         # Maps task_id -> class_list to ensure deterministic task definition
@@ -156,22 +158,26 @@ class BaseGraphDataset(ABC):
             for k in range(len(datas)):
                 datas[k].n_nodes = datas[k].num_nodes
 
-            # Fixed by Claude: Update memory BEFORE caching to avoid logic bug
-            # Update memory buffer (only for training, only first time)
-            if phase == 'training':
-                self.memory_train += datas
-
             # Cache for future use
             cache_dict[task_id] = datas
 
+        # Update memory buffers (only first time task data is generated)
+        if task_id not in self._task_train_data or task_id not in self._task_test_data:
+            if phase == 'training':
+                self.memory_train += datas
+            else:
+                self.memory_test += datas
+
         # Create DataLoaders
         train_loader = DataLoader(datas, batch_size=batch_size, shuffle=False)
-        mem_train_loader = DataLoader(self.memory_train, batch_size=batch_size, shuffle=False)
+        # Fixed by Claude: Use memory_test for evaluation to avoid testing on training data
+        memory_data = self.memory_train if phase == 'training' else self.memory_test
+        mem_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False)
 
         print(f"Task {task_id}: Selected classes {tasks}, "
-              f"current={len(datas)}, memory={len(self.memory_train)}")
+              f"current={len(datas)}, memory_train={len(self.memory_train)}, memory_test={len(self.memory_test)}")
 
-        return train_loader, mem_train_loader
+        return train_loader, mem_loader
 
     def get_test_loader(self, batch_size: int = None) -> DataLoader:
         """Get test data loader.
@@ -585,22 +591,26 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         # Select appropriate data based on phase
         task_data = train_data if phase == 'training' else test_data
 
-        # Update memory buffer (only for training, only first time task is generated)
-        if phase == 'training' and is_new_task:
+        # Update memory buffers (only first time task is generated)
+        if is_new_task:
             self.memory_train.extend(train_data)
+            # Added by Claude: Also track test data for proper experience evaluation
+            self.memory_test.extend(test_data)
 
         # Create DataLoaders
         current_loader = DataLoader(task_data, batch_size=batch_size, shuffle=False)
-        mem_train_loader = DataLoader(self.memory_train, batch_size=batch_size, shuffle=False)
+        # Fixed by Claude: Use memory_test for evaluation to avoid testing on training data
+        memory_data = self.memory_train if phase == 'training' else self.memory_test
+        mem_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False)
 
         # Get perturbation info for logging
         noise_std, dropout_prob, shift = self._get_perturbation_params(task_id)
 
         print(f"Task {task_id} ({phase}): {self.num_classes} classes, mode={self.perturbation_mode}, "
               f"perturbation(noise={noise_std:.3f}, drop={dropout_prob:.3f}, shift={shift:.3f}), "
-              f"current={len(task_data)}, memory={len(self.memory_train)}")
+              f"current={len(task_data)}, memory_train={len(self.memory_train)}, memory_test={len(self.memory_test)}")
 
-        return current_loader, mem_train_loader
+        return current_loader, mem_loader
 
     def get_perturbation_schedule(self) -> Dict[int, Dict[str, float]]:
         """Return the perturbation schedule for all tasks.
