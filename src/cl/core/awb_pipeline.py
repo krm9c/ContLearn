@@ -332,8 +332,19 @@ def run_awb_task(
 
                 # STEP 5: Train V with random initialization
                 print(f"\n[STEP 5] Train V (random init): warmup {ab_warmup_epochs} + main {epochs_per_task}")
-                from ..runners.generic_runner import create_optimizer
-                optim = create_optimizer(config)
+                from ..runners.generic_runner import create_optimizer, create_optimizer_with_lr
+
+                # V training optimizer setup (same as full AWB path)
+                base_lr = config.get('lr', 0.001)
+                v_training_lr = base_lr  # No scaling - use base LR directly
+
+                # Lower beta1 for faster adaptation (default Adam beta1=0.9, we use 0.5)
+                v_adam_beta1 = config.get('awb_v_adam_beta1', 0.5)
+                v_adam_beta2 = config.get('awb_v_adam_beta2', 0.999)
+
+                print(f"  [V-TRAIN] LR: {v_training_lr:.6f}, Adam beta1={v_adam_beta1}, beta2={v_adam_beta2}")
+
+                optim = create_optimizer_with_lr(config, v_training_lr, beta1=v_adam_beta1, beta2=v_adam_beta2)
                 opt_state = optim.init(params)
 
             else:
@@ -435,14 +446,14 @@ def run_awb_task(
                     loss_exp = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_exp, y_e)))
                     print(f"  [DEBUG] Experience - AFTER (__call__): {loss_exp:.6f}")
 
+                    # DEBUG: Print weight shapes after compute_V (GCN-specific)
+                    print(f"  [DEBUG] Weight shapes after compute_V:")
+                    print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
+                    print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
+                    print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
+
                 # STEP 5: Train V
                 print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
-
-                # DEBUG: Print weight shapes after compute_V
-                print(f"  [DEBUG] Weight shapes after compute_V:")
-                print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
-                print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
-                print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
 
                 # V training optimizer setup
                 # Using base LR (no sqrt(expansion) scaling) and lower Adam beta1 for faster adaptation
