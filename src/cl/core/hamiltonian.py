@@ -366,10 +366,8 @@ def _hamiltonian_core_graph_standard(params, static, x, y, adj, b, n,
     # Compute delta_theta
     delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
 
-    # Compute wdot with scaling
-    def norm_param(g):
-        return g * (-1e-04 / jnp.sqrt(jnp.linalg.norm(g**2) + 1e-8))
-    wdot = jax.tree_util.tree_map(norm_param, delta_theta)
+    # Compute wdot (simple negation, same as MLP/CNN)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
     # Compute grad_V
@@ -415,9 +413,8 @@ def _hamiltonian_core_graph_awb(params, static, x, y, adj, b, n,
 
     delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
 
-    def norm_param(g):
-        return g * (-1e-04 / jnp.sqrt(jnp.linalg.norm(g**2) + 1e-8))
-    wdot = jax.tree_util.tree_map(norm_param, delta_theta)
+    # Compute wdot (simple negation, same as MLP/CNN)
+    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
     grad_V = jax.grad(loss_fn_exp)(params, exp_x, exp_adj)

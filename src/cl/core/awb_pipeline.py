@@ -390,21 +390,111 @@ def run_awb_task(
 
                 # STEP 4: Compute V
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")
+
+                # DEBUG: Verify loss BEFORE and AFTER compute_V
+                import jax.numpy as jnp
+                debug_batch = next(iter(trainloader))
+                if problem_type == 'graph':
+                    from ..core.loops import get_graph_transforms
+                    transforms = get_graph_transforms()
+                    debug_batch = transforms(debug_batch)
+                    x_d = jnp.asarray(debug_batch.x.numpy(), dtype=jnp.float64)
+                    y_d = jnp.asarray(debug_batch.y.numpy(), dtype=jnp.int64)
+                    adj_d = jnp.asarray(debug_batch.adj.numpy(), dtype=jnp.float64)
+                    b_d = jnp.asarray(debug_batch.batch.numpy())
+                    n_d = jnp.asarray(debug_batch.n_nodes.numpy())
+
+                    # BEFORE compute_V: loss with get_AWBT
+                    pred_before = model.get_AWBT(x_d, adj_d, b_d, n_d)
+                    loss_before = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_before, y_d)))
+                    print(f"  [DEBUG] Loss BEFORE compute_V (get_AWBT): {loss_before:.6f}")
+
                 model = awb_ops.compute_V(model)
                 params, static = awb_ops.partition_for_standard_training(model)
 
+                if problem_type == 'graph':
+                    model_debug = eqx.combine(params, static)
+                    # AFTER compute_V: loss with standard __call__
+                    pred_after = model_debug(x_d, adj_d, b_d, n_d)
+                    loss_after = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_after, y_d)))
+                    print(f"  [DEBUG] Current task - BEFORE (get_AWBT): {loss_before:.6f}")
+                    print(f"  [DEBUG] Current task - AFTER (__call__): {loss_after:.6f}")
+                    print(f"  [DEBUG] Current task - Difference: {abs(loss_before - loss_after):.10f}")
+
+                    # Also check EXPERIENCE data
+                    exp_batch = next(iter(exploader))
+                    exp_batch = transforms(exp_batch)
+                    x_e = jnp.asarray(exp_batch.x.numpy(), dtype=jnp.float64)
+                    y_e = jnp.asarray(exp_batch.y.numpy(), dtype=jnp.int64)
+                    adj_e = jnp.asarray(exp_batch.adj.numpy(), dtype=jnp.float64)
+                    b_e = jnp.asarray(exp_batch.batch.numpy())
+                    n_e = jnp.asarray(exp_batch.n_nodes.numpy())
+
+                    # Experience loss AFTER compute_V
+                    pred_exp = model_debug(x_e, adj_e, b_e, n_e)
+                    loss_exp = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_exp, y_e)))
+                    print(f"  [DEBUG] Experience - AFTER (__call__): {loss_exp:.6f}")
+
                 # STEP 5: Train V
                 print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
-                from ..runners.generic_runner import create_optimizer
-                optim = create_optimizer(config)
+
+                # DEBUG: Print weight shapes after compute_V
+                print(f"  [DEBUG] Weight shapes after compute_V:")
+                print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
+                print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
+                print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
+
+                # Added by Claude: Compute LR reduction for V training based on parameter expansion
+                # The issue: First gradient step causes loss explosion (0.93→53.14) because
+                # V weights exist in a low-rank subspace and gradients point away from it.
+                # Solution: Reduce LR proportionally to sqrt(param_expansion) for V warmup.
+                import jax.tree_util
+                param_leaves = jax.tree_util.tree_leaves(params)
+                new_param_count = sum(p.size for p in param_leaves)
+
+                # Get V training LR reduction factor from config (default: auto-compute from expansion)
+                v_lr_factor = config.get('awb_v_lr_factor', None)
+                if v_lr_factor is None:
+                    # Auto-compute based on expansion ratio
+                    # Use original param count from architecture before search
+                    orig_gcn_sizes = [model_debug.gcn_sizes[0]] + [32] * (len(model_debug.gcn_sizes) - 1)  # Rough estimate
+                    orig_feed_sizes = [32, 32, 16, model_debug.feed_sizes[-1]]
+                    # Better: use the saved original sizes
+                    orig_param_count = sum(
+                        orig_gcn_sizes[i] * orig_gcn_sizes[i+1] + orig_gcn_sizes[i+1]
+                        for i in range(len(orig_gcn_sizes)-1)
+                    ) + sum(
+                        orig_feed_sizes[i] * orig_feed_sizes[i+1] + orig_feed_sizes[i+1]
+                        for i in range(len(orig_feed_sizes)-1)
+                    )
+                    expansion_ratio = new_param_count / max(orig_param_count, 1)
+                    # Use 1/sqrt(expansion) as the LR factor (inspired by Xavier scaling)
+                    import math
+                    v_lr_factor = 1.0 / math.sqrt(expansion_ratio)
+                    v_lr_factor = max(v_lr_factor, 0.01)  # Minimum 1% of original LR
+                    print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
+                    print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
+                else:
+                    print(f"  [V-TRAIN] Using config LR factor: {v_lr_factor}")
+
+                # Create optimizer with reduced LR for V training
+                from ..runners.generic_runner import create_optimizer, create_optimizer_with_lr
+                base_lr = config.get('lr', 0.001)
+                v_training_lr = base_lr * v_lr_factor
+                print(f"  [V-TRAIN] Base LR: {base_lr}, V training LR: {v_training_lr:.6f}")
+
+                optim = create_optimizer_with_lr(config, v_training_lr)
                 opt_state = optim.init(params)
+
+            # Added by Claude: Create V training config with reduced LR for diagnostics
+            v_train_config = {**config, 'lr': v_training_lr}
 
             if ab_warmup_epochs > 0:
                 params, static, opt_state, record_dict = trainer.train__CL(
                     train__=(trainloader, exploader, valloader, testloader),
                     params=params, static=static, opt_state=opt_state, optim=optim,
                     n_iter=ab_warmup_epochs, save_iter=save_iter,
-                    task_id=task_id, config=config, record_dict=record_dict,
+                    task_id=task_id, config=v_train_config, record_dict=record_dict,
                     problem_type=problem_type, loss_type=loss_type,
                     phase='warmup', record_training=False,
                     global_iteration_offset=task_id * epochs_per_task
@@ -414,7 +504,7 @@ def run_awb_task(
                 train__=(trainloader, exploader, valloader, testloader),
                 params=params, static=static, opt_state=opt_state, optim=optim,
                 n_iter=epochs_per_task, save_iter=save_iter,
-                task_id=task_id, config=config, record_dict=record_dict,
+                task_id=task_id, config=v_train_config, record_dict=record_dict,
                 problem_type=problem_type, loss_type=loss_type,
                 phase='main', record_training=True,
                 global_iteration_offset=task_id * epochs_per_task
