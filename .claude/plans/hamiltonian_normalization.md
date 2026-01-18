@@ -1,5 +1,26 @@
 # Plan: Implement Consistent Hamiltonian Component Normalization
 
+## ⚠️ LAST KNOWN WORKING COMMIT
+
+**If anything breaks, revert to this commit:**
+
+```bash
+git checkout 300cb01ae68f8f7bb49470ed2493d7196885094b
+```
+
+| Commit | Hash | Description |
+|--------|------|-------------|
+| **Last Working** | `300cb01ae68f8f7bb49470ed2493d7196885094b` | Before wdot fix - GCN uses `-1e-04` scaling, stable but dV regularization weak |
+| wdot fix | `ae1821f` | GCN wdot changed to `-1` (matches MLP/CNN), dV_dθ now large |
+| This plan | `cf56396` | Added this normalization plan |
+
+**To fully revert all changes:**
+```bash
+git reset --hard 300cb01ae68f8f7bb49470ed2493d7196885094b
+```
+
+---
+
 ## Background and Motivation
 
 ### The Problem
@@ -231,9 +252,22 @@ python run.py runs__/configs/cifar_cnn.json
 ## Rollback Plan
 
 If normalization causes issues:
-1. The wdot fix (commit ae1821f) can remain - it's correct
-2. Revert only the normalization changes
-3. Consider alternative: use grad_weights to scale down dV contribution
+
+### Option 1: Revert only normalization (keep wdot fix)
+```bash
+# Revert specific commits but keep wdot fix
+git revert <normalization-commit-hash>
+```
+
+### Option 2: Full revert to last known working state
+```bash
+# Go back to commit before ANY changes (GCN uses -1e-04 scaling)
+git reset --hard 300cb01ae68f8f7bb49470ed2493d7196885094b
+```
+
+### Option 3: Keep wdot fix, use grad_weights instead
+- Set `grad_weights = [0.5, 0.5, 0.0]` (γ=0) to disable dV contribution
+- dV_dθ still computed for logging but doesn't affect training
 
 ---
 
