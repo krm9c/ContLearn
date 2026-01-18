@@ -37,6 +37,41 @@ DEFAULT_GRAD_WEIGHTS = [0.01, 0.98, 0.1]
 
 
 # =============================================================================
+# Normalization Helper Functions (Added for consistent Hamiltonian scaling)
+# =============================================================================
+# These functions normalize velocity components to unit magnitude, making
+# dV components measure directional alignment (like cosine similarity) rather
+# than raw magnitudes. This ensures comparable scales across dV_dθ, dV_dx, dV_dadj.
+
+def _tree_norm(tree):
+    """Compute L2 norm of a pytree.
+
+    Args:
+        tree: PyTree of JAX arrays
+
+    Returns:
+        Scalar L2 norm across all leaves
+    """
+    leaves = jax.tree_util.tree_leaves(tree)
+    return jnp.sqrt(sum(jnp.sum(leaf ** 2) for leaf in leaves))
+
+
+def _normalize_tree(tree, eps=1e-8):
+    """Normalize a pytree to unit L2 norm.
+
+    Args:
+        tree: PyTree of JAX arrays
+        eps: Small constant for numerical stability
+
+    Returns:
+        Tuple of (normalized_tree, original_norm)
+    """
+    norm = _tree_norm(tree)
+    normalized = jax.tree_util.tree_map(lambda x: x / (norm + eps), tree)
+    return normalized, norm
+
+
+# =============================================================================
 # JIT-Compiled Loss Functions (Step 1)
 # =============================================================================
 # These are pure JAX functions that can be efficiently JIT-compiled.
@@ -183,25 +218,40 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
     # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x)
 
-    # Compute wdot (negative gradient direction for perturbation)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    # Normalize wdot to unit magnitude (direction only)
+    # This makes dV_dθ measure alignment (like cosine similarity) rather than raw magnitude
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
 
     # Compute grad_V (gradient on experience data)
     grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    grad_V_norm = _tree_norm(grad_V)
 
     # Linearize at experience data for directional derivatives
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
 
-    # Compute directional derivatives
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
-    grad_dV = jax.grad(f_jvp)(wdot, deltax)
-    dV_raw = f_jvp(wdot, deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized)
 
-    # Normalize dV values
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    # dV_dtheta_raw = ∇V · wdot_normalized = ||∇V|| × cos(angle)
+    # So dV_dtheta = cos(angle between ∇V and -δθ)
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    # For dV_dx, use V as scaling factor (relative sensitivity to input shifts)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx
 
     # Combine gradients: grad = alpha * delta_theta + beta * grad_V + gamma * grad_dV
     grad = jax.tree_util.tree_map(
@@ -240,20 +290,36 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
             pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
 
+    # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+
+    # Normalize wdot to unit magnitude (direction only)
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
+
     grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    grad_V_norm = _tree_norm(grad_V)
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
 
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
-    grad_dV = jax.grad(f_jvp)(wdot, deltax)
-    dV_raw = f_jvp(wdot, deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized)
 
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx
 
     grad = jax.tree_util.tree_map(
         lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
@@ -278,20 +344,36 @@ def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
         pred = jax.vmap(model)(xx)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
+    # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+
+    # Normalize wdot to unit magnitude (direction only)
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
+
     grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    grad_V_norm = _tree_norm(grad_V)
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
 
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
-    grad_dV = jax.grad(f_jvp)(wdot, deltax)
-    dV_raw = f_jvp(wdot, deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized)
 
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx
 
     grad = jax.tree_util.tree_map(
         lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
@@ -324,20 +406,36 @@ def _hamiltonian_core_class_awb(params, static, x, y, exp_x, exp_y, deltax,
         pred = jax.vmap(model.get_AWBT)(xx)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
+    # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+
+    # Normalize wdot to unit magnitude (direction only)
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
+
     grad_V = jax.grad(loss_fn_exp)(params, exp_x)
+    grad_V_norm = _tree_norm(grad_V)
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x)
 
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
-    grad_dV = jax.grad(f_jvp)(wdot, deltax)
-    dV_raw = f_jvp(wdot, deltax)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized)
 
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx
 
     grad = jax.tree_util.tree_map(
         lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
@@ -363,29 +461,49 @@ def _hamiltonian_core_graph_standard(params, static, x, y, adj, b, n,
         pred = model(xx, xxadj, exp_b, exp_n)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
-    # Compute delta_theta
+    # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
 
-    # Compute wdot (simple negation, same as MLP/CNN)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    # Normalize wdot to unit magnitude (direction only)
+    # This makes dV_dθ measure alignment (like cosine similarity) rather than raw magnitude
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
+
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
+
+    # Normalize delta_adj to unit magnitude
+    delta_adj_norm = jnp.linalg.norm(delta_adj)
+    delta_adj_normalized = delta_adj / (delta_adj_norm + 1e-8)
 
     # Compute grad_V
     grad_V = jax.grad(loss_fn_exp)(params, exp_x, exp_adj)
+    grad_V_norm = _tree_norm(grad_V)
 
     # Linearize
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x, exp_adj)
 
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
     zero_dadj = jnp.zeros_like(delta_adj)
 
-    grad_dV = jax.grad(f_jvp)(wdot, deltax, delta_adj)
-    dV_raw = f_jvp(wdot, deltax, delta_adj)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized, delta_adj_normalized)
 
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx, zero_dadj) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax, zero_dadj) / sqrt_param_count) * dV_scale
-    dV_dadj = (f_jvp(zero_dtheta, zero_dx, delta_adj) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx, zero_dadj)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized, zero_dadj)
+    dV_dadj_raw = f_jvp(zero_dtheta, zero_dx, delta_adj_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw + dV_dadj_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    # dV_dtheta_raw = ∇V · wdot_normalized = ||∇V|| × cos(angle)
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV_dadj = dV_dadj_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx + dV_dadj
 
     grad = jax.tree_util.tree_map(
         lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
@@ -411,25 +529,44 @@ def _hamiltonian_core_graph_awb(params, static, x, y, adj, b, n,
         pred = model.get_AWBT(xx, xxadj, exp_b, exp_n)
         return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred, exp_y))
 
+    # Compute delta_theta (gradient on current task)
     delta_theta = jax.grad(loss_fn_curr)(params, x, adj)
 
-    # Compute wdot (simple negation, same as MLP/CNN)
-    wdot = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    # Normalize wdot to unit magnitude (direction only)
+    wdot_unnorm = jax.tree_util.tree_map(lambda g: -g, delta_theta)
+    wdot, wdot_norm = _normalize_tree(wdot_unnorm)
     zero_dtheta = jax.tree_util.tree_map(jnp.zeros_like, delta_theta)
 
+    # Normalize deltax to unit magnitude
+    deltax_norm = jnp.linalg.norm(deltax)
+    deltax_normalized = deltax / (deltax_norm + 1e-8)
+
+    # Normalize delta_adj to unit magnitude
+    delta_adj_norm = jnp.linalg.norm(delta_adj)
+    delta_adj_normalized = delta_adj / (delta_adj_norm + 1e-8)
+
     grad_V = jax.grad(loss_fn_exp)(params, exp_x, exp_adj)
+    grad_V_norm = _tree_norm(grad_V)
     V, f_jvp = jax.linearize(loss_fn_exp, params, exp_x, exp_adj)
 
+    # Compute directional derivatives with normalized velocities
     zero_dx = jnp.zeros_like(deltax)
     zero_dadj = jnp.zeros_like(delta_adj)
 
-    grad_dV = jax.grad(f_jvp)(wdot, deltax, delta_adj)
-    dV_raw = f_jvp(wdot, deltax, delta_adj)
+    grad_dV = jax.grad(f_jvp)(wdot, deltax_normalized, delta_adj_normalized)
 
-    dV = (dV_raw / sqrt_param_count) * dV_scale
-    dV_dtheta = (f_jvp(wdot, zero_dx, zero_dadj) / sqrt_param_count) * dV_scale
-    dV_dx = (f_jvp(zero_dtheta, deltax, zero_dadj) / sqrt_param_count) * dV_scale
-    dV_dadj = (f_jvp(zero_dtheta, zero_dx, delta_adj) / sqrt_param_count) * dV_scale
+    # Compute raw directional derivatives
+    dV_dtheta_raw = f_jvp(wdot, zero_dx, zero_dadj)
+    dV_dx_raw = f_jvp(zero_dtheta, deltax_normalized, zero_dadj)
+    dV_dadj_raw = f_jvp(zero_dtheta, zero_dx, delta_adj_normalized)
+    dV_raw = dV_dtheta_raw + dV_dx_raw + dV_dadj_raw
+
+    # Normalize dV_dtheta by ||grad_V|| to get true cosine similarity ∈ [-1, 1]
+    eps = 1e-8
+    dV_dtheta = dV_dtheta_raw / (grad_V_norm + eps)
+    dV_dx = dV_dx_raw / (jnp.abs(V) + eps)
+    dV_dadj = dV_dadj_raw / (jnp.abs(V) + eps)
+    dV = dV_dtheta + dV_dx + dV_dadj
 
     grad = jax.tree_util.tree_map(
         lambda dt, gv, gdv: alpha * dt + beta * gv + gamma * gdv,
