@@ -271,8 +271,8 @@ def update_learning_rate(opt_state, new_lr: float):
     return opt_state
 
 
-def create_optimizer_with_lr(config: dict, lr: float):
-    """Create optimizer with a specific learning rate.
+def create_optimizer_with_lr(config: dict, lr: float, beta1: float = None, beta2: float = None):
+    """Create optimizer with a specific learning rate and optional Adam betas.
 
     Added by Claude: Used for AWB Step 5 warmup where we want to start with
     a lower learning rate to reduce the loss spike after V transformation.
@@ -280,6 +280,9 @@ def create_optimizer_with_lr(config: dict, lr: float):
     Args:
         config: Configuration dict with optimizer settings
         lr: Specific learning rate to use (overrides config['lr'])
+        beta1: Optional Adam beta1 (momentum). Lower values (e.g., 0.5) mean faster
+               adaptation to new gradients. Default: 0.9
+        beta2: Optional Adam beta2 (RMSprop-like). Default: 0.999
 
     Returns:
         Optax optimizer with injectable hyperparameters
@@ -288,12 +291,16 @@ def create_optimizer_with_lr(config: dict, lr: float):
     weight_decay = config.get('weight_decay', DEFAULT_WEIGHT_DECAY)
     momentum = config.get('momentum', 0.99)
 
+    # Adam beta defaults
+    b1 = beta1 if beta1 is not None else config.get('adam_beta1', 0.9)
+    b2 = beta2 if beta2 is not None else config.get('adam_beta2', 0.999)
+
     if optimizer_name == 'adam':
         base_optimizer = optax.inject_hyperparams(optax.adam)
-        return base_optimizer(learning_rate=lr)
+        return base_optimizer(learning_rate=lr, b1=b1, b2=b2)
     elif optimizer_name == 'adamw':
         base_optimizer = optax.inject_hyperparams(optax.adamw)
-        return base_optimizer(learning_rate=lr, weight_decay=weight_decay)
+        return base_optimizer(learning_rate=lr, weight_decay=weight_decay, b1=b1, b2=b2)
     elif optimizer_name == 'sgd':
         base_optimizer = optax.inject_hyperparams(optax.sgd)
         return base_optimizer(learning_rate=lr, momentum=momentum)

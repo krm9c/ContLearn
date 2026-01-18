@@ -1,0 +1,41 @@
+{
+    "_comment": "Minimal synthetic graph CL - fast baseline",
+    "_comment2": "Uses TaskShiftGraphDataset with domain shift (not class-incremental)",
+    "prob": "classification",
+    "problem": "graph",
+    "data": "synthetic_taskshift",
+    "network": "gcn",
+    "loss": "class",
+    "metric": "class",
+
+    "n_task": 3,
+    "epochs_per_task": 30,
+    "batch_size": 32,
+    "save_iter": 5,
+    "eval_interval": 5,
+    "log_interval": 5,
+    "lr": 0.005,
+    "optimizer": "adam",
+
+    "gcn_sizes": [10, 32, 32],
+    "feed_sizes": [32, 32, 16, 5],
+    "n_class": 5,
+
+    "num_graphs": 500,
+    "num_channels": 10,
+    "avg_num_nodes": 15,
+    "num_classes": 5,
+    "train_test_split": 0.8,
+
+    "perturbation_mode": "linear",
+    "feature_noise_base": 0.02,
+    "edge_dropout_base": 0.01,
+    "feature_shift_base": 0.01,
+
+    "awb_enabled": false,
+    "task_warmup_enabled": false,
+    "grad_weights": [0.5, 0.5, 0.0],
+    "use_jax_prefetch": false,
+
+    "model_path": "outputs/synthetic_graph_minimal_baseline"
+}

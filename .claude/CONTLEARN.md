@@ -116,6 +116,25 @@ All models (MLP, CNN, CNN3D, GCN) follow the same pattern:
 - JAX async prefetch: `use_jax_prefetch=true` (default, see profiling_context.md)
 - Base class: `BaseDataset` in `datasets/base.py`
 
+### Data Leakage Fixes (Graph Datasets)
+
+**Problem**: `Te/Exp=1.0000` (100% experience accuracy) indicates data leakage.
+
+**Root Cause**: Experience evaluation was using `memory_train` (training data the model memorized) instead of held-out test data.
+
+**Fix Applied** (`src/cl/datasets/synthetic_graph.py`):
+- Added separate `memory_test` buffer alongside `memory_train`
+- Training phase: returns `memory_train` for experience replay
+- Testing phase: returns `memory_test` for proper Te/Exp evaluation
+
+**Symptom to watch for**:
+```
+Te/Cur=0.48 Te/Exp=1.00  # BAD: Te/Exp should NOT be 100%
+Te/Cur=0.48 Te/Exp=0.72  # GOOD: Te/Exp reflects true generalization
+```
+
+**Note**: MNIST/CIFAR datasets have a similar issue with `np.random.randint` sampling (creates train/test overlap). Use `sklearn.model_selection.train_test_split` instead.
+
 ---
 
 ## Key Config Parameters

@@ -138,9 +138,13 @@ class BaseGraphDataset(ABC):
         n_class = self.config.get('n_class', self.num_classes)
         select = self.config.get('class_per_task', 2)
 
-        # DEBUG: All tasks see all classes (no forgetting test) - REMOVE AFTER DEBUG
-        tasks = np.arange(n_class)
-        print(f"[DEBUG] Task {task_id}: Using ALL {n_class} classes")
+        # Fixed by Claude: Restore proper task-based class selection
+        # Use persistent mapping to ensure reproducibility across CL evaluation
+        if task_id not in self._task_class_mapping:
+            # Generate deterministic class selection for this task
+            rng = np.random.RandomState(task_id * 1000)
+            self._task_class_mapping[task_id] = rng.choice(n_class, select, replace=False)
+        tasks = self._task_class_mapping[task_id]
 
         # Choose data source based on phase
         source_data = self.train_data if phase == 'training' else self.test_data
@@ -481,10 +485,14 @@ class TaskShiftGraphDataset(BaseGraphDataset):
     def _apply_task_perturbation(self, data_list: List, task_id: int, seed: int = None) -> List:
         """Apply task-specific perturbations to graph data.
 
+        Uses per-graph deterministic seeding so that the same graph always gets
+        the same perturbation pattern regardless of whether it's in train or test.
+        This fixes the train/test generalization gap caused by different random seeds.
+
         Args:
             data_list: List of graph data objects
             task_id: Current task ID (0 = no perturbation)
-            seed: Random seed for reproducibility
+            seed: Base random seed (combined with graph index for per-graph seeding)
 
         Returns:
             List of perturbed graph data objects
@@ -492,9 +500,7 @@ class TaskShiftGraphDataset(BaseGraphDataset):
         import copy
         import torch
 
-        if seed is not None:
-            np.random.seed(seed + task_id)
-            torch.manual_seed(seed + task_id)
+        base_seed = seed if seed is not None else DEFAULT_GRAPH_SEED
 
         # Get perturbation parameters based on mode
         feature_noise_std, edge_dropout_prob, feature_shift = self._get_perturbation_params(task_id)
@@ -504,9 +510,15 @@ class TaskShiftGraphDataset(BaseGraphDataset):
             return [copy.deepcopy(d) for d in data_list]
 
         perturbed_list = []
-        for data in data_list:
+        for graph_idx, data in enumerate(data_list):
             # Deep copy to avoid modifying original
             new_data = copy.deepcopy(data)
+
+            # Per-graph deterministic seed: combines base_seed, task_id, and graph_idx
+            # This ensures the same graph gets the same perturbation in train and test
+            graph_seed = base_seed + task_id * 10000 + graph_idx
+            torch.manual_seed(graph_seed)
+            np.random.seed(graph_seed)
 
             # 1. Add feature noise: x' = x + N(0, σ²)
             if feature_noise_std > 0:

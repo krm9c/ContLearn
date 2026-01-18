@@ -45,10 +45,11 @@ def get_graph_transforms():
     if _GRAPH_TRANSFORMS is None:
         import torch_geometric.transforms as T
 
+        # Fixed by Claude: Removed T.NormalizeFeatures() which was destroying the
+        # class-feature correlation in FakeDataset (correlation dropped from 0.998 to -0.135)
         _GRAPH_TRANSFORMS = T.Compose([
             T.GCNNorm(),
-            T.ToDense(),
-            T.NormalizeFeatures()
+            T.ToDense()
         ])
     return _GRAPH_TRANSFORMS
 
@@ -89,7 +90,8 @@ class TrainingLoopsMixin:
         clip_coef = jnp.minimum(clip_coef, 1.0)
 
         # Apply clipping
-        clipped_grads = jax.tree_map(lambda g: g * clip_coef, grads)
+        # Added by Claude: Use jax.tree.map (jax.tree_map removed in JAX v0.6.0)
+        clipped_grads = jax.tree.map(lambda g: g * clip_coef, grads)
         was_clipped = global_norm > max_norm
 
         return clipped_grads, global_norm, was_clipped
@@ -537,8 +539,33 @@ class TrainingLoopsMixin:
                 # Added by Claude: Apply gradient clipping if enabled
                 grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
+                # Added by Claude: Epoch 0 diagnostic logging for AWB loss jump debugging
+                if epoch == 0 and batch_idx == 0 and phase in ['warmup', 'main']:
+                    print(f"\n[EPOCH 0 DIAGNOSTIC] Phase={phase}")
+                    print(f"  Loss BEFORE first update: V={V:.6f}, H={H:.6f}")
+                    print(f"  Gradient norm (pre-clip): {grad_norm:.2f}, clipped: {was_clipped}")
+                    clip_norm = gradient_clip_norm if gradient_clip_norm else float('inf')
+                    effective_grad_norm = min(grad_norm, clip_norm)
+                    print(f"  Effective gradient norm: {effective_grad_norm:.2f}")
+                    # Count parameters
+                    param_leaves = jax.tree_util.tree_leaves(params)
+                    param_count = sum(p.size for p in param_leaves)
+                    print(f"  Parameter count: {param_count:,}")
+                    print(f"  Learning rate: {config.get('lr', 0.001)}")
+
                 # Update parameters (using JIT-compiled optimizer step)
                 params, opt_state = optimizer_step(grad, opt_state, params)
+
+                # Added by Claude: Log loss AFTER first update for comparison
+                if epoch == 0 and batch_idx == 0 and phase in ['warmup', 'main'] and problem_type == 'graph':
+                    # Recompute loss after update to see the effect of first gradient step
+                    _, losses_after = hamiltonian_fn(params, data, notABTrain,
+                                                     grad_weights=grad_weights,
+                                                     normalize_dV=normalize_dV,
+                                                     dV_scale=dV_scale)
+                    V_after = losses_after[1]
+                    print(f"  Loss AFTER first update: V={V_after:.6f}")
+                    print(f"  Loss change: {V_after - V:+.6f} ({'increased' if V_after > V else 'decreased'})")
 
                 # Accumulate loss metrics
                 epoch_H.append(float(H))

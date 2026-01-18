@@ -444,46 +444,26 @@ def run_awb_task(
                 print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
                 print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
 
-                # Added by Claude: Compute LR reduction for V training based on parameter expansion
-                # The issue: First gradient step causes loss explosion (0.93→53.14) because
-                # V weights exist in a low-rank subspace and gradients point away from it.
-                # Solution: Reduce LR proportionally to sqrt(param_expansion) for V warmup.
+                # V training optimizer setup
+                # Using base LR (no sqrt(expansion) scaling) and lower Adam beta1 for faster adaptation
+                # Lower beta1 means less momentum from warmup phase, reducing oscillation at transitions
+                from ..runners.generic_runner import create_optimizer, create_optimizer_with_lr
                 import jax.tree_util
                 param_leaves = jax.tree_util.tree_leaves(params)
                 new_param_count = sum(p.size for p in param_leaves)
 
-                # Get V training LR reduction factor from config (default: auto-compute from expansion)
-                v_lr_factor = config.get('awb_v_lr_factor', None)
-                if v_lr_factor is None:
-                    # Auto-compute based on expansion ratio
-                    # Use original param count from architecture before search
-                    orig_gcn_sizes = [model_debug.gcn_sizes[0]] + [32] * (len(model_debug.gcn_sizes) - 1)  # Rough estimate
-                    orig_feed_sizes = [32, 32, 16, model_debug.feed_sizes[-1]]
-                    # Better: use the saved original sizes
-                    orig_param_count = sum(
-                        orig_gcn_sizes[i] * orig_gcn_sizes[i+1] + orig_gcn_sizes[i+1]
-                        for i in range(len(orig_gcn_sizes)-1)
-                    ) + sum(
-                        orig_feed_sizes[i] * orig_feed_sizes[i+1] + orig_feed_sizes[i+1]
-                        for i in range(len(orig_feed_sizes)-1)
-                    )
-                    expansion_ratio = new_param_count / max(orig_param_count, 1)
-                    # Use 1/sqrt(expansion) as the LR factor (inspired by Xavier scaling)
-                    import math
-                    v_lr_factor = 1.0 / math.sqrt(expansion_ratio)
-                    v_lr_factor = max(v_lr_factor, 0.01)  # Minimum 1% of original LR
-                    print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
-                    print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
-                else:
-                    print(f"  [V-TRAIN] Using config LR factor: {v_lr_factor}")
-
-                # Create optimizer with reduced LR for V training
-                from ..runners.generic_runner import create_optimizer, create_optimizer_with_lr
                 base_lr = config.get('lr', 0.001)
-                v_training_lr = base_lr * v_lr_factor
-                print(f"  [V-TRAIN] Base LR: {base_lr}, V training LR: {v_training_lr:.6f}")
+                v_training_lr = base_lr  # No scaling - use base LR directly
 
-                optim = create_optimizer_with_lr(config, v_training_lr)
+                # Lower beta1 for faster adaptation (default Adam beta1=0.9, we use 0.5)
+                v_adam_beta1 = config.get('awb_v_adam_beta1', 0.5)
+                v_adam_beta2 = config.get('awb_v_adam_beta2', 0.999)
+
+                print(f"  [V-TRAIN] Parameters: {new_param_count:,}")
+                print(f"  [V-TRAIN] LR: {v_training_lr:.6f} (no expansion scaling)")
+                print(f"  [V-TRAIN] Adam beta1={v_adam_beta1}, beta2={v_adam_beta2}")
+
+                optim = create_optimizer_with_lr(config, v_training_lr, beta1=v_adam_beta1, beta2=v_adam_beta2)
                 opt_state = optim.init(params)
 
             # Added by Claude: Create V training config with reduced LR for diagnostics

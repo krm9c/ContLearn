@@ -580,7 +580,20 @@ class GCNAWBOps:
 
     def search_architecture(self, model, task_id, baseline_loss, dataloader_curr,
                            dataloader_exp, test_loader_curr, test_loader_exp, config, trainer=None):
-        """Search for optimal GCN architecture."""
+        """Search for optimal GCN architecture.
+
+        Added by Claude: Supports awb_predetermined_arch config to bypass search for debugging.
+        Format: awb_predetermined_arch = {task_id: {"gcn_sizes": [...], "feed_sizes": [...]}}
+        """
+        # Added by Claude: Check for predetermined architecture (bypasses search for debugging)
+        predetermined_archs = config.get('awb_predetermined_arch', {})
+        if str(task_id) in predetermined_archs or task_id in predetermined_archs:
+            arch_config = predetermined_archs.get(str(task_id)) or predetermined_archs.get(task_id)
+            new_arch = (arch_config['gcn_sizes'], arch_config['feed_sizes'])
+            print(f"  [GCN] Using PREDETERMINED architecture (search bypassed)")
+            print(f"  Predetermined arch: GCN={new_arch[0]}, Feed={new_arch[1]}")
+            return new_arch
+
         from ..core.arch_search import search_architecture
         # Extract current architecture
         baseline_arch = (list(model.gcn_sizes), list(model.feed_sizes))

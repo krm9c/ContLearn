@@ -8,5 +8,6 @@
       "Bash(python:*)",
       "Bash(git commit:*)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }

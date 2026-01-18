@@ -135,15 +135,37 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     if feed_changed and gcn_changed:
         print("New feed AND gcn!!!------------------")
         # Both changed: need transformation matrices for all
-        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
-        A_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(actual_feed_sizes[:-1], opt_feed_sizes[:-1])]
-        B_feed = [initializer(jax.random.PRNGKey(5), (y, x))
-                  for x, y in zip(actual_feed_sizes[1:], opt_feed_sizes[1:])]
-        A_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(actual_gcn_sizes[:-1], opt_gcn_sizes[:-1])]
-        B_gcn = [initializer(jax.random.PRNGKey(5), (y, x))
-                 for x, y in zip(actual_gcn_sizes[1:], opt_gcn_sizes[1:])]
+        # Fixed by Claude: Handle architecture expansion - create matrices for ALL new layers
+        # For existing layers: transform from old → new dimensions
+        # For new layers (no old weights): use identity matrices
+
+        num_new_feed_layers = len(opt_feed_sizes) - 1  # Number of feed layers in new architecture
+        num_old_feed_layers = len(actual_feed_sizes) - 1  # Number of feed layers in old architecture
+
+        A_feed = []
+        B_feed = []
+        for i in range(num_new_feed_layers):
+            if i < num_old_feed_layers:
+                # Existing layer: create transformation matrix
+                A_feed.append(initializer(jax.random.PRNGKey(5 + i), (opt_feed_sizes[i], actual_feed_sizes[i])))
+                B_feed.append(initializer(jax.random.PRNGKey(6 + i), (opt_feed_sizes[i + 1], actual_feed_sizes[i + 1])))
+            else:
+                # New layer: use identity (no old weights to transform)
+                A_feed.append(jnp.eye(opt_feed_sizes[i], opt_feed_sizes[i]))
+                B_feed.append(jnp.eye(opt_feed_sizes[i + 1], opt_feed_sizes[i + 1]))
+
+        num_new_gcn_layers = len(opt_gcn_sizes) - 1
+        num_old_gcn_layers = len(actual_gcn_sizes) - 1
+
+        A_gcn = []
+        B_gcn = []
+        for i in range(num_new_gcn_layers):
+            if i < num_old_gcn_layers:
+                A_gcn.append(initializer(jax.random.PRNGKey(7 + i), (opt_gcn_sizes[i], actual_gcn_sizes[i])))
+                B_gcn.append(initializer(jax.random.PRNGKey(8 + i), (opt_gcn_sizes[i + 1], actual_gcn_sizes[i + 1])))
+            else:
+                A_gcn.append(jnp.eye(opt_gcn_sizes[i], opt_gcn_sizes[i]))
+                B_gcn.append(jnp.eye(opt_gcn_sizes[i + 1], opt_gcn_sizes[i + 1]))
 
     elif feed_changed and not gcn_changed:
         print("New FEED ONLY!!!------------------")
