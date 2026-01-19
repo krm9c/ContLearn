@@ -1,0 +1,119 @@
+{
+  "total_time": 3.652143955230713,
+  "total_candidates": 8,
+  "phase_totals": {
+    "model_creation": 1.5149755477905273,
+    "weight_init": 0.01144552230834961,
+    "partitioning": 0.0014653205871582031,
+    "jit_compilation": 0.521207332611084,
+    "training": 0.8737106323242188,
+    "optimizer_init": 0.37174010276794434
+  },
+  "gpu_samples": [],
+  "per_candidate_summary": [
+    {
+      "iteration": 0,
+      "candidate": 0,
+      "arch": [
+        1,
+        90,
+        90,
+        90,
+        1
+      ],
+      "jit_time_ms": 0.949859619140625,
+      "training_time_ms": 80.19781112670898
+    },
+    {
+      "iteration": 0,
+      "candidate": 1,
+      "arch": [
+        1,
+        105,
+        105,
+        105,
+        1
+      ],
+      "jit_time_ms": 1.0209083557128906,
+      "training_time_ms": 103.97219657897949
+    },
+    {
+      "iteration": 0,
+      "candidate": 2,
+      "arch": [
+        1,
+        120,
+        120,
+        120,
+        1
+      ],
+      "jit_time_ms": 1.0499954223632812,
+      "training_time_ms": 88.60993385314941
+    },
+    {
+      "iteration": 0,
+      "candidate": 3,
+      "arch": [
+        1,
+        135,
+        135,
+        135,
+        1
+      ],
+      "jit_time_ms": 0.9973049163818359,
+      "training_time_ms": 97.98097610473633
+    },
+    {
+      "iteration": 1,
+      "candidate": 0,
+      "arch": [
+        1,
+        150,
+        150,
+        150,
+        1
+      ],
+      "jit_time_ms": 129.34303283691406,
+      "training_time_ms": 112.56194114685059
+    },
+    {
+      "iteration": 1,
+      "candidate": 1,
+      "arch": [
+        1,
+        165,
+        165,
+        165,
+        1
+      ],
+      "jit_time_ms": 130.13815879821777,
+      "training_time_ms": 117.4020767211914
+    },
+    {
+      "iteration": 1,
+      "candidate": 2,
+      "arch": [
+        1,
+        180,
+        180,
+        180,
+        1
+      ],
+      "jit_time_ms": 130.62810897827148,
+      "training_time_ms": 132.14683532714844
+    },
+    {
+      "iteration": 1,
+      "candidate": 3,
+      "arch": [
+        1,
+        195,
+        195,
+        195,
+        1
+      ],
+      "jit_time_ms": 127.07996368408203,
+      "training_time_ms": 140.8388614654541
+    }
+  ]
+}

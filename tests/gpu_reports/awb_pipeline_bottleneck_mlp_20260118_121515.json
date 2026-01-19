@@ -1,0 +1,209 @@
+{
+  "test_name": "awb_pipeline_bottleneck_mlp",
+  "timestamp": "20260118_121515",
+  "jax_backend": "cpu",
+  "jax_devices": [
+    "TFRT_CPU_0"
+  ],
+  "nvidia_smi_available": false,
+  "config": {
+    "n_task": 3,
+    "epochs_per_task": 20,
+    "batch_size": 64,
+    "lr": 0.0001,
+    "save_iter": 5,
+    "awb_enabled": true,
+    "awb_preliminary_epochs": 10,
+    "awb_ab_training_epochs": 10,
+    "awb_ab_warmup_epochs": 5,
+    "awb_ab_max_iterations": 3,
+    "awb_averaging_window": 5,
+    "flag": [
+      1.0,
+      1.0
+    ],
+    "grad_weights": [
+      0.01,
+      0.98,
+      0.1
+    ],
+    "problem": "vectors",
+    "network": "fcnn",
+    "data": "sine",
+    "arch_search_epochs": 10,
+    "arch_search_max_iter": 2
+  },
+  "total_time_seconds": 0.15641069412231445,
+  "phases": [
+    {
+      "name": "Standard CL Training (Task 0)",
+      "total_time_seconds": 0.03600001335144043,
+      "num_iterations": 50,
+      "time_per_iteration_ms": 0.7200002670288086,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.6161117553710938,
+      "optimizer_time_ms": 0.10331153869628906,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "Preliminary Training (Step 1)",
+      "total_time_seconds": 0.01384878158569336,
+      "num_iterations": 20,
+      "time_per_iteration_ms": 0.692439079284668,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.5918622016906738,
+      "optimizer_time_ms": 0.10040998458862305,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "Architecture Search (Step 3a)",
+      "total_time_seconds": 0.018252134323120117,
+      "num_iterations": 30,
+      "time_per_iteration_ms": 0.588067372639974,
+      "jit_compile_time_seconds": 0.0006101131439208984,
+      "execution_time_seconds": 0.01764202117919922,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.588067372639974,
+      "optimizer_time_ms": 0.0,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "A/B Training (Step 3b)",
+      "total_time_seconds": 0.014758825302124023,
+      "num_iterations": 20,
+      "time_per_iteration_ms": 0.7379412651062012,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.6288409233093262,
+      "optimizer_time_ms": 0.1088857650756836,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "V Transformation (Step 4)",
+      "total_time_seconds": 0.006957054138183594,
+      "num_iterations": 10,
+      "time_per_iteration_ms": 0.6259918212890625,
+      "jit_compile_time_seconds": 0.0006971359252929688,
+      "execution_time_seconds": 0.006259918212890625,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.0,
+      "optimizer_time_ms": 0.0,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "V Training (Step 5)",
+      "total_time_seconds": 0.03477907180786133,
+      "num_iterations": 50,
+      "time_per_iteration_ms": 0.6955814361572266,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.5925607681274414,
+      "optimizer_time_ms": 0.10264873504638672,
+      "data_transfer_time_ms": 0.0
+    },
+    {
+      "name": "Data Transfer (CPU\u2192GPU)",
+      "total_time_seconds": 0.00625300407409668,
+      "num_iterations": 50,
+      "time_per_iteration_ms": 0.1250600814819336,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.0,
+      "optimizer_time_ms": 0.0,
+      "data_transfer_time_ms": 0.1250600814819336
+    },
+    {
+      "name": "Model Partitioning",
+      "total_time_seconds": 0.025561809539794922,
+      "num_iterations": 100,
+      "time_per_iteration_ms": 0.2556180953979492,
+      "jit_compile_time_seconds": 0.0,
+      "execution_time_seconds": 0.0,
+      "gpu_utilization_mean": 0.0,
+      "gpu_utilization_max": 0.0,
+      "gpu_memory_mean_mb": 0.0,
+      "hamiltonian_time_ms": 0.0,
+      "optimizer_time_ms": 0.0,
+      "data_transfer_time_ms": 0.0
+    }
+  ],
+  "bottleneck_analysis": [
+    {
+      "phase": "Standard CL Training (Task 0)",
+      "time_seconds": 0.03600001335144043,
+      "percentage": 23.016337567869957,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "V Training (Step 5)",
+      "time_seconds": 0.03477907180786133,
+      "percentage": 22.235737781883255,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "Model Partitioning",
+      "time_seconds": 0.025561809539794922,
+      "percentage": 16.342750528173845,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "Architecture Search (Step 3a)",
+      "time_seconds": 0.018252134323120117,
+      "percentage": 11.669364697561408,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "A/B Training (Step 3b)",
+      "time_seconds": 0.014758825302124023,
+      "percentage": 9.4359438687629,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "Preliminary Training (Step 1)",
+      "time_seconds": 0.01384878158569336,
+      "percentage": 8.854114268467793,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "V Transformation (Step 4)",
+      "time_seconds": 0.006957054138183594,
+      "percentage": 4.447940198221434,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    },
+    {
+      "phase": "Data Transfer (CPU\u2192GPU)",
+      "time_seconds": 0.00625300407409668,
+      "percentage": 3.9978110890594083,
+      "gpu_util_mean": 0.0,
+      "is_bottleneck": false
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "test_name": "jit_compilation_speedup",
+  "timestamp": "20260118_121538",
+  "jax_backend": "cpu",
+  "jax_devices": [
+    "TFRT_CPU_0"
+  ],
+  "nvidia_smi_available": false,
+  "results": {
+    "compile_time_seconds": 0.1741468906402588,
+    "execution_time_seconds": 0.002042222023010254,
+    "speedup_after_jit": 85.27324094936782,
+    "batch_size": 64
+  }
+}
