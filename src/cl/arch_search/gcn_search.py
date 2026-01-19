@@ -30,7 +30,6 @@ def arch_search_GCN(original_gcn: List[int], original_mlp: List[int],
                     trainer=None, model=None) -> Tuple[List[int], List[int]]:
     """Architecture search for GCN (BACKWARD COMPATIBLE).
 
-    # Added by Claude: Now delegates to core.arch_search.search_architecture()
     This is a backward-compatible wrapper that uses the new generic search algorithm.
 
     Args:
@@ -49,7 +48,6 @@ def arch_search_GCN(original_gcn: List[int], original_mlp: List[int],
     Returns:
         Tuple of (optimal_gcn_sizes, optimal_mlp_sizes)
     """
-    # Added by Claude: Use generic search_architecture from core module
     from ..core.arch_search import search_architecture
     from ..models.gcn import GCN
 
@@ -110,7 +108,7 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     opt_gcn_sizes = model.gcn_sizes
     initializer = jax.nn.initializers.glorot_uniform()
 
-    # Added by Claude: Extract ACTUAL layer dimensions from model weights
+    # Extract ACTUAL layer dimensions from model weights
     # The model.feed_sizes may have been updated, but the actual layer weights still have old dimensions
     actual_feed_sizes = [model.feed_layers[0].weight.shape[1]]  # First layer input size
     for layer in model.feed_layers:
@@ -135,7 +133,7 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     if feed_changed and gcn_changed:
         print("New feed AND gcn!!!------------------")
         # Both changed: need transformation matrices for all
-        # Fixed by Claude: Handle architecture expansion - create matrices for ALL new layers
+        # Handle architecture expansion - create matrices for ALL new layers
         # For existing layers: transform from old → new dimensions
         # For new layers (no old weights): use identity matrices
 
@@ -169,8 +167,7 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
 
     elif feed_changed and not gcn_changed:
         print("New FEED ONLY!!!------------------")
-        # Only feed changed
-        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
+        # Only feed changed - use actual_* sizes (current layer dimensions)
         A_feed = [initializer(jax.random.PRNGKey(5), (y, x))
                   for x, y in zip(actual_feed_sizes[:-1], opt_feed_sizes[:-1])]
         B_feed = [initializer(jax.random.PRNGKey(5), (y, x))
@@ -183,7 +180,6 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
         print("New GCN ONLY!!!------------------")
         # Only GCN changed
         # Feed matrices stay identity (but first one may need to change if gcn output changed)
-        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
         if actual_gcn_sizes[-1] != opt_gcn_sizes[-1]:
             # First feed layer input size changed
             A_feed = [initializer(jax.random.PRNGKey(5), (opt_feed_sizes[0], actual_feed_sizes[0]))]
@@ -201,7 +197,6 @@ def prepABs_GCN(model, prev_feed_sizes: List[int], prev_gcn_sizes: List[int]):
     else:
         print("No architecture change - using identity matrices")
         # No change: use identity matrices
-        # Added by Claude: Use actual_* sizes (current layer dimensions) instead of prev_*
         A_feed = [jnp.eye(x, x) for x in actual_feed_sizes[:-1]]
         B_feed = [jnp.eye(x, x) for x in actual_feed_sizes[1:]]
         A_gcn = [jnp.eye(x, x) for x in actual_gcn_sizes[:-1]]

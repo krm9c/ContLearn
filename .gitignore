@@ -62,7 +62,7 @@ figures/
 plots/
 checkpoints/
 saved_models/
-# Added by Claude: Use /models/ to only ignore root-level models directory, not src/cl/models/
+# Root-level models directory (not src/cl/models/)
 /models/
 
 # Archive directory (deprecated/old code)
@@ -151,7 +151,3 @@ tensorboard/
 # Cache
 .cache/
 *.cache
-
-# Claude Code local settings
-scripts/.claude/
-.claude/settings.local.json

@@ -86,7 +86,7 @@ class MNISTDataset(BaseDataset):
         Args:
             task_id: Task identifier (0-indexed)
         """
-        # Fixed by Claude: Set deterministic seed for reproducible task generation
+        # Set deterministic seed for reproducible task generation
         # Critical for accurate CL metrics - ensures task data is identical during training and evaluation
         np.random.seed(task_id * DEFAULT_PERMUTATION_SEED_MULTIPLIER)
 
@@ -104,7 +104,7 @@ class MNISTDataset(BaseDataset):
             scale=1, shear=rot_angle
         )
 
-        # Fixed by Claude: Use deterministic train/test split for reproducibility
+        # Use deterministic train/test split for reproducibility
         # The seed was already set above, so np.random calls will be deterministic
         n_samples = X.shape[0]
         n_train = int(self.train_split * n_samples)
@@ -204,7 +204,7 @@ class PermutedMNISTDataset(BaseDataset):
         # X shape: (N, 1, 28, 28) -> flatten to (N, 784) -> permute -> reshape back
         X = X.view(X.shape[0], -1)[:, perm].view(X.shape[0], 1, self.image_size, self.image_size)
 
-        # Fixed by Claude: Use deterministic train/test split for reproducibility
+        # Use deterministic train/test split for reproducibility
         # Use the same RNG state for consistent splits across training and evaluation
         n_samples = X.shape[0]
         n_train = int(self.train_split * n_samples)

@@ -198,7 +198,7 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
-        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        # Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
         if pred.ndim == 2 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(y, pred))
@@ -210,7 +210,7 @@ def _hamiltonian_core_mse_standard(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
-        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        # Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
         if pred.ndim == 2 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
@@ -273,7 +273,7 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
-        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        # Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
         if pred.ndim == 2 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(y, pred))
@@ -285,7 +285,7 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
         # Squeeze extra dimension if present: (batch, 1, output) -> (batch, output)
         if pred.ndim == 3 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=1)
-        # Added by Claude: Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
+        # Also squeeze final dimension for scalar outputs (batch, 1) -> (batch,)
         if pred.ndim == 2 and pred.shape[1] == 1:
             pred = jnp.squeeze(pred, axis=-1)
         return jnp.mean(optax.l2_loss(exp_y, pred))
@@ -333,7 +333,7 @@ def _hamiltonian_core_mse_awb(params, static, x, y, exp_x, exp_y, deltax,
 def _hamiltonian_core_class_standard(params, static, x, y, exp_x, exp_y, deltax,
                                       alpha, beta, gamma, sqrt_param_count, dV_scale):
     """JIT-compiled Hamiltonian core for classification (standard training)."""
-    # Fixed by Claude: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
+    # Note: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model)(xx)
@@ -388,14 +388,13 @@ def _hamiltonian_core_class_awb(params, static, x, y, exp_x, exp_y, deltax,
                                  alpha, beta, gamma, sqrt_param_count, dV_scale):
     """JIT-compiled Hamiltonian core for classification (AWB training).
 
-    Fixed by Claude: Re-enabled @eqx.filter_jit after fixing:
-    1. Partition functions now properly exclude non-arrays (ints) from params
-    2. AWB forward pass (get_AWBT) now uses einsum-based transforms instead of
-       Python list comprehensions that caused 6500s JIT compilation hang
+    Notes:
+    - Partition functions properly exclude non-arrays (ints) from params
+    - AWB forward pass (get_AWBT) uses einsum-based transforms for efficiency
 
-    JIT compilation now completes in <1s and provides 4.4x speedup.
+    JIT compilation completes in <1s and provides 4.4x speedup.
     """
-    # Fixed by Claude: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
+    # Note: softmax_cross_entropy_with_integer_labels expects raw logits, not log_softmax
     def loss_fn_curr(p, xx):
         model = eqx.combine(p, static)
         pred = jax.vmap(model.get_AWBT)(xx)

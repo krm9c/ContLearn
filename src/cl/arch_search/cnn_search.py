@@ -43,7 +43,6 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
                           trainer=None):
     """Architecture search for CNN and CNN3D (BACKWARD COMPATIBLE).
 
-    # Added by Claude: Now delegates to core.arch_search.search_architecture()
     This is a backward-compatible wrapper that uses the new generic search algorithm.
     Automatically detects CNN vs CNN3D based on channel_in config.
 
@@ -63,7 +62,6 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
     Returns:
         Tuple of (opt_feed_sizes, opt_filter_size)
     """
-    # Added by Claude: Use generic search_architecture from core module
     from ..core.arch_search import search_architecture
 
     # Get model configuration for creating reference model
@@ -71,7 +69,7 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
     input_size = config.get('input_size', 28)
     channel_in = config.get('channel_in', 1)
 
-    # Added by Claude: Detect CNN3D based on channel_in or data type
+    # Detect CNN3D based on channel_in or data type
     # CNN3D is used for multi-channel images (CIFAR-10/100 with 3 RGB channels)
     is_cnn3d = (
         channel_in > 1 or
@@ -97,7 +95,7 @@ def arch_search_CNN_fresh(filter_size, feed_sizes, task, trainW_loss, og_epochs,
     adjusted_feed_sizes = list(feed_sizes)
     adjusted_feed_sizes[0] = feed_input_size
 
-    # Added by Claude: Create appropriate model type based on channel_in
+    # Create appropriate model type based on channel_in
     if is_cnn3d:
         current_model = CNN3D(
             key=jax.random.PRNGKey(0),

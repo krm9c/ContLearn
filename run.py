@@ -26,11 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts
 
 import jax
 from cl.config import Params, load_config
-# Added by Claude: Use new generic unified runner (layer-level AWB refactor)
 from cl.runners import train_model
 from cl.core.recording import RecordingMixin
 
-# Added by Claude: Import plotting module for post-training visualization
 # from runs__.analysis.scripts.additional_python_scripts.scripts.plot_results import generate_plots
 
 # Suppress JAX MaxPool gradient warning (expected behavior for second-order derivatives)
@@ -51,10 +49,8 @@ Examples:
     )
     parser.add_argument('config', type=str, help='Path to JSON configuration file')
     parser.add_argument('--runs', type=int, default=0, help='Run ID for this experiment (default: 0)')
-    # Added by Claude: Options for plot generation
     parser.add_argument('--no-plots', action='store_true', help='Skip plot generation')
     parser.add_argument('--figures-dir', type=str, default='figures', help='Output directory for figures')
-    # Added by Claude: Options for Polaris parallel runs
     parser.add_argument('--output-dir', type=str, default=None, help='Custom output directory for results')
     parser.add_argument('--model-suffix', type=str, default=None, help='Custom suffix for model/records files')
 
@@ -67,7 +63,6 @@ Examples:
 
     config = load_config(args.config)
 
-    # Added by Claude: Check JAX backend/device
     print(f"JAX Backend: {jax.default_backend()}")
     print(f"JAX Devices: {jax.devices()}")
     print()
@@ -96,8 +91,7 @@ Examples:
         print(f"Model path: {base_model_path}")
         print()
 
-    # Added by Claude: Generic runner handles all problem types via config dispatch
-    run_id = args.runs  # Use --runs as the run_id
+    run_id = args.runs
 
     print(f"\n{'#'*60}")
     print(f"# Run ID: {run_id}")
