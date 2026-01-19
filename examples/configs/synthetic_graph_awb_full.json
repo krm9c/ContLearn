@@ -1,0 +1,59 @@
+{
+    "__comment": "Synthetic Graph Classification - AWB Full (Architecture Search + Weight Transfer)",
+    "__description": "Continual learning with AWB architecture search and A/B matrix transfer for GCN",
+
+    "data": "synthetic_taskshift",
+    "problem": "graph",
+    "network": "gcn",
+    "n_task": 5,
+    "epochs_per_task": 10,
+    "batch_size": 64,
+
+    "num_graphs": 100,
+    "num_channels": 10,
+    "avg_num_nodes": 15,
+    "num_classes": 5,
+    "train_test_split": 0.8,
+
+    "perturbation_mode": "linear",
+    "feature_noise_base": 0.02,
+    "edge_dropout_base": 0.01,
+    "feature_shift_base": 0.01,
+
+    "gcn_sizes": [10, 32, 32],
+    "feed_sizes": [32, 32, 16, 5],
+    "n_class": 5,
+
+    "model_path": "outputs/synthetic_graph_awb_full",
+    "save_iter": 5,
+    "log_interval": 1,
+    "eval_interval": 5,
+
+    "debug_mode": true,
+    "debug_limit": 50,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": false,
+
+    "lr_schedule": "cosine",
+    "lr": 0.0001,
+    "optimizer": "adam",
+    "gradient_clip_norm": 1.0,
+
+    "grad_weights": [0.4, 0.4, 0.1],
+
+    "awb_enabled": true,
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 2,
+    "awb_ab_training_epochs": 10,
+    "awb_ab_warmup_epochs": 2,
+    "awb_ab_lr": 0.0001,
+    "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": true,
+
+    "awb_v_adam_beta1": 0.5,
+    "awb_v_adam_beta2": 0.999,
+
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 2,
+    "task_warmup_lr_factor": 0.1
+}

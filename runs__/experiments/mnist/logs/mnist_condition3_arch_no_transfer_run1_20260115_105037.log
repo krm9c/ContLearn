@@ -1,69 +1,0 @@
-JAX Backend: gpu
-JAX Devices: [CudaDevice(id=0)]
-
-Loaded config from: /home/kraghavan/projects/ContLearn/runs__/configs/mnist_condition3_arch_no_transfer.json
-Problem type: classification
-Dataset: mnist
-Tasks: 10
-AWB enabled: True
-
-Output directory: /home/kraghavan/projects/ContLearn/runs__/experiments/mnist/results/mnist_condition3_arch_no_transfer_run1
-Model path: /home/kraghavan/projects/ContLearn/runs__/experiments/mnist/results/mnist_condition3_arch_no_transfer_run1/mnist_condition3_arch_no_transfer_run1
-
-
-############################################################
-# Run ID: 1
-############################################################
-Loading MNIST dataset
-
-============================================================
-Task 0
-============================================================
-Standard CL training (lr=0.000100, adaptive_lr_min=1.00e-06, loss_ratio=1.00)
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-  0%|          | 0/20 [00:00<?, ?it/s]  5%|▌         | 1/20 [00:19<06:07, 19.34s/it]  5%|▌         | 1/20 [00:24<06:07, 19.34s/it, CE=2.071982e+00 H=2.071560e+00 dV_dx=-2.680643e-07 dV_dθ=-4.219679e-04 ||∇||=4.507071e-01 | Tr=0.4070] 10%|█         | 2/20 [00:24<03:16, 10.94s/it, CE=2.071982e+00 H=2.071560e+00 dV_dx=-2.680643e-07 dV_dθ=-4.219679e-04 ||∇||=4.507071e-01 | Tr=0.4070] 10%|█         | 2/20 [00:29<03:16, 10.94s/it, CE=1.857185e+00 H=1.856369e+00 dV_dx=-7.436494e-07 dV_dθ=-8.153574e-04 ||∇||=6.238938e-01 | Tr=0.4848] 15%|█▌        | 3/20 [00:29<02:22,  8.35s/it, CE=1.857185e+00 H=1.856369e+00 dV_dx=-7.436494e-07 dV_dθ=-8.153574e-04 ||∇||=6.238938e-01 | Tr=0.4848] 15%|█▌        | 3/20 [00:34<02:22,  8.35s/it, CE=1.645936e+00 H=1.644890e+00 dV_dx=-7.126600e-07 dV_dθ=-1.044690e-03 ||∇||=7.089804e-01 | Tr=0.5272] 20%|██        | 4/20 [00:34<01:51,  6.99s/it, CE=1.645936e+00 H=1.644890e+00 dV_dx=-7.126600e-07 dV_dθ=-1.044690e-03 ||∇||=7.089804e-01 | Tr=0.5272] 20%|██        | 4/20 [00:39<01:51,  6.99s/it, CE=1.472211e+00 H=1.471189e+00 dV_dx=6.826787e-08 dV_dθ=-1.022171e-03 ||∇||=7.091237e-01 | Tr=0.5566]  25%|██▌       | 5/20 [00:39<01:33,  6.24s/it, CE=1.472211e+00 H=1.471189e+00 dV_dx=6.826787e-08 dV_dθ=-1.022171e-03 ||∇||=7.091237e-01 | Tr=0.5566] 25%|██▌       | 5/20 [00:47<01:33,  6.24s/it, CE=1.337329e+00 H=1.336439e+00 dV_dx=-3.686430e-07 dV_dθ=-8.896775e-04 ||∇||=6.732924e-01 | Tr=0.5859 Te/Cur=0.5879 Te/Exp=0.5896] 30%|███       | 6/20 [00:47<01:34,  6.76s/it, CE=1.337329e+00 H=1.336439e+00 dV_dx=-3.686430e-07 dV_dθ=-8.896775e-04 ||∇||=6.732924e-01 | Tr=0.5859 Te/Cur=0.5879 Te/Exp=0.5896] 30%|███       | 6/20 [00:52<01:34,  6.76s/it, CE=1.235615e+00 H=1.234856e+00 dV_dx=6.185319e-08 dV_dθ=-7.594432e-04 ||∇||=6.355734e-01 | Tr=0.6091]                              35%|███▌      | 7/20 [00:52<01:20,  6.19s/it, CE=1.235615e+00 H=1.234856e+00 dV_dx=6.185319e-08 dV_dθ=-7.594432e-04 ||∇||=6.355734e-01 | Tr=0.6091] 35%|███▌      | 7/20 [00:56<01:20,  6.19s/it, CE=1.158258e+00 H=1.157615e+00 dV_dx=-4.530121e-08 dV_dθ=-6.427284e-04 ||∇||=5.991095e-01 | Tr=0.6275] 40%|████      | 8/20 [00:56<01:08,  5.70s/it, CE=1.158258e+00 H=1.157615e+00 dV_dx=-4.530121e-08 dV_dθ=-6.427284e-04 ||∇||=5.991095e-01 | Tr=0.6275] 40%|████      | 8/20 [01:01<01:08,  5.70s/it, CE=1.098617e+00 H=1.098063e+00 dV_dx=3.710930e-07 dV_dθ=-5.550921e-04 ||∇||=5.711407e-01 | Tr=0.6440]  45%|████▌     | 9/20 [01:01<01:00,  5.46s/it, CE=1.098617e+00 H=1.098063e+00 dV_dx=3.710930e-07 dV_dθ=-5.550921e-04 ||∇||=5.711407e-01 | Tr=0.6440] 45%|████▌     | 9/20 [01:06<01:00,  5.46s/it, CE=1.051226e+00 H=1.050722e+00 dV_dx=-3.254388e-06 dV_dθ=-4.999126e-04 ||∇||=5.541691e-01 | Tr=0.6570] 50%|█████     | 10/20 [01:06<00:53,  5.30s/it, CE=1.051226e+00 H=1.050722e+00 dV_dx=-3.254388e-06 dV_dθ=-4.999126e-04 ||∇||=5.541691e-01 | Tr=0.6570] 50%|█████     | 10/20 [01:13<00:53,  5.30s/it, CE=1.012289e+00 H=1.011828e+00 dV_dx=-7.798671e-07 dV_dθ=-4.605814e-04 ||∇||=5.423477e-01 | Tr=0.6684 Te/Cur=0.6698 Te/Exp=0.6682] 55%|█████▌    | 11/20 [01:13<00:51,  5.68s/it, CE=1.012289e+00 H=1.011828e+00 dV_dx=-7.798671e-07 dV_dθ=-4.605814e-04 ||∇||=5.423477e-01 | Tr=0.6684 Te/Cur=0.6698 Te/Exp=0.6682] 55%|█████▌    | 11/20 [01:18<00:51,  5.68s/it, CE=9.795044e-01 H=9.790681e-01 dV_dx=1.533113e-06 dV_dθ=-4.378237e-04 ||∇||=5.367364e-01 | Tr=0.6799]                              60%|██████    | 12/20 [01:18<00:43,  5.42s/it, CE=9.795044e-01 H=9.790681e-01 dV_dx=1.533113e-06 dV_dθ=-4.378237e-04 ||∇||=5.367364e-01 | Tr=0.6799] 60%|██████    | 12/20 [01:22<00:43,  5.42s/it, CE=9.510846e-01 H=9.506684e-01 dV_dx=5.462933e-07 dV_dθ=-4.167393e-04 ||∇||=5.315259e-01 | Tr=0.6885] 65%|██████▌   | 13/20 [01:22<00:36,  5.21s/it, CE=9.510846e-01 H=9.506684e-01 dV_dx=5.462933e-07 dV_dθ=-4.167393e-04 ||∇||=5.315259e-01 | Tr=0.6885] 65%|██████▌   | 13/20 [01:28<00:36,  5.21s/it, CE=9.261642e-01 H=9.257563e-01 dV_dx=-4.819969e-07 dV_dθ=-4.073798e-04 ||∇||=5.304307e-01 | Tr=0.6957] 70%|███████   | 14/20 [01:28<00:31,  5.20s/it, CE=9.261642e-01 H=9.257563e-01 dV_dx=-4.819969e-07 dV_dθ=-4.073798e-04 ||∇||=5.304307e-01 | Tr=0.6957] 70%|███████   | 14/20 [01:32<00:31,  5.20s/it, CE=9.036620e-01 H=9.032543e-01 dV_dx=-6.473008e-07 dV_dθ=-4.070611e-04 ||∇||=5.332680e-01 | Tr=0.7026] 75%|███████▌  | 15/20 [01:32<00:25,  5.08s/it, CE=9.036620e-01 H=9.032543e-01 dV_dx=-6.473008e-07 dV_dθ=-4.070611e-04 ||∇||=5.332680e-01 | Tr=0.7026] 75%|███████▌  | 15/20 [01:39<00:25,  5.08s/it, CE=8.832401e-01 H=8.828445e-01 dV_dx=2.350395e-06 dV_dθ=-3.979098e-04 ||∇||=5.326057e-01 | Tr=0.7094 Te/Cur=0.7125 Te/Exp=0.7100] 80%|████████  | 16/20 [01:39<00:21,  5.46s/it, CE=8.832401e-01 H=8.828445e-01 dV_dx=2.350395e-06 dV_dθ=-3.979098e-04 ||∇||=5.326057e-01 | Tr=0.7094 Te/Cur=0.7125 Te/Exp=0.7100] 80%|████████  | 16/20 [01:43<00:21,  5.46s/it, CE=8.648582e-01 H=8.644691e-01 dV_dx=-1.888191e-07 dV_dθ=-3.888583e-04 ||∇||=5.321895e-01 | Tr=0.7149]                            85%|████████▌ | 17/20 [01:43<00:15,  5.24s/it, CE=8.648582e-01 H=8.644691e-01 dV_dx=-1.888191e-07 dV_dθ=-3.888583e-04 ||∇||=5.321895e-01 | Tr=0.7149] 85%|████████▌ | 17/20 [01:48<00:15,  5.24s/it, CE=8.480579e-01 H=8.476653e-01 dV_dx=-5.407855e-06 dV_dθ=-3.872144e-04 ||∇||=5.335242e-01 | Tr=0.7206] 90%|█████████ | 18/20 [01:48<00:10,  5.13s/it, CE=8.480579e-01 H=8.476653e-01 dV_dx=-5.407855e-06 dV_dθ=-3.872144e-04 ||∇||=5.335242e-01 | Tr=0.7206] 90%|█████████ | 18/20 [01:53<00:10,  5.13s/it, CE=8.324849e-01 H=8.321008e-01 dV_dx=-7.511747e-07 dV_dθ=-3.833650e-04 ||∇||=5.345730e-01 | Tr=0.7256] 95%|█████████▌| 19/20 [01:53<00:04,  4.99s/it, CE=8.324849e-01 H=8.321008e-01 dV_dx=-7.511747e-07 dV_dθ=-3.833650e-04 ||∇||=5.345730e-01 | Tr=0.7256] 95%|█████████▌| 19/20 [01:59<00:04,  4.99s/it, CE=8.179003e-01 H=8.175199e-01 dV_dx=-7.890330e-07 dV_dθ=-3.796266e-04 ||∇||=5.351277e-01 | Tr=0.7303 Te/Cur=0.7293 Te/Exp=0.7270]100%|██████████| 20/20 [01:59<00:00,  5.44s/it, CE=8.179003e-01 H=8.175199e-01 dV_dx=-7.890330e-07 dV_dθ=-3.796266e-04 ||∇||=5.351277e-01 | Tr=0.7303 Te/Cur=0.7293 Te/Exp=0.7270]100%|██████████| 20/20 [01:59<00:00,  6.00s/it, CE=8.179003e-01 H=8.175199e-01 dV_dx=-7.890330e-07 dV_dθ=-3.796266e-04 ||∇||=5.351277e-01 | Tr=0.7303 Te/Cur=0.7293 Te/Exp=0.7270]
-[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
-[DEBUG] First train batch device: [CudaDevice(id=0)]
-
-  Evaluating on all tasks 0..0 for CL metrics...
-    Task 0: 0.7292
-
-============================================================
-Task 1
-============================================================
-Initial loss on new task: 5.9515, previous: 0.8179, ratio: 7.28
-AWB pipeline (lr=0.000100)
-
-======================================================================
-AWB PIPELINE - Task 1
-======================================================================
-
-[STEP 1] Preliminary training (1 epochs) - Recorded temporarily
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-  0%|          | 0/1 [00:00<?, ?it/s]  0%|          | 0/1 [00:10<?, ?it/s, CE=9.361655e-01 H=9.384699e-01 dV_dx=2.461471e-05 dV_dθ=2.279827e-03 ||∇||=2.173163e+00 | Tr=0.5204 Te/Cur=0.7439 Te/Exp=0.7276]100%|██████████| 1/1 [00:10<00:00, 10.82s/it, CE=9.361655e-01 H=9.384699e-01 dV_dx=2.461471e-05 dV_dθ=2.279827e-03 ||∇||=2.173163e+00 | Tr=0.5204 Te/Cur=0.7439 Te/Exp=0.7276]100%|██████████| 1/1 [00:10<00:00, 10.82s/it, CE=9.361655e-01 H=9.384699e-01 dV_dx=2.461471e-05 dV_dθ=2.279827e-03 ||∇||=2.173163e+00 | Tr=0.5204 Te/Cur=0.7439 Te/Exp=0.7276]
-[DEBUG] Using PrefetchDataLoader path (use_prefetch=True)
-[DEBUG] First train batch device: [CudaDevice(id=0)]
-  Preliminary loss: 0.936165
-
-[STEP 2] Architecture change decision
-  Current: 0.936165, Previous: 0.817900
-  Decision: CHANGE
-
-[STEP 3a] Architecture search - NOT recorded
-  Created balanced validation set: 9417 samples from 10 classes
-  Created balanced validation set: 9416 samples from 10 classes
-  Starting grid architecture search for task 1
-  Baseline architecture: (3, [507, 512, 64, 10])
-  Baseline loss: 0.936165
-  Search iteration 1/2
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-[DEBUG] PrefetchDataLoader initialized with device: cuda:0
-[DEBUG] All available JAX devices: [CudaDevice(id=0)]
-  0%|          | 0/2 [00:00<?, ?it/s]

@@ -1,0 +1,28 @@
+{
+    "__comment": "Sine Wave Regression - Baseline (Fixed Architecture)",
+    "__description": "Continual learning on sine wave regression with fixed architecture and constant LR",
+
+    "data": "sine",
+    "n_task": 5,
+    "epochs_per_task": 10,
+    "batch_size": 128,
+    "n_layers": 4,
+    "hln": 64,
+
+    "model_path": "outputs/sine_baseline",
+    "save_iter": 5,
+    "log_interval": 1,
+    "eval_interval": 5,
+    "grad_weights": [0.4, 0.4, 0.1],
+
+    "debug_mode": true,
+    "debug_limit": 100,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": true,
+    "prefetch_size": 3,
+
+    "lr_schedule": "constant",
+    "lr": 0.0001,
+    "task_warmup_enabled": false,
+    "awb_enabled": false
+}

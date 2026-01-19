@@ -1,0 +1,37 @@
+{
+    "__comment": "MNIST Classification - AWB Full (Architecture Search + Weight Transfer)",
+    "__description": "Continual learning with AWB architecture search and A/B transfer",
+
+    "data": "mnist",
+    "network": "cnn",
+    "n_task": 5,
+    "epochs_per_task": 5,
+    "batch_size": 128,
+
+    "model_path": "outputs/mnist_awb_full",
+    "save_iter": 2,
+    "log_interval": 1,
+    "eval_interval": 2,
+
+    "debug_mode": true,
+    "debug_limit": 100,
+    "per_task_eval_enabled": true,
+    "use_jax_prefetch": true,
+    "prefetch_size": 3,
+
+    "grad_weights": [0.4, 0.4, 0.1],
+    "lr_schedule": "cosine",
+    "lr": 0.0001,
+    "task_warmup_enabled": true,
+    "task_warmup_epochs": 2,
+    "task_warmup_lr_factor": 0.0001,
+
+    "awb_enabled": true,
+    "awb_skip_transfer": false,
+    "awb_preliminary_epochs": 1,
+    "awb_ab_training_epochs": 5,
+    "awb_ab_warmup_epochs": 1,
+    "awb_ab_lr": 0.0001,
+    "awb_loss_ratio_threshold": 1.1,
+    "force_arch_change": false
+}
