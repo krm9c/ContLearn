@@ -199,19 +199,6 @@ The framework tracks standard continual learning metrics:
 - **Backward Transfer (BWT)**: Performance change on old tasks after learning new ones
 - **Forgetting**: Maximum accuracy drop per task
 
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@article{contlearn2024,
-  title={Continual Learning with Hamiltonian Gradients and Adaptive Weight Basis},
-  author={Anonymous},
-  journal={Journal of Machine Learning Research},
-  year={2024}
-}
-```
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
