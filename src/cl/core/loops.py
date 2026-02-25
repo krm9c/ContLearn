@@ -18,6 +18,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import numpy as np_
 import optax
+from functools import partial
 from tqdm import tqdm
 import time
 
@@ -29,6 +30,13 @@ from .async_checkpoint import AsyncCheckpointManager
 
 # Added by Claude: JAX-native data pipeline for GPU utilization
 from ..datasets.jax_dataloader import PrefetchDataLoader, DualPrefetchDataLoader
+from .hamiltonian import (
+    _hamiltonian_core_mse_standard,
+    _hamiltonian_core_mse_awb,
+    _hamiltonian_core_class_standard,
+    _hamiltonian_core_class_awb,
+    DEFAULT_GRAD_WEIGHTS,
+)
 
 
 # Graph transform pipeline (lazy import to avoid dependency when not needed)
@@ -470,6 +478,111 @@ class TrainingLoopsMixin:
         else:
             compute_metric = compute_metric_class
 
+        # Added by Claude: Multi-GPU (pmap) support for vector data
+        use_multi_gpu = config.get("multi_gpu", False)
+        multi_gpu_axis = config.get("multi_gpu_axis", "devices")
+        device_count = jax.local_device_count()
+        multi_gpu_active = use_multi_gpu and device_count > 1 and problem_type == 'vectors'
+
+        if use_multi_gpu and not multi_gpu_active:
+            if problem_type != 'vectors':
+                print("[WARN] multi_gpu=True is currently supported only for vector data. Falling back to single device.")
+            elif device_count <= 1:
+                print("[WARN] multi_gpu=True but only one device is visible. Falling back to single device.")
+
+        def _is_replicated(tree, n_devices):
+            leaves = jax.tree_util.tree_leaves(tree)
+            if not leaves:
+                return False
+            leaf = leaves[0]
+            return hasattr(leaf, "shape") and len(leaf.shape) > 0 and leaf.shape[0] == n_devices
+
+        def _replicate(tree, n_devices):
+            return jax.device_put_replicated(tree, jax.local_devices()[:n_devices])
+
+        def _unreplicate(tree):
+            return jax.tree_util.tree_map(lambda x: x[0], tree)
+
+        def _shard_batch(arr, n_devices):
+            batch = arr.shape[0]
+            per_device = batch // n_devices
+            if per_device == 0:
+                raise ValueError(
+                    f"Batch size {batch} is smaller than device count {n_devices}. "
+                    f"Increase batch_size or reduce visible devices."
+                )
+            trimmed = arr[:per_device * n_devices]
+            return trimmed.reshape((n_devices, per_device) + arr.shape[1:])
+
+        if multi_gpu_active:
+            # Replicate params and opt_state if not already replicated
+            if not _is_replicated(params, device_count):
+                params = _replicate(params, device_count)
+                opt_state = _replicate(opt_state, device_count)
+
+            if config.get("multi_gpu_debug", False):
+                print(
+                    f"[Multi-GPU] pmap enabled | devices={device_count} | axis='{multi_gpu_axis}' "
+                    f"| loss_type={loss_type} | notABTrain={notABTrain}"
+                )
+
+            # Select Hamiltonian core function based on loss type and training mode
+            if loss_type == 'regression':
+                core_fn = _hamiltonian_core_mse_standard if notABTrain else _hamiltonian_core_mse_awb
+            else:
+                core_fn = _hamiltonian_core_class_standard if notABTrain else _hamiltonian_core_class_awb
+
+            # Gradient weights for pmap path
+            if grad_weights is None:
+                grad_weights = DEFAULT_GRAD_WEIGHTS
+            alpha, beta, gamma = grad_weights
+
+            # Pre-compute sqrt(param_count) once for normalization
+            params_unrep = _unreplicate(params)
+            sqrt_param_count = self._get_sqrt_param_count(params_unrep)
+
+            @partial(jax.pmap, axis_name=multi_gpu_axis)
+            def hamiltonian_pmap(p, x, y, exp_x, exp_y, deltax,
+                                 alpha_, beta_, gamma_, sqrt_param_count_, dV_scale_):
+                grad, losses = core_fn(
+                    p, static, x, y, exp_x, exp_y, deltax,
+                    alpha_, beta_, gamma_, sqrt_param_count_, dV_scale_
+                )
+                grad = jax.lax.pmean(grad, axis_name=multi_gpu_axis)
+                losses = jax.tree_util.tree_map(
+                    lambda v: jax.lax.pmean(v, axis_name=multi_gpu_axis),
+                    losses
+                )
+                return grad, losses
+
+            @partial(jax.pmap, axis_name=multi_gpu_axis)
+            def optimizer_step_pmap(grad, opt_state_, params_):
+                updates, new_opt_state = optim.update(grad, opt_state_, params_)
+                new_params = optax.apply_updates(params_, updates)
+                return new_params, new_opt_state
+
+            if loss_type == 'regression':
+                @partial(jax.pmap, axis_name=multi_gpu_axis)
+                def compute_metric_pmap(p, x, y):
+                    model = eqx.combine(p, static)
+                    preds = jax.vmap(model)(x)
+                    if preds.ndim == 3 and preds.shape[1] == 1:
+                        preds = jnp.squeeze(preds, axis=1)
+                    metric = jnp.mean(optax.l2_loss(y, preds))
+                    return jax.lax.pmean(metric, axis_name=multi_gpu_axis)
+            else:
+                @partial(jax.pmap, axis_name=multi_gpu_axis)
+                def compute_metric_pmap(p, x, y):
+                    model = eqx.combine(p, static)
+                    preds = jax.vmap(model)(x)
+                    if preds.ndim == 3 and preds.shape[1] == 1:
+                        preds = jnp.squeeze(preds, axis=1)
+                    pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
+                    if y.ndim == 2:
+                        y = jnp.argmax(y, axis=1)
+                    metric = jnp.mean(y == pred_y)
+                    return jax.lax.pmean(metric, axis_name=multi_gpu_axis)
+
         for epoch in pbar:
             # Added by Claude: Profile first epoch first batch
             if epoch == 0 and profiling_enabled:
@@ -522,10 +635,37 @@ class TrainingLoopsMixin:
                     data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
                 # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
-                grad, losses = hamiltonian_fn(params, data, notABTrain,
-                                             grad_weights=grad_weights,
-                                             normalize_dV=normalize_dV,
-                                             dV_scale=dV_scale)
+                if multi_gpu_active and problem_type == 'vectors':
+                    x_full, y_full = x, y
+                    exp_x_full, exp_y_full = exp_x, exp_y
+                    deltax_full = deltax
+
+                    x = _shard_batch(x_full, device_count)
+                    y = _shard_batch(y_full, device_count)
+                    exp_x = _shard_batch(exp_x_full, device_count)
+                    exp_y = _shard_batch(exp_y_full, device_count)
+                    deltax = _shard_batch(deltax_full, device_count)
+
+                    grad, losses = hamiltonian_pmap(
+                        params,
+                        x,
+                        y,
+                        exp_x,
+                        exp_y,
+                        deltax,
+                        jnp.array(alpha),
+                        jnp.array(beta),
+                        jnp.array(gamma),
+                        sqrt_param_count,
+                        jnp.array(dV_scale)
+                    )
+                    # Unreplicate losses for logging
+                    losses = jax.tree_util.tree_map(lambda v: v[0], losses)
+                else:
+                    grad, losses = hamiltonian_fn(params, data, notABTrain,
+                                                 grad_weights=grad_weights,
+                                                 normalize_dV=normalize_dV,
+                                                 dV_scale=dV_scale)
 
                 # Unpack losses
                 if problem_type == 'graph':
@@ -538,7 +678,10 @@ class TrainingLoopsMixin:
                 grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
                 # Update parameters (using JIT-compiled optimizer step)
-                params, opt_state = optimizer_step(grad, opt_state, params)
+                if multi_gpu_active and problem_type == 'vectors':
+                    params, opt_state = optimizer_step_pmap(grad, opt_state, params)
+                else:
+                    params, opt_state = optimizer_step(grad, opt_state, params)
 
                 # Accumulate loss metrics
                 epoch_H.append(float(H))
@@ -554,7 +697,11 @@ class TrainingLoopsMixin:
                     train_metric = self.return_metric(params, static, data=(batch, batch_ex), notABTrain=notABTrain)
                 else:
                     # Vectors use JIT-compiled metric function
-                    train_metric = compute_metric(params, static, x, y)
+                    if multi_gpu_active:
+                        train_metric = compute_metric_pmap(params, x, y)
+                        train_metric = float(train_metric[0])
+                    else:
+                        train_metric = compute_metric(params, static, x, y)
                 epoch_train_metrics.append(float(train_metric))
 
                 # Added by Claude: Report first batch time
@@ -590,7 +737,8 @@ class TrainingLoopsMixin:
                 # Compute expensive test metrics only at eval_interval (not every log_interval)
                 if should_eval:
                     test_current, test_exp = self._compute_metrics_on_sampled_batches(
-                        params, static, testloader, num_batches=10,
+                        _unreplicate(params) if multi_gpu_active else params,
+                        static, testloader, num_batches=10,
                         problem_type=problem_type, notABTrain=notABTrain,
                         transforms=transforms
                     )
@@ -733,5 +881,9 @@ class TrainingLoopsMixin:
         if checkpoint_manager is not None:
             checkpoint_manager.wait_all(timeout=30.0)
             checkpoint_manager.shutdown()
+
+        if multi_gpu_active:
+            params = _unreplicate(params)
+            opt_state = _unreplicate(opt_state)
 
         return params, static, opt_state, record_dict
