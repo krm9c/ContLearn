@@ -204,6 +204,15 @@ def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
         set_default('gcn_sizes', constants.DEFAULT_GCN_SIZES)
         set_default('feed_sizes', constants.DEFAULT_GCN_FEED_SIZES)
 
+    # Transformer defaults
+    elif network == 'transformer':
+        set_default('transformer_seq_len', constants.DEFAULT_TRANSFORMER_SEQ_LEN)
+        set_default('transformer_token_dim', constants.DEFAULT_TRANSFORMER_TOKEN_DIM)
+        set_default('transformer_embed_dim', constants.DEFAULT_TRANSFORMER_EMBED_DIM)
+        set_default('transformer_n_heads', constants.DEFAULT_TRANSFORMER_N_HEADS)
+        set_default('transformer_mlp_dim', constants.DEFAULT_TRANSFORMER_MLP_DIM)
+        set_default('transformer_n_layers', constants.DEFAULT_TRANSFORMER_N_LAYERS)
+
     # ===== CLASSIFICATION DEFAULTS =====
     if config.get('prob') == 'classification':
         set_default('n_class', constants.DEFAULT_NUM_CLASSES)

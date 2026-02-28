@@ -238,6 +238,16 @@ DEFAULT_GCN_MLP_SIZES = DEFAULT_GCN_FEED_SIZES  # Backward compatibility alias
 DEFAULT_GCN_DROPOUT = 0.3  # Dropout rate between layers
 
 # ============================================================================
+# TRANSFORMER DEFAULTS
+# ============================================================================
+DEFAULT_TRANSFORMER_SEQ_LEN = 784
+DEFAULT_TRANSFORMER_TOKEN_DIM = 1
+DEFAULT_TRANSFORMER_EMBED_DIM = 128
+DEFAULT_TRANSFORMER_N_HEADS = 4
+DEFAULT_TRANSFORMER_MLP_DIM = 256
+DEFAULT_TRANSFORMER_N_LAYERS = 2
+
+# ============================================================================
 # CLASSIFICATION DEFAULTS
 # ============================================================================
 DEFAULT_NUM_CLASSES = 10

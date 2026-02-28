@@ -11,6 +11,7 @@ from .layers import Linear, LinearGCN, Linear2, Dropout
 from .mlp import MLP, create_mlp
 from .cnn import CNN, CNN3D, CNNorig
 from .gcn import GCN, GCNLayer, Linear3, Pool, GraphPooling
+from .transformer import TransformerEncoder, create_transformer
 
 __all__ = [
     "Linear",
@@ -28,4 +29,6 @@ __all__ = [
     "Linear3",
     "Pool",
     "GraphPooling",
+    "TransformerEncoder",
+    "create_transformer",
 ]

@@ -35,8 +35,13 @@ class ContinualDataset(Dataset):
 
         # Reshape for fully connected networks (flatten images)
         if self.config.get('problem') == 'classification':
-            if self.config.get('network') == 'fcnn':
+            network = self.config.get('network')
+            if network == 'fcnn':
                 self.x = self.x.reshape([-1, 784])
+            elif network == 'transformer':
+                seq_len = self.config.get('transformer_seq_len', 784)
+                token_dim = self.config.get('transformer_token_dim', 1)
+                self.x = self.x.reshape([-1, seq_len, token_dim])
 
     def __len__(self) -> int:
         return self.x.shape[0]

@@ -30,6 +30,7 @@ from ..core.profiling import enable_profiling
 from ..models.mlp import MLPAWBOps, create_mlp
 from ..models.cnn import CNNAWBOps, CNN, CNN3D
 from ..models.gcn import GCNAWBOps, GCN
+from ..models.transformer import TransformerAWBOps, create_transformer
 from ..datasets.sine import SineDataset
 from ..datasets.mnist import MNISTDataset, PermutedMNISTDataset
 from ..datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
@@ -95,6 +96,16 @@ def get_model_architecture(model) -> dict:
     if hasattr(model, 'gcn_sizes') and hasattr(model, 'feed_sizes'):
         arch_info['gcn_sizes'] = list(model.gcn_sizes)
         arch_info['feed_sizes'] = list(model.feed_sizes)
+        return arch_info
+
+    # Transformer: has embed_dim and n_heads
+    if hasattr(model, 'embed_dim') and hasattr(model, 'n_heads'):
+        arch_info['embed_dim'] = model.embed_dim
+        arch_info['n_heads'] = model.n_heads
+        arch_info['mlp_dim'] = model.mlp_dim
+        arch_info['n_layers'] = model.n_layers
+        arch_info['seq_len'] = model.seq_len
+        arch_info['token_dim'] = model.input_dim
         return arch_info
 
     return arch_info
@@ -814,6 +825,18 @@ def load_checkpoint(config: Dict[str, Any]):
             out_size=num_classes,
             graph=True
         )
+    elif network == 'transformer':
+        transformer_config = model_config.copy()
+        transformer_config.update({
+            'transformer_seq_len': config.get('transformer_seq_len'),
+            'transformer_token_dim': config.get('transformer_token_dim'),
+            'transformer_embed_dim': config.get('transformer_embed_dim'),
+            'transformer_n_heads': config.get('transformer_n_heads'),
+            'transformer_mlp_dim': config.get('transformer_mlp_dim'),
+            'transformer_n_layers': config.get('transformer_n_layers'),
+            'awb_enabled': config.get('awb_enabled', DEFAULT_AWB_ENABLED),
+        })
+        model = create_transformer(transformer_config)
     else:
         raise ValueError(f"Unknown network: {network}")
 
@@ -858,6 +881,10 @@ def create_awb_operations(model):
     # GCN: has gcn_sizes and feed_sizes
     elif hasattr(model, 'gcn_sizes') and hasattr(model, 'feed_sizes'):
         return GCNAWBOps()
+
+    # Transformer: has embed_dim and n_heads
+    elif hasattr(model, 'embed_dim') and hasattr(model, 'n_heads'):
+        return TransformerAWBOps()
 
     else:
         raise ValueError(f"Unknown model type: {type(model).__name__}")
