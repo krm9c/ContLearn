@@ -6,6 +6,7 @@ Designed for sequence-shaped inputs (e.g., MNIST flattened to 784 tokens).
 """
 
 import jax
+from jax import core
 import jax.numpy as jnp
 import equinox as eqx
 from typing import List, Optional, Dict, Any
@@ -161,13 +162,15 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         return paths
 
     def _normalize_input(self, x: jax.Array) -> jax.Array:
-        if isinstance(x, jax.core.Tracer):
-            return jnp.reshape(x, (self.seq_len, self.input_dim))
+        if isinstance(x, core.Tracer):
+            return x
 
         if x.ndim == 0:
             raise ValueError("Transformer input must be at least 1D")
 
         expected = self.seq_len * self.input_dim
+        if x.ndim == 2 and x.shape == (self.seq_len, self.input_dim):
+            return x
         if x.size != expected:
             raise ValueError(
                 f"Expected input with {expected} elements (seq_len={self.seq_len}, token_dim={self.input_dim}), "
