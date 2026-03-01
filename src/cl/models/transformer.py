@@ -21,8 +21,8 @@ class TransformerBlock(eqx.Module):
     mlp2: Linear
     norm1: eqx.nn.LayerNorm
     norm2: eqx.nn.LayerNorm
-    n_heads: int
-    head_dim: int
+    n_heads: int = eqx.field(static=True)
+    head_dim: int = eqx.field(static=True)
 
     def __init__(self, embed_dim: int, n_heads: int, mlp_dim: int, key: jax.Array):
         if embed_dim % n_heads != 0:
@@ -67,12 +67,12 @@ class TransformerEncoder(AWBMixin, eqx.Module):
     blocks: List[TransformerBlock]
     head: Linear
     pos_embed: jax.Array
-    seq_len: int
-    input_dim: int
-    embed_dim: int
-    n_heads: int
-    mlp_dim: int
-    n_layers: int
+    seq_len: int = eqx.field(static=True)
+    input_dim: int = eqx.field(static=True)
+    embed_dim: int = eqx.field(static=True)
+    n_heads: int = eqx.field(static=True)
+    mlp_dim: int = eqx.field(static=True)
+    n_layers: int = eqx.field(static=True)
     awb_enabled: bool
     A: Optional[List[jax.Array]]
     B: Optional[List[jax.Array]]
