@@ -54,9 +54,9 @@ class TransformerBlock(eqx.Module):
         return self.out_proj(attn_out)
 
     def __call__(self, x: jax.Array) -> jax.Array:
-        h = self.norm1(x)
+        h = jax.vmap(self.norm1)(x)
         x = x + self._self_attention(h)
-        h = self.norm2(x)
+        h = jax.vmap(self.norm2)(x)
         x = x + self.mlp2(jax.nn.gelu(self.mlp1(h)))
         return x
 
@@ -220,12 +220,12 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         x = x + self.pos_embed
 
         for block in self.blocks:
-            h = block.norm1(x)
+            h = jax.vmap(block.norm1)(x)
             attn_out = self._attention_awb(h, block, self.A[idx], self.B[idx], self.A[idx + 1], self.B[idx + 1])
             idx += 2
             x = x + attn_out
 
-            h = block.norm2(x)
+            h = jax.vmap(block.norm2)(x)
             mlp_out = self._apply_linear_awb(h, block.mlp1, self.A[idx], self.B[idx])
             idx += 1
             mlp_out = jax.nn.gelu(mlp_out)
