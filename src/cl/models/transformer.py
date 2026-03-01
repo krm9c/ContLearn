@@ -32,8 +32,8 @@ class TransformerBlock(eqx.Module):
         self.out_proj = Linear(embed_dim, embed_dim, key=key_out)
         self.mlp1 = Linear(embed_dim, mlp_dim, key=key_mlp1)
         self.mlp2 = Linear(mlp_dim, embed_dim, key=key_mlp2)
-        self.norm1 = eqx.nn.LayerNorm(embed_dim, elementwise_affine=True)
-        self.norm2 = eqx.nn.LayerNorm(embed_dim, elementwise_affine=True)
+        self.norm1 = eqx.nn.LayerNorm(embed_dim, use_weight=True, use_bias=True)
+        self.norm2 = eqx.nn.LayerNorm(embed_dim, use_weight=True, use_bias=True)
         self.n_heads = n_heads
         self.head_dim = embed_dim // n_heads
 
@@ -160,10 +160,21 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         paths.append((lambda m: m.head.weight, lambda m: m.head.bias))
         return paths
 
-    def __call__(self, x: jax.Array) -> jax.Array:
-        if x.shape[0] != self.seq_len:
-            raise ValueError(f"Expected seq_len={self.seq_len}, got {x.shape[0]}")
+    def _normalize_input(self, x: jax.Array) -> jax.Array:
+        if x.ndim == 0:
+            raise ValueError("Transformer input must be at least 1D")
 
+        expected = self.seq_len * self.input_dim
+        if x.size != expected:
+            raise ValueError(
+                f"Expected input with {expected} elements (seq_len={self.seq_len}, token_dim={self.input_dim}), "
+                f"got shape {x.shape}"
+            )
+
+        return jnp.reshape(x, (self.seq_len, self.input_dim))
+
+    def __call__(self, x: jax.Array) -> jax.Array:
+        x = self._normalize_input(x)
         x = self.input_proj(x)
         x = x + self.pos_embed
 
@@ -201,8 +212,7 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         if not self.awb_enabled or self.A is None or self.B is None:
             raise ValueError("AWB not enabled - A/B matrices are not initialized")
 
-        if x.shape[0] != self.seq_len:
-            raise ValueError(f"Expected seq_len={self.seq_len}, got {x.shape[0]}")
+        x = self._normalize_input(x)
 
         idx = 0
         x = self._apply_linear_awb(x, self.input_proj, self.A[idx], self.B[idx])
