@@ -162,11 +162,13 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         return paths
 
     def _normalize_input(self, x: jax.Array) -> jax.Array:
-        token_dim = int(self.input_dim)
         if isinstance(x, core.Tracer):
+            token_dim = x.shape[-1]
             if x.ndim == 2 and x.shape[1] == token_dim:
                 return x
             return jnp.reshape(x, (-1, token_dim))
+
+        token_dim = int(self.input_dim)
 
         if x.ndim == 0:
             raise ValueError("Transformer input must be at least 1D")
