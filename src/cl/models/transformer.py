@@ -163,10 +163,9 @@ class TransformerEncoder(AWBMixin, eqx.Module):
 
     def _normalize_input(self, x: jax.Array) -> jax.Array:
         if isinstance(x, core.Tracer):
-            token_dim = x.shape[-1]
-            if x.ndim == 2 and x.shape[1] == token_dim:
+            if x.ndim == 2 and x.shape[-1] == 1:
                 return x
-            return jnp.reshape(x, (-1, token_dim))
+            return jnp.reshape(x, (-1, 1))
 
         token_dim = int(self.input_dim)
 
