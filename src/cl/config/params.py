@@ -212,6 +212,10 @@ def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
         set_default('transformer_n_heads', constants.DEFAULT_TRANSFORMER_N_HEADS)
         set_default('transformer_mlp_dim', constants.DEFAULT_TRANSFORMER_MLP_DIM)
         set_default('transformer_n_layers', constants.DEFAULT_TRANSFORMER_N_LAYERS)
+        set_default('transformer_embed_dim_step', constants.DEFAULT_TRANSFORMER_EMBED_DIM_STEP)
+        set_default('transformer_mlp_dim_step', constants.DEFAULT_TRANSFORMER_MLP_DIM_STEP)
+        set_default('transformer_n_layers_range', constants.DEFAULT_TRANSFORMER_LAYERS_RANGE)
+        set_default('transformer_n_heads_candidates', constants.DEFAULT_TRANSFORMER_HEAD_CANDIDATES)
 
     # ===== CLASSIFICATION DEFAULTS =====
     if config.get('prob') == 'classification':

@@ -325,6 +325,46 @@ class TrainingLoopsMixin:
         trainloader, exploader, valloader, testloader = train__
         flag = config.get("flag", [1.0, 1.0])
 
+        def _get_arch_info(model):
+            arch_info = {'model_type': type(model).__name__}
+
+            if hasattr(model, 'sizes'):
+                arch_info['sizes'] = list(model.sizes)
+                return arch_info
+
+            if hasattr(model, 'feed_sizes') and hasattr(model, 'filter_size'):
+                arch_info['feed_sizes'] = list(model.feed_sizes)
+                arch_info['filter_size'] = model.filter_size
+                if hasattr(model, 'channel_out'):
+                    arch_info['channel_out'] = model.channel_out
+                if hasattr(model, 'channel_in'):
+                    arch_info['channel_in'] = model.channel_in
+                if hasattr(model, 'input_size'):
+                    arch_info['input_size'] = model.input_size
+                if hasattr(model, 'padding'):
+                    arch_info['padding'] = model.padding
+                if hasattr(model, 'stride'):
+                    arch_info['stride'] = model.stride
+                return arch_info
+
+            if hasattr(model, 'gcn_sizes') and hasattr(model, 'feed_sizes'):
+                arch_info['gcn_sizes'] = list(model.gcn_sizes)
+                arch_info['feed_sizes'] = list(model.feed_sizes)
+                return arch_info
+
+            if hasattr(model, 'embed_dim') and hasattr(model, 'n_heads'):
+                arch_info['embed_dim'] = model.embed_dim
+                arch_info['n_heads'] = model.n_heads
+                arch_info['mlp_dim'] = model.mlp_dim
+                arch_info['n_layers'] = model.n_layers
+                arch_info['seq_len'] = model.seq_len
+                arch_info['token_dim'] = model.input_dim
+                if hasattr(model, 'output_dim'):
+                    arch_info['output_dim'] = model.output_dim
+                return arch_info
+
+            return arch_info
+
         # Added by Claude: Wrap dataloaders with JAX prefetching for GPU utilization
         # This overlaps data loading with computation, eliminating CPU-GPU transfer bottleneck
         # prefetch_size=3 means 3 batches are loading while GPU processes current batch
@@ -450,6 +490,13 @@ class TrainingLoopsMixin:
             new_params = optax.apply_updates(params, updates)
             return new_params, new_opt_state
 
+        def _awb_forward(model, sample):
+            if hasattr(model, 'get_AWBT'):
+                return model.get_AWBT(sample)
+            if hasattr(model, 'getAWB'):
+                return model.getAWB(sample)
+            return model(sample)
+
         # JIT-compile metric computation for vectors (classification/regression)
         @jax.jit
         def compute_metric_class(params, static, x, y):
@@ -465,6 +512,17 @@ class TrainingLoopsMixin:
             return jnp.mean(y == pred_y)
 
         @jax.jit
+        def compute_metric_class_awb(params, static, x, y):
+            model = eqx.combine(params, static)
+            preds = jax.vmap(lambda sample: _awb_forward(model, sample))(x)
+            if preds.ndim == 3 and preds.shape[1] == 1:
+                preds = jnp.squeeze(preds, axis=1)
+            pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
+            if y.ndim == 2:
+                y = jnp.argmax(y, axis=1)
+            return jnp.mean(y == pred_y)
+
+        @jax.jit
         def compute_metric_mse(params, static, x, y):
             model = eqx.combine(params, static)
             preds = jax.vmap(model)(x)
@@ -472,11 +530,19 @@ class TrainingLoopsMixin:
                 preds = jnp.squeeze(preds, axis=1)
             return jnp.mean(optax.l2_loss(y, preds))
 
-        # Select metric function based on loss type
+        @jax.jit
+        def compute_metric_mse_awb(params, static, x, y):
+            model = eqx.combine(params, static)
+            preds = jax.vmap(lambda sample: _awb_forward(model, sample))(x)
+            if preds.ndim == 3 and preds.shape[1] == 1:
+                preds = jnp.squeeze(preds, axis=1)
+            return jnp.mean(optax.l2_loss(y, preds))
+
+        # Select metric function based on loss type and training mode
         if loss_type == 'regression':
-            compute_metric = compute_metric_mse
+            compute_metric = compute_metric_mse if notABTrain else compute_metric_mse_awb
         else:
-            compute_metric = compute_metric_class
+            compute_metric = compute_metric_class if notABTrain else compute_metric_class_awb
 
         # Added by Claude: Multi-GPU (pmap) support for vector data
         use_multi_gpu = config.get("multi_gpu", False)
@@ -869,12 +935,23 @@ class TrainingLoopsMixin:
                     # Added by Claude: Periodic checkpointing (async, non-blocking)
                     if checkpoint_manager is not None and (epoch % checkpoint_interval == 0 and epoch > 0):
                         checkpoint_model = eqx.combine(params, static)
+                        checkpoint_metadata = {
+                            'task_id': task_id,
+                            'epoch': epoch,
+                            'phase': phase,
+                            'notABTrain': notABTrain,
+                            'global_iteration_offset': global_iteration_offset,
+                            'arch_info': _get_arch_info(checkpoint_model),
+                        }
                         checkpoint_manager.save_checkpoint(
                             model=checkpoint_model,
                             record_dict=record_dict,
                             task_id=task_id,
                             epoch=epoch,
-                            prefix=f"{phase}_checkpoint"
+                            prefix=f"{phase}_checkpoint",
+                            opt_state=opt_state,
+                            config_snapshot=config,
+                            metadata=checkpoint_metadata
                         )
 
         # Added by Claude: Wait for any pending checkpoint saves before returning

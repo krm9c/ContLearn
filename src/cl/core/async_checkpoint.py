@@ -151,16 +151,20 @@ class AsyncCheckpointManager:
                     break
 
                 # Unpack save task
-                model_path, model, record_dict_path, record_dict = save_task
+                model_path, model, opt_state_path, opt_state, record_dict_path, payload = save_task
 
                 # Save model
                 if model is not None:
                     eqx.tree_serialise_leaves(model_path, model)
 
+                # Save optimizer state
+                if opt_state is not None:
+                    eqx.tree_serialise_leaves(opt_state_path, opt_state)
+
                 # Save records
-                if record_dict is not None:
+                if payload is not None:
                     with open(record_dict_path, 'wb') as f:
-                        pickle.dump(record_dict, f)
+                        pickle.dump(payload, f)
 
                 self._save_queue.task_done()
 
@@ -175,13 +179,15 @@ class AsyncCheckpointManager:
         if len(self._checkpoint_history) > self.max_checkpoints:
             # Remove oldest checkpoint
             old_checkpoint = self._checkpoint_history.pop(0)
-            model_path, record_path = old_checkpoint
+            model_path, record_path, opt_state_path = old_checkpoint
 
             try:
                 if os.path.exists(model_path):
                     os.remove(model_path)
                 if os.path.exists(record_path):
                     os.remove(record_path)
+                if os.path.exists(opt_state_path):
+                    os.remove(opt_state_path)
             except Exception as e:
                 print(f"[AsyncCheckpoint] Failed to delete old checkpoint: {e}", file=sys.stderr)
 
@@ -190,7 +196,10 @@ class AsyncCheckpointManager:
                        record_dict: Dict[str, Any],
                        task_id: int,
                        epoch: int,
-                       prefix: str = "checkpoint") -> bool:
+                       prefix: str = "checkpoint",
+                       opt_state=None,
+                       config_snapshot: Optional[Dict[str, Any]] = None,
+                       metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Save a checkpoint asynchronously (or synchronously if disabled).
 
         Args:
@@ -223,22 +232,33 @@ class AsyncCheckpointManager:
         # Generate checkpoint paths
         checkpoint_name = f"{prefix}_task{task_id}_epoch{epoch}"
         model_path = str(self.save_dir / f"{checkpoint_name}.eqx")
+        opt_state_path = str(self.save_dir / f"{checkpoint_name}_opt.eqx")
         record_path = str(self.save_dir / f"{checkpoint_name}_records.pkl")
 
         # Track for cleanup
-        self._checkpoint_history.append((model_path, record_path))
+        self._checkpoint_history.append((model_path, record_path, opt_state_path))
         self._cleanup_old_checkpoints()
+
+        payload = {
+            'record_dict': record_dict,
+            'metadata': metadata or {},
+            'config_snapshot': config_snapshot or {},
+            'model_path': model_path,
+            'opt_state_path': opt_state_path,
+        }
 
         if self.enable_async:
             # Queue for background saving
-            self._save_queue.put((model_path, model, record_path, record_dict))
+            self._save_queue.put((model_path, model, opt_state_path, opt_state, record_path, payload))
             return True
         else:
             # Synchronous save
             try:
                 eqx.tree_serialise_leaves(model_path, model)
+                if opt_state is not None:
+                    eqx.tree_serialise_leaves(opt_state_path, opt_state)
                 with open(record_path, 'wb') as f:
-                    pickle.dump(record_dict, f)
+                    pickle.dump(payload, f)
                 return True
             except Exception as e:
                 print(f"[AsyncCheckpoint] Error saving checkpoint: {e}", file=sys.stderr)

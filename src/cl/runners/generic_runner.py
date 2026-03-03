@@ -27,10 +27,12 @@ from ..core.awb import (
 from ..core.awb_pipeline import run_awb_task
 # Added by Claude: Profiling support
 from ..core.profiling import enable_profiling
-from ..models.mlp import MLPAWBOps, create_mlp
+from ..models.mlp import MLPAWBOps, create_mlp, MLP
 from ..models.cnn import CNNAWBOps, CNN, CNN3D
 from ..models.gcn import GCNAWBOps, GCN
-from ..models.transformer import TransformerAWBOps, create_transformer
+from ..models.transformer import TransformerAWBOps, create_transformer, TransformerEncoder
+import pickle
+from pathlib import Path
 from ..datasets.sine import SineDataset
 from ..datasets.mnist import MNISTDataset, PermutedMNISTDataset
 from ..datasets.cifar import CIFAR10Dataset, CIFAR100Dataset
@@ -106,6 +108,8 @@ def get_model_architecture(model) -> dict:
         arch_info['n_layers'] = model.n_layers
         arch_info['seq_len'] = model.seq_len
         arch_info['token_dim'] = model.input_dim
+        if hasattr(model, 'output_dim'):
+            arch_info['output_dim'] = model.output_dim
         return arch_info
 
     return arch_info
@@ -853,6 +857,127 @@ def load_checkpoint(config: Dict[str, Any]):
     return trainer, optimizer, dataset, model
 
 
+def build_model_from_arch(arch_info: Dict[str, Any], config: Dict[str, Any]):
+    awb_enabled = config.get('awb_enabled', False)
+    model_type = arch_info.get('model_type', '')
+
+    if 'sizes' in arch_info:
+        return MLP.create_with_architecture(arch_info['sizes'], seed=0, awb_enabled=awb_enabled)
+
+    if 'embed_dim' in arch_info and 'n_heads' in arch_info:
+        arch_spec = {
+            'seq_len': arch_info['seq_len'],
+            'token_dim': arch_info['token_dim'],
+            'embed_dim': arch_info['embed_dim'],
+            'n_heads': arch_info['n_heads'],
+            'mlp_dim': arch_info['mlp_dim'],
+            'n_layers': arch_info['n_layers'],
+            'output_dim': arch_info.get('output_dim', config.get('n_class', 10)),
+        }
+        return TransformerEncoder.create_with_architecture(arch_spec, seed=0, awb_enabled=awb_enabled)
+
+    if 'gcn_sizes' in arch_info and 'feed_sizes' in arch_info:
+        return GCN.create_with_architecture(
+            (arch_info['gcn_sizes'], arch_info['feed_sizes']),
+            seed=0,
+            awb_enabled=awb_enabled
+        )
+
+    if 'feed_sizes' in arch_info and 'filter_size' in arch_info:
+        key = jax.random.PRNGKey(0)
+        filter_size = arch_info['filter_size']
+        feed_sizes = arch_info['feed_sizes']
+        input_size = arch_info.get('input_size')
+        channel_in = arch_info.get('channel_in')
+        channel_out = arch_info.get('channel_out')
+
+        if model_type == 'CNN3D':
+            return CNN3D(
+                key=key,
+                filter_size=filter_size,
+                feed_sizes=feed_sizes,
+                input_size=input_size,
+                channel_in=channel_in,
+                channel_out=channel_out
+            )
+        return CNN(
+            key=key,
+            filter_size=filter_size,
+            feed_sizes=feed_sizes,
+            input_size=input_size,
+            channel_in=channel_in if channel_in is not None else 1,
+            channel_out=channel_out,
+            padding=arch_info.get('padding'),
+            stride=arch_info.get('stride')
+        )
+
+    raise ValueError("Unsupported architecture info for resume")
+
+
+def load_resume_checkpoint(config: Dict[str, Any], optim):
+    resume_from = config.get('resume_from')
+    resume_latest = config.get('resume_latest', False)
+
+    if not resume_from and not resume_latest:
+        return None
+
+    if resume_from:
+        record_path = Path(resume_from)
+        if record_path.is_dir():
+            record_paths = sorted(record_path.glob("*_records.pkl"), key=lambda p: p.stat().st_mtime)
+            if not record_paths:
+                raise FileNotFoundError(f"No checkpoint records found in {record_path}")
+            record_path = record_paths[-1]
+    else:
+        checkpoint_dir = Path(f"{config.get('model_path', 'outputs/model')}_checkpoints")
+        record_paths = sorted(checkpoint_dir.glob("*_records.pkl"), key=lambda p: p.stat().st_mtime)
+        if not record_paths:
+            raise FileNotFoundError(f"No checkpoint records found in {checkpoint_dir}")
+        record_path = record_paths[-1]
+
+    with open(record_path, 'rb') as f:
+        payload = pickle.load(f)
+
+    if isinstance(payload, dict) and 'record_dict' in payload:
+        record_dict = payload.get('record_dict', {})
+        metadata = payload.get('metadata', {})
+        model_path = payload.get('model_path')
+        opt_state_path = payload.get('opt_state_path')
+    else:
+        record_dict = payload
+        metadata = {}
+        model_path = None
+        opt_state_path = None
+
+    if model_path is None:
+        model_path = str(record_path).replace('_records.pkl', '.eqx')
+    if opt_state_path is None:
+        opt_state_path = str(record_path).replace('_records.pkl', '_opt.eqx')
+
+    arch_info = metadata.get('arch_info')
+    if not arch_info:
+        raise ValueError("Checkpoint metadata missing arch_info; cannot resume")
+
+    model_template = build_model_from_arch(arch_info, config)
+    model = eqx.tree_deserialise_leaves(model_path, model_template)
+
+    params, static = partition_model_for_standard_training(model)
+    opt_state_template = optim.init(params)
+    if Path(opt_state_path).exists():
+        opt_state = eqx.tree_deserialise_leaves(opt_state_path, opt_state_template)
+    else:
+        opt_state = opt_state_template
+
+    resume_state = {
+        'task_id': metadata.get('task_id', 0),
+        'epoch': metadata.get('epoch', 0),
+        'phase': metadata.get('phase', 'main'),
+        'notABTrain': metadata.get('notABTrain', True),
+    }
+
+    return model, opt_state, record_dict, resume_state
+
+
 def create_awb_operations(model):
     """Create appropriate AWBOperations instance based on model type.
 
@@ -917,9 +1042,16 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     # Load components based on config
     trainer, optim, data, model = load_checkpoint(config)
 
-    # Initialize optimizer state
-    params, static = partition_model_for_standard_training(model)
-    opt_state = optim.init(params)
+    # Optional resume
+    resume_state = None
+    resume_payload = load_resume_checkpoint(config, optim)
+    if resume_payload is not None:
+        model, opt_state, record_dict, resume_state = resume_payload
+        params, static = partition_model_for_standard_training(model)
+    else:
+        # Initialize optimizer state
+        params, static = partition_model_for_standard_training(model)
+        opt_state = optim.init(params)
 
     # Extract config values
     n_tasks = config.get('n_task', 5)
@@ -930,16 +1062,39 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     loss_type = 'regression' if prob == 'regression' else 'classification'
 
     # Initialize record dictionary
-    record_dict = trainer.initialize_record_dict(config, run_id=run_id)
+    if resume_state is None:
+        record_dict = trainer.initialize_record_dict(config, run_id=run_id)
+    else:
+        if record_dict is None:
+            record_dict = trainer.initialize_record_dict(config, run_id=run_id)
 
     # Added by Claude: Initialize architecture history tracking
-    record_dict['architecture_history'] = {}
+    if 'architecture_history' not in record_dict:
+        record_dict['architecture_history'] = {}
 
     # Added by Claude: Track loss from previous task for adaptive LR and grad weights
     previous_task_loss = None
 
     # Training loop over tasks
-    for task_id in range(n_tasks):
+    start_task = 0
+    resume_epoch = 0
+    resume_phase = 'main'
+    if resume_state is not None:
+        start_task = resume_state.get('task_id', 0)
+        resume_epoch = resume_state.get('epoch', 0) + 1
+        resume_phase = resume_state.get('phase', 'main')
+
+        if awb_enabled and resume_phase != 'main':
+            raise ValueError("Resume inside AWB phases is not supported. Resume from a main checkpoint or disable AWB.")
+
+        if resume_epoch >= epochs_per_task:
+            start_task += 1
+            resume_epoch = 0
+
+        if awb_enabled and resume_epoch > 0:
+            raise ValueError("Resume mid-task is not supported when AWB is enabled. Resume at task boundary.")
+
+    for task_id in range(start_task, n_tasks):
         print(f"\n{'='*60}")
         print(f"Task {task_id}")
         print(f"{'='*60}")
@@ -999,6 +1154,27 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
         # Task 0 or AWB disabled: Standard CL training
         if task_id == 0 or not awb_enabled:
+            if resume_state is not None and task_id == start_task and resume_epoch > 0:
+                print(f"Resuming task {task_id} at epoch {resume_epoch}")
+                model = eqx.combine(params, static)
+
+                save_iter = config.get('save_iter', DEFAULT_SAVE_ITER)
+
+                remaining_epochs = max(0, epochs_per_task - resume_epoch)
+                if remaining_epochs == 0:
+                    continue
+
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params, static=static, opt_state=opt_state, optim=optim,
+                    n_iter=remaining_epochs, save_iter=save_iter,
+                    task_id=task_id, config=config, record_dict=record_dict,
+                    problem_type=problem_type, loss_type=loss_type,
+                    phase='main', record_training=True,
+                    global_iteration_offset=task_id * epochs_per_task + resume_epoch
+                )
+                model = eqx.combine(params, static)
+                continue
             # Added by Claude: Show adaptive lr_min and loss ratio for this task
             adaptive_lr_min = compute_adaptive_lr_min(config, loss_ratio)
             print(f"Standard CL training (lr={task_lr:.6f}, adaptive_lr_min={adaptive_lr_min:.2e}, loss_ratio={loss_ratio:.2f})")

@@ -12,6 +12,7 @@ import equinox as eqx
 from typing import List, Optional, Dict, Any
 
 from .layers import Linear, AWBLayerSpec, AWBMixin
+from ..core.awb import _create_identity_like_matrix
 
 
 class TransformerBlock(eqx.Module):
@@ -76,6 +77,7 @@ class TransformerEncoder(AWBMixin, eqx.Module):
     awb_enabled: bool
     A: Optional[List[jax.Array]]
     B: Optional[List[jax.Array]]
+    output_dim: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -101,6 +103,7 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         self.n_heads = n_heads
         self.mlp_dim = mlp_dim
         self.n_layers = n_layers
+        self.output_dim = output_dim
         self.awb_enabled = awb_enabled
 
         key_in, key_pos, key_blocks, key_head = jax.random.split(key, 4)
@@ -162,12 +165,11 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         return paths
 
     def _normalize_input(self, x: jax.Array) -> jax.Array:
+        token_dim = self.input_dim
         if isinstance(x, core.Tracer):
-            if x.ndim == 2 and x.shape[-1] == 1:
+            if x.ndim == 2 and x.shape[1] == token_dim:
                 return x
-            return jnp.reshape(x, (-1, 1))
-
-        token_dim = int(self.input_dim)
+            return jnp.reshape(x, (-1, token_dim))
 
         if x.ndim == 0:
             raise ValueError("Transformer input must be at least 1D")
@@ -327,6 +329,76 @@ class TransformerEncoder(AWBMixin, eqx.Module):
             model = eqx.tree_at(b_path, model, bias)
         return model
 
+    def generate_search_candidates(
+        self,
+        iteration: int,
+        current_best: Dict[str, Any],
+        config: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        from ..config.constants import (
+            DEFAULT_TRANSFORMER_EMBED_DIM_STEP,
+            DEFAULT_TRANSFORMER_MLP_DIM_STEP,
+            DEFAULT_TRANSFORMER_LAYERS_RANGE,
+            DEFAULT_TRANSFORMER_HEAD_CANDIDATES,
+            DEFAULT_ARCH_SEARCH_RANGE,
+        )
+
+        embed_step = config.get('transformer_embed_dim_step', DEFAULT_TRANSFORMER_EMBED_DIM_STEP)
+        mlp_step = config.get('transformer_mlp_dim_step', DEFAULT_TRANSFORMER_MLP_DIM_STEP)
+        layers_range = config.get('transformer_n_layers_range', DEFAULT_TRANSFORMER_LAYERS_RANGE)
+        head_candidates = config.get('transformer_n_heads_candidates', DEFAULT_TRANSFORMER_HEAD_CANDIDATES)
+        search_range = config.get('arch_search_range', DEFAULT_ARCH_SEARCH_RANGE)
+
+        base_embed = current_best['embed_dim']
+        base_mlp = current_best['mlp_dim']
+        base_layers = current_best['n_layers']
+        base_heads = current_best['n_heads']
+
+        embed_candidates = [base_embed + embed_step * n for n in range(search_range)]
+        mlp_candidates = [base_mlp + mlp_step * n for n in range(search_range)]
+        layer_candidates = [max(1, base_layers + n) for n in range(layers_range)]
+
+        if base_heads not in head_candidates:
+            head_candidates = list(head_candidates) + [base_heads]
+
+        candidates = []
+        for embed_dim in embed_candidates:
+            for n_heads in head_candidates:
+                if embed_dim % n_heads != 0:
+                    continue
+                for mlp_dim in mlp_candidates:
+                    for n_layers in layer_candidates:
+                        candidates.append({
+                            'seq_len': current_best['seq_len'],
+                            'token_dim': current_best['token_dim'],
+                            'embed_dim': embed_dim,
+                            'n_heads': n_heads,
+                            'mlp_dim': mlp_dim,
+                            'n_layers': n_layers,
+                            'output_dim': current_best['output_dim'],
+                        })
+
+        return candidates
+
+    @classmethod
+    def create_with_architecture(
+        cls,
+        arch_spec: Dict[str, Any],
+        seed: int = 0,
+        awb_enabled: bool = False
+    ) -> 'TransformerEncoder':
+        return cls(
+            seq_len=arch_spec['seq_len'],
+            input_dim=arch_spec['token_dim'],
+            embed_dim=arch_spec['embed_dim'],
+            n_heads=arch_spec['n_heads'],
+            mlp_dim=arch_spec['mlp_dim'],
+            n_layers=arch_spec['n_layers'],
+            output_dim=arch_spec['output_dim'],
+            key=jax.random.PRNGKey(seed),
+            awb_enabled=awb_enabled,
+        )
+
 
 def create_transformer(config: Dict[str, Any]) -> TransformerEncoder:
     input_size = config['input_size']
@@ -365,12 +437,103 @@ def create_transformer(config: Dict[str, Any]) -> TransformerEncoder:
 class TransformerAWBOps:
     def search_architecture(self, model, task_id, baseline_loss, dataloader_curr,
                             dataloader_exp, test_loader_curr, test_loader_exp, config, trainer=None):
-        return self.get_model_architecture(model)
+        from ..core.arch_search import search_architecture
+        search_config = config.copy()
+        search_config['arch_search_method'] = 'grid'
+        return search_architecture(
+            model=model,
+            baseline_arch=self.get_model_architecture(model),
+            task_id=task_id,
+            baseline_loss=baseline_loss,
+            dataloader_curr=dataloader_curr,
+            dataloader_exp=dataloader_exp,
+            test_loader_curr=test_loader_curr,
+            test_loader_exp=test_loader_exp,
+            config=search_config,
+            trainer=trainer,
+            model_type='transformer'
+        )
 
     def set_AB_matrices(self, model, original_arch, new_arch):
-        if original_arch != new_arch:
-            raise ValueError("Transformer architecture changes are not supported yet")
-        return model.with_new_AB_matrices()
+        if original_arch == new_arch:
+            return model.with_new_AB_matrices()
+
+        old_embed = original_arch['embed_dim']
+        new_embed = new_arch['embed_dim']
+        old_mlp = original_arch['mlp_dim']
+        new_mlp = new_arch['mlp_dim']
+        old_layers = original_arch['n_layers']
+        new_layers = new_arch['n_layers']
+        token_dim = original_arch['token_dim']
+        output_dim = original_arch['output_dim']
+
+        new_model = TransformerEncoder(
+            seq_len=new_arch['seq_len'],
+            input_dim=new_arch['token_dim'],
+            embed_dim=new_embed,
+            n_heads=new_arch['n_heads'],
+            mlp_dim=new_mlp,
+            n_layers=new_layers,
+            output_dim=new_arch['output_dim'],
+            key=jax.random.PRNGKey(0),
+            awb_enabled=True,
+        )
+
+        # Copy shared weights (old -> new) where possible
+        new_model = eqx.tree_at(lambda m: m.input_proj.weight, new_model, model.input_proj.weight)
+        new_model = eqx.tree_at(lambda m: m.input_proj.bias, new_model, model.input_proj.bias)
+
+        shared_layers = min(old_layers, new_layers)
+        for i in range(shared_layers):
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].qkv.weight, new_model, model.blocks[i].qkv.weight)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].qkv.bias, new_model, model.blocks[i].qkv.bias)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].out_proj.weight, new_model, model.blocks[i].out_proj.weight)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].out_proj.bias, new_model, model.blocks[i].out_proj.bias)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].mlp1.weight, new_model, model.blocks[i].mlp1.weight)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].mlp1.bias, new_model, model.blocks[i].mlp1.bias)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].mlp2.weight, new_model, model.blocks[i].mlp2.weight)
+            new_model = eqx.tree_at(lambda m, idx=i: m.blocks[idx].mlp2.bias, new_model, model.blocks[i].mlp2.bias)
+
+        new_model = eqx.tree_at(lambda m: m.head.weight, new_model, model.head.weight)
+        new_model = eqx.tree_at(lambda m: m.head.bias, new_model, model.head.bias)
+
+        # Build A/B matrices for all linear layers
+        A_list = []
+        B_list = []
+
+        # Input projection
+        A_list.append(_create_identity_like_matrix(new_embed, old_embed))
+        B_list.append(_create_identity_like_matrix(token_dim, token_dim))
+
+        # Transformer blocks
+        for i in range(new_layers):
+            if i < old_layers:
+                o_embed = old_embed
+                o_mlp = old_mlp
+            else:
+                o_embed = new_embed
+                o_mlp = new_mlp
+
+            # QKV
+            A_list.append(_create_identity_like_matrix(3 * new_embed, 3 * o_embed))
+            B_list.append(_create_identity_like_matrix(new_embed, o_embed))
+            # Out proj
+            A_list.append(_create_identity_like_matrix(new_embed, o_embed))
+            B_list.append(_create_identity_like_matrix(new_embed, o_embed))
+            # MLP1
+            A_list.append(_create_identity_like_matrix(new_mlp, o_mlp))
+            B_list.append(_create_identity_like_matrix(new_embed, o_embed))
+            # MLP2
+            A_list.append(_create_identity_like_matrix(new_embed, o_embed))
+            B_list.append(_create_identity_like_matrix(new_mlp, o_mlp))
+
+        # Head
+        A_list.append(_create_identity_like_matrix(output_dim, output_dim))
+        B_list.append(_create_identity_like_matrix(new_embed, old_embed))
+
+        new_model = eqx.tree_at(lambda m: m.A, new_model, A_list)
+        new_model = eqx.tree_at(lambda m: m.B, new_model, B_list)
+        return new_model
 
     def partition_for_AB_training(self, model):
         return model.partition_for_AB_training()
@@ -389,6 +552,7 @@ class TransformerAWBOps:
             'n_heads': model.n_heads,
             'mlp_dim': model.mlp_dim,
             'n_layers': model.n_layers,
+            'output_dim': model.output_dim,
         }
 
     def save_weights(self, model):
