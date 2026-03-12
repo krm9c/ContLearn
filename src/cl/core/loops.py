@@ -390,6 +390,11 @@ class TrainingLoopsMixin:
         log_interval = config.get("log_interval", 1)  # Progress bar update frequency
         eval_interval = config.get("eval_interval", save_iter)  # Test metric computation frequency
 
+        # Added by Claude: Optional per-epoch architecture debug logging
+        debug_epoch_arch = config.get("debug_epoch_arch", False) or config.get("awb_debug_epoch_arch", False)
+        debug_epoch_arch_interval = config.get("debug_epoch_arch_interval", 1)
+        debug_epoch_arch_prefix = config.get("debug_epoch_arch_prefix", "ARCH")
+
         # Added by Claude: Initialize async checkpoint manager if periodic checkpointing enabled
         checkpoint_interval = config.get("checkpoint_interval", 0)
         checkpoint_manager = None
@@ -650,6 +655,13 @@ class TrainingLoopsMixin:
                     return jax.lax.pmean(metric, axis_name=multi_gpu_axis)
 
         for epoch in pbar:
+            if debug_epoch_arch and (epoch % debug_epoch_arch_interval == 0 or epoch == n_iter - 1):
+                params_debug = _unreplicate(params) if multi_gpu_active else params
+                model_debug = eqx.combine(params_debug, static)
+                print(
+                    f"[{debug_epoch_arch_prefix}] task={task_id} phase={phase} "
+                    f"epoch={epoch + 1}/{n_iter} arch={_get_arch_info(model_debug)}"
+                )
             # Added by Claude: Profile first epoch first batch
             if epoch == 0 and profiling_enabled:
                 print(f"\n[PROFILE] Starting first epoch...")

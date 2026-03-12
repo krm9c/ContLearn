@@ -548,6 +548,16 @@ def search_architecture_bayesian(
     # Build training config
     train_config = build_train_config(config, search_cfg)
 
+    # Optional verbose debug logging for per-epoch architecture visibility
+    arch_search_verbose = config.get('arch_search_verbose', False) or config.get('awb_debug_arch', False)
+    if arch_search_verbose:
+        train_config = {
+            **train_config,
+            'debug_epoch_arch': True,
+            'debug_epoch_arch_prefix': 'ARCH-SEARCH',
+            'debug_epoch_arch_interval': 1,
+        }
+
     # Prepare training data tuple
     problem_type = config.get('problem', 'vectors')
     train_data = (
@@ -734,6 +744,8 @@ def search_architecture_grid(
             break
 
         for (cand_id, candidate_spec) in enumerate(candidates):
+            if arch_search_verbose:
+                print(f"    Candidate {cand_id + 1}/{len(candidates)}: {candidate_spec}")
             # MODEL-SPECIFIC: Create model with candidate architecture
             candidate_model = model.create_with_architecture(
                 candidate_spec,
@@ -804,6 +816,9 @@ def search_architecture_grid(
                 epochs=search_epochs,
                 window=averaging_window
             )
+
+            if arch_search_verbose:
+                print(f"      Candidate loss: {candidate_loss:.6f}")
 
             total_candidates += 1
 
