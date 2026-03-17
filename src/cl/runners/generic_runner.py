@@ -973,6 +973,10 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
         'epoch': metadata.get('epoch', 0),
         'phase': metadata.get('phase', 'main'),
         'notABTrain': metadata.get('notABTrain', True),
+        'awb_best_arch': metadata.get('awb_best_arch'),
+        'awb_original_arch': metadata.get('awb_original_arch'),
+        'preliminary_loss': metadata.get('preliminary_loss'),
+        'previous_task_loss': metadata.get('previous_task_loss'),
     }
 
     return model, opt_state, record_dict, resume_state
@@ -1084,14 +1088,17 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         resume_epoch = resume_state.get('epoch', 0) + 1
         resume_phase = resume_state.get('phase', 'main')
 
-        if awb_enabled and resume_phase != 'main':
+        if awb_enabled and resume_phase not in ('main', 'awb_search'):
             raise ValueError("Resume inside AWB phases is not supported. Resume from a main checkpoint or disable AWB.")
+
+        if resume_phase == 'awb_search':
+            resume_epoch = 0
 
         if resume_epoch >= epochs_per_task:
             start_task += 1
             resume_epoch = 0
 
-        if awb_enabled and resume_epoch > 0:
+        if awb_enabled and resume_phase == 'main' and resume_epoch > 0:
             raise ValueError("Resume mid-task is not supported when AWB is enabled. Resume at task boundary.")
 
     for task_id in range(start_task, n_tasks):
@@ -1403,7 +1410,8 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 awb_ops=awb_ops,
                 problem_type=problem_type,
                 loss_type=loss_type,
-                previous_task_loss=previous_task_loss
+                previous_task_loss=previous_task_loss,
+                resume_state=resume_state if (resume_state is not None and resume_phase == 'awb_search' and task_id == start_task) else None
             )
 
             # Extract final params and static

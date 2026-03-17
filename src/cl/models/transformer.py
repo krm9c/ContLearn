@@ -284,7 +284,7 @@ class TransformerEncoder(AWBMixin, eqx.Module):
         return model
 
     def partition_for_AB_training(self):
-        filter_spec = eqx.tree_map(lambda _: False, self)
+        filter_spec = jax.tree_util.tree_map(lambda _: False, self)
         filter_spec = eqx.tree_at(
             lambda x: (x.A, x.B),
             filter_spec,

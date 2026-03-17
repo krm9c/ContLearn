@@ -22,7 +22,7 @@ Recording control ensures clean separation of training phases:
 - Main training: Recorded normally in record_dict['iterations']
 """
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import equinox as eqx
 import optax
 import torch
@@ -34,6 +34,7 @@ import time
 
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
+from .async_checkpoint import AsyncCheckpointManager
 
 from .awb_operations import AWBOperations
 from .awb import (
@@ -168,7 +169,8 @@ def run_awb_task(
     awb_ops: AWBOperations,
     problem_type: str,
     loss_type: str,
-    previous_task_loss: float = None
+    previous_task_loss: float = None,
+    resume_state: Optional[Dict[str, Any]] = None
 ) -> Tuple[eqx.Module, optax.GradientTransformation, optax.OptState, Dict[str, Any]]:
     """Execute complete AWB 5-step pipeline for one task.
 
@@ -217,97 +219,165 @@ def run_awb_task(
         'search_time': 0.0,
     }
 
-    # STEP 1: Preliminary Training
-    print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
-    params, static = awb_ops.partition_for_standard_training(model)
-
-    # Added by Claude: Store current iteration count to compute preliminary offset
+    resume_after_search = resume_state is not None and resume_state.get('phase') == 'awb_search'
     current_iterations = len(record_dict.get('iterations', {}))
+    if resume_after_search:
+        print("\n[RESUME] Skipping preliminary + search (using saved architecture)")
 
-    params, static, opt_state, record_dict = trainer.train__CL(
-        train__=(trainloader, exploader, valloader, testloader),
-        params=params, static=static, opt_state=opt_state, optim=optim,
-        n_iter=preliminary_epochs, save_iter=save_iter,
-        task_id=task_id, config=config, record_dict=record_dict,
-        problem_type=problem_type, loss_type=loss_type,
-        phase='preliminary', record_training=True, global_iteration_offset=current_iterations
-    )
+    # STEP 1: Preliminary Training
+    if not resume_after_search:
+        print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
+        params, static = awb_ops.partition_for_standard_training(model)
 
-    model = eqx.combine(params, static)
+        params, static, opt_state, record_dict = trainer.train__CL(
+            train__=(trainloader, exploader, valloader, testloader),
+            params=params, static=static, opt_state=opt_state, optim=optim,
+            n_iter=preliminary_epochs, save_iter=save_iter,
+            task_id=task_id, config=config, record_dict=record_dict,
+            problem_type=problem_type, loss_type=loss_type,
+            phase='preliminary', record_training=True, global_iteration_offset=current_iterations
+        )
 
-    # Added by Claude: Get preliminary loss from last recorded iteration
-    iterations_dict = record_dict.get('iterations', {})
-    last_prelim_iter = current_iterations + preliminary_epochs - 1
-    if last_prelim_iter in iterations_dict:
-        last_record = iterations_dict[last_prelim_iter]
-        trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
-    else:
-        # Fallback: try to find the most recent iteration
-        available_iters = sorted([k for k in iterations_dict.keys() if k >= current_iterations])
-        if available_iters:
-            last_record = iterations_dict[available_iters[-1]]
+        model = eqx.combine(params, static)
+
+    if not resume_after_search:
+        # Added by Claude: Get preliminary loss from last recorded iteration
+        iterations_dict = record_dict.get('iterations', {})
+        last_prelim_iter = current_iterations + preliminary_epochs - 1
+        if last_prelim_iter in iterations_dict:
+            last_record = iterations_dict[last_prelim_iter]
             trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
         else:
+            # Fallback: try to find the most recent iteration
+            available_iters = sorted([k for k in iterations_dict.keys() if k >= current_iterations])
+            if available_iters:
+                last_record = iterations_dict[available_iters[-1]]
+                trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
+            else:
+                trainWLoss = 0.0
+
+        print(f"  Preliminary loss: {trainWLoss:.6f}")
+
+        # Added by Claude: Store preliminary loss in metadata
+        task_metadata['preliminary_loss'] = trainWLoss
+
+        # STEP 2: Decision
+        print(f"\n[STEP 2] Architecture change decision")
+        if previous_task_loss is None:
+            previous_task_loss = trainWLoss
+            print(f"  WARNING: No previous task loss, using preliminary loss")
+
+        # Added by Claude: Store loss ratio in metadata
+        task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
+
+        print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
+
+        # Added by Claude: Read threshold from config
+        threshold_high = config.get('awb_loss_ratio_threshold')
+
+        change_arch = should_change_arch(trainWLoss, previous_task_loss,
+                                         threshold_high=threshold_high)
+
+        # Added by Claude: DEBUG HACK - Force architecture change for profiling
+        if config.get('force_arch_change', False):
+            print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
+            change_arch = True
+
+        print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
+
+        original_arch = awb_ops.get_model_architecture(model)
+        saved_weights = awb_ops.save_weights(model)
+    else:
+        trainWLoss = resume_state.get('preliminary_loss', None)
+        if trainWLoss is None:
             trainWLoss = 0.0
+            print("  [RESUME] Missing preliminary loss; defaulting to 0.0")
 
-    print(f"  Preliminary loss: {trainWLoss:.6f}")
-
-    # Added by Claude: Store preliminary loss in metadata
-    task_metadata['preliminary_loss'] = trainWLoss
-
-    # STEP 2: Decision
-    print(f"\n[STEP 2] Architecture change decision")
-    if previous_task_loss is None:
-        previous_task_loss = trainWLoss
-        print(f"  WARNING: No previous task loss, using preliminary loss")
-
-    # Added by Claude: Store loss ratio in metadata
-    task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
-
-    print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
-
-    # Added by Claude: Read threshold from config
-    threshold_high = config.get('awb_loss_ratio_threshold')
-
-    change_arch = should_change_arch(trainWLoss, previous_task_loss,
-                                     threshold_high=threshold_high)
-
-    # Added by Claude: DEBUG HACK - Force architecture change for profiling
-    if config.get('force_arch_change', False):
-        print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
-        change_arch = True
-
-    print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
-
-    original_arch = awb_ops.get_model_architecture(model)
-    saved_weights = awb_ops.save_weights(model)
+        previous_task_loss = resume_state.get('previous_task_loss', previous_task_loss)
+        if previous_task_loss is None:
+            previous_task_loss = trainWLoss
+        task_metadata['preliminary_loss'] = trainWLoss
+        task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
+        original_arch = awb_ops.get_model_architecture(model)
+        saved_weights = awb_ops.save_weights(model)
+        new_arch = resume_state.get('awb_best_arch')
+        if new_arch is None:
+            raise ValueError("Resume requested after search but awb_best_arch is missing")
+        change_arch = new_arch != original_arch
 
     if change_arch:
         # STEP 3a: Architecture Search
-        print(f"\n[STEP 3a] Architecture search - NOT recorded")
+        if not resume_after_search:
+            print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
-        # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
-        # This is more efficient than using full training data and prevents overfitting
-        validation_ratio = config.get('awb_validation_ratio', 0.2)
-        val_batch_size = config.get('batch_size', 64)
+        if not resume_after_search:
+            # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
+            # This is more efficient than using full training data and prevents overfitting
+            validation_ratio = config.get('awb_validation_ratio', 0.2)
+            val_batch_size = config.get('batch_size', 64)
 
-        val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
-        val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+            val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
+            val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
 
-        # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
-        test_curr, test_exp = testloader
+            # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
+            test_curr, test_exp = testloader
 
-        # Added by Claude: Profile architecture search
-        # Use validation sets for architecture search instead of full training data
-        with profile_section("Architecture Search"):
-            new_arch = awb_ops.search_architecture(
-                model, task_id, trainWLoss, val_trainloader, val_exploader,
-                test_curr, test_exp, config, trainer
+            # Added by Claude: Profile architecture search
+            # Use validation sets for architecture search instead of full training data
+            with profile_section("Architecture Search"):
+                new_arch = awb_ops.search_architecture(
+                    model, task_id, trainWLoss, val_trainloader, val_exploader,
+                    test_curr, test_exp, config, trainer
+                )
+            print(f"  Original: {original_arch}")
+            print(f"  Optimal: {new_arch}")
+
+            model = awb_ops.restore_weights(model, saved_weights)
+        else:
+            new_arch = resume_state.get('awb_best_arch')
+            if new_arch is None:
+                raise ValueError("Resume requested after search but awb_best_arch is missing")
+            print(f"  Original: {original_arch}")
+            print(f"  Optimal (resumed): {new_arch}")
+
+        # Optional: checkpoint after search to allow resume at Step 3b
+        if not resume_after_search and config.get('awb_checkpoint_after_search', True):
+            if 'tasks' not in record_dict:
+                record_dict['tasks'] = {}
+            if task_id not in record_dict['tasks']:
+                record_dict['tasks'][task_id] = {}
+            record_dict['tasks'][task_id].update(task_metadata)
+
+            checkpoint_dir = f"{config.get('model_path', 'outputs/model')}_checkpoints"
+            checkpoint_manager = AsyncCheckpointManager(
+                save_dir=checkpoint_dir,
+                max_checkpoints=config.get("max_checkpoints", 3),
+                memory_limit_gb=config.get("checkpoint_memory_limit_gb", 8.0),
+                enable_async=config.get("async_checkpointing", True)
             )
-        print(f"  Original: {original_arch}")
-        print(f"  Optimal: {new_arch}")
-
-        model = awb_ops.restore_weights(model, saved_weights)
+            checkpoint_metadata = {
+                'task_id': task_id,
+                'epoch': preliminary_epochs,
+                'phase': 'awb_search',
+                'notABTrain': True,
+                'arch_info': awb_ops.get_model_architecture(model),
+                'awb_best_arch': new_arch,
+                'awb_original_arch': original_arch,
+                'preliminary_loss': trainWLoss,
+                'previous_task_loss': previous_task_loss,
+            }
+            checkpoint_manager.save_checkpoint(
+                model=model,
+                record_dict=record_dict,
+                task_id=task_id,
+                epoch=preliminary_epochs,
+                prefix="awb_search_checkpoint",
+                opt_state=opt_state,
+                config_snapshot=config,
+                metadata=checkpoint_metadata
+            )
+            checkpoint_manager.wait_all(timeout=30.0)
+            checkpoint_manager.shutdown()
 
         if new_arch != original_arch:
             # Added by Claude: Update metadata for architecture change
