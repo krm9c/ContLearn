@@ -959,7 +959,17 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
         raise ValueError("Checkpoint metadata missing arch_info; cannot resume")
 
     model_template = build_model_from_arch(arch_info, config)
-    model = eqx.tree_deserialise_leaves(model_path, model_template)
+    try:
+        model = eqx.tree_deserialise_leaves(model_path, model_template)
+    except RuntimeError as exc:
+        # AWB search checkpoints may be saved without A/B matrices
+        if metadata.get('phase') == 'awb_search':
+            config_no_awb = {**config, 'awb_enabled': False}
+            model_template = build_model_from_arch(arch_info, config_no_awb)
+            model = eqx.tree_deserialise_leaves(model_path, model_template)
+            print("[WARN] Loaded awb_search checkpoint without A/B matrices; A/B will be reinitialized in Step 3b.")
+        else:
+            raise exc
 
     params, static = partition_model_for_standard_training(model)
     opt_state_template = optim.init(params)
