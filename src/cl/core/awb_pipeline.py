@@ -219,13 +219,17 @@ def run_awb_task(
         'search_time': 0.0,
     }
 
-    resume_after_search = resume_state is not None and resume_state.get('phase') == 'awb_search'
+    resume_phase = resume_state.get('phase') if resume_state is not None else None
+    resume_after_search = resume_phase == 'awb_search'
+    resume_after_ab = resume_phase == 'ab'
     current_iterations = len(record_dict.get('iterations', {}))
     if resume_after_search:
         print("\n[RESUME] Skipping preliminary + search (using saved architecture)")
+    if resume_after_ab:
+        print("\n[RESUME] Skipping preliminary + search + AB training (using saved A/B)")
 
     # STEP 1: Preliminary Training
-    if not resume_after_search:
+    if not resume_after_search and not resume_after_ab:
         print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
         params, static = awb_ops.partition_for_standard_training(model)
 
@@ -240,7 +244,7 @@ def run_awb_task(
 
         model = eqx.combine(params, static)
 
-    if not resume_after_search:
+    if not resume_after_search and not resume_after_ab:
         # Added by Claude: Get preliminary loss from last recorded iteration
         iterations_dict = record_dict.get('iterations', {})
         last_prelim_iter = current_iterations + preliminary_epochs - 1
@@ -300,17 +304,21 @@ def run_awb_task(
         task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
         original_arch = awb_ops.get_model_architecture(model)
         saved_weights = awb_ops.save_weights(model)
-        new_arch = resume_state.get('awb_best_arch')
-        if new_arch is None:
-            raise ValueError("Resume requested after search but awb_best_arch is missing")
-        change_arch = new_arch != original_arch
+        if resume_after_search:
+            new_arch = resume_state.get('awb_best_arch')
+            if new_arch is None:
+                raise ValueError("Resume requested after search but awb_best_arch is missing")
+            change_arch = new_arch != original_arch
+        else:
+            new_arch = original_arch
+            change_arch = True
 
     if change_arch:
         # STEP 3a: Architecture Search
-        if not resume_after_search:
+        if not resume_after_search and not resume_after_ab:
             print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
-        if not resume_after_search:
+        if not resume_after_search and not resume_after_ab:
             # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
             # This is more efficient than using full training data and prevents overfitting
             validation_ratio = config.get('awb_validation_ratio', 0.2)
@@ -336,12 +344,18 @@ def run_awb_task(
         else:
             new_arch = resume_state.get('awb_best_arch')
             if new_arch is None:
-                raise ValueError("Resume requested after search but awb_best_arch is missing")
+                if resume_after_ab:
+                    new_arch = original_arch
+                else:
+                    raise ValueError("Resume requested after search but awb_best_arch is missing")
             print(f"  Original: {original_arch}")
-            print(f"  Optimal (resumed): {new_arch}")
+            if resume_after_ab:
+                print(f"  Optimal (resumed): {new_arch}")
+            else:
+                print(f"  Optimal (resumed): {new_arch}")
 
         # Optional: checkpoint after search to allow resume at Step 3b
-        if not resume_after_search and config.get('awb_checkpoint_after_search', True):
+        if not resume_after_search and not resume_after_ab and config.get('awb_checkpoint_after_search', True):
             if 'tasks' not in record_dict:
                 record_dict['tasks'] = {}
             if task_id not in record_dict['tasks']:
@@ -379,7 +393,7 @@ def run_awb_task(
             checkpoint_manager.wait_all(timeout=30.0)
             checkpoint_manager.shutdown()
 
-        if new_arch != original_arch:
+        if new_arch != original_arch or resume_after_ab:
             # Added by Claude: Update metadata for architecture change
             task_metadata['architecture_changed'] = True
             task_metadata['change_reason'] = 'loss_ratio_threshold'
@@ -408,36 +422,21 @@ def run_awb_task(
 
             else:
                 # STEP 3b: Train A/B
-                print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
+                if not resume_after_ab:
+                    print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
 
-                # Added by Claude: Profile A/B training
-                ab_training_start = time.time()
+                if not resume_after_ab:
+                    # Added by Claude: Profile A/B training
+                    ab_training_start = time.time()
 
-                model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
-                diff_model, static_model = awb_ops.partition_for_AB_training(model)
-                trainer.initialize_ab_training(record_dict, task_id)
+                    model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
+                    diff_model, static_model = awb_ops.partition_for_AB_training(model)
+                    trainer.initialize_ab_training(record_dict, task_id)
 
-                ab_lr = config.get('awb_ab_lr', DEFAULT_LR)
-                ab_optim = optax.adam(ab_lr)
-                ab_opt_state = ab_optim.init(diff_model)
+                    ab_lr = config.get('awb_ab_lr', DEFAULT_LR)
+                    ab_optim = optax.adam(ab_lr)
+                    ab_opt_state = ab_optim.init(diff_model)
 
-                diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
-                    train__=(trainloader, exploader, valloader, testloader),
-                    params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
-                    n_iter=ab_training_epochs, save_iter=save_iter,
-                    task_id=task_id, config=config, record_dict=record_dict,
-                    notABTrain=False, problem_type=problem_type, loss_type=loss_type,
-                    phase='ab', record_training=True, global_iteration_offset=0
-                )
-
-                ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0, epochs=ab_training_epochs, window=averaging_window)
-                
-                print(f"  AB loss: {ab_loss:.6f}")
-                # Optional: Continue AB training
-                ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
-                ab_iter = 1
-                while (trainWLoss * ab_threshold < ab_loss) and (ab_iter < ab_max_iterations):
-                    print(f"  Continuing AB training (iter {ab_iter + 1})")
                     diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
                         train__=(trainloader, exploader, valloader, testloader),
                         params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
@@ -446,17 +445,34 @@ def run_awb_task(
                         notABTrain=False, problem_type=problem_type, loss_type=loss_type,
                         phase='ab', record_training=True, global_iteration_offset=0
                     )
-                    ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
-                                               epochs=ab_training_epochs, window=averaging_window)
-                    ab_iter += 1
 
-                model = eqx.combine(diff_model, static_model)
+                    ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0, epochs=ab_training_epochs, window=averaging_window)
+                    
+                    print(f"  AB loss: {ab_loss:.6f}")
+                    # Optional: Continue AB training
+                    ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
+                    ab_iter = 1
+                    while (trainWLoss * ab_threshold < ab_loss) and (ab_iter < ab_max_iterations):
+                        print(f"  Continuing AB training (iter {ab_iter + 1})")
+                        diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
+                            train__=(trainloader, exploader, valloader, testloader),
+                            params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
+                            n_iter=ab_training_epochs, save_iter=save_iter,
+                            task_id=task_id, config=config, record_dict=record_dict,
+                            notABTrain=False, problem_type=problem_type, loss_type=loss_type,
+                            phase='ab', record_training=True, global_iteration_offset=0
+                        )
+                        ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0,
+                                                   epochs=ab_training_epochs, window=averaging_window)
+                        ab_iter += 1
 
-                # Added by Claude: Report A/B training time
-                if config.get('profiling_enabled'):
-                    from .profiling import format_memory_stats
-                    ab_elapsed = time.time() - ab_training_start
-                    print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
+                    model = eqx.combine(diff_model, static_model)
+
+                    # Added by Claude: Report A/B training time
+                    if config.get('profiling_enabled'):
+                        from .profiling import format_memory_stats
+                        ab_elapsed = time.time() - ab_training_start
+                        print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
 
                 # STEP 4: Compute V
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")
@@ -508,11 +524,12 @@ def run_awb_task(
                 # STEP 5: Train V
                 print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
 
-                # DEBUG: Print weight shapes after compute_V
-                print(f"  [DEBUG] Weight shapes after compute_V:")
-                print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
-                print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
-                print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
+                # DEBUG: Print weight shapes after compute_V (GCN only)
+                if problem_type == 'graph':
+                    print(f"  [DEBUG] Weight shapes after compute_V:")
+                    print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
+                    print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
+                    print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
 
                 # Added by Claude: Compute LR reduction for V training based on parameter expansion
                 # The issue: First gradient step causes loss explosion (0.93→53.14) because
