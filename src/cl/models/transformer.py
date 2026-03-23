@@ -74,7 +74,7 @@ class TransformerEncoder(AWBMixin, eqx.Module):
     n_heads: int = eqx.field(static=True)
     mlp_dim: int = eqx.field(static=True)
     n_layers: int = eqx.field(static=True)
-    awb_enabled: bool
+    awb_enabled: bool = eqx.field(static=True)
     A: Optional[List[jax.Array]]
     B: Optional[List[jax.Array]]
     output_dim: int = eqx.field(static=True)
