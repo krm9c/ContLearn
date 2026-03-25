@@ -542,25 +542,29 @@ def run_awb_task(
                 # Get V training LR reduction factor from config (default: auto-compute from expansion)
                 v_lr_factor = config.get('awb_v_lr_factor', None)
                 if v_lr_factor is None:
-                    # Auto-compute based on expansion ratio
-                    # Use original param count from architecture before search
-                    orig_gcn_sizes = [model_debug.gcn_sizes[0]] + [32] * (len(model_debug.gcn_sizes) - 1)  # Rough estimate
-                    orig_feed_sizes = [32, 32, 16, model_debug.feed_sizes[-1]]
-                    # Better: use the saved original sizes
-                    orig_param_count = sum(
-                        orig_gcn_sizes[i] * orig_gcn_sizes[i+1] + orig_gcn_sizes[i+1]
-                        for i in range(len(orig_gcn_sizes)-1)
-                    ) + sum(
-                        orig_feed_sizes[i] * orig_feed_sizes[i+1] + orig_feed_sizes[i+1]
-                        for i in range(len(orig_feed_sizes)-1)
-                    )
-                    expansion_ratio = new_param_count / max(orig_param_count, 1)
-                    # Use 1/sqrt(expansion) as the LR factor (inspired by Xavier scaling)
-                    import math
-                    v_lr_factor = 1.0 / math.sqrt(expansion_ratio)
-                    v_lr_factor = max(v_lr_factor, 0.01)  # Minimum 1% of original LR
-                    print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
-                    print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
+                    if problem_type == 'graph':
+                        # Auto-compute based on expansion ratio (GCN only)
+                        # Use original param count from architecture before search
+                        orig_gcn_sizes = [model_debug.gcn_sizes[0]] + [32] * (len(model_debug.gcn_sizes) - 1)  # Rough estimate
+                        orig_feed_sizes = [32, 32, 16, model_debug.feed_sizes[-1]]
+                        # Better: use the saved original sizes
+                        orig_param_count = sum(
+                            orig_gcn_sizes[i] * orig_gcn_sizes[i+1] + orig_gcn_sizes[i+1]
+                            for i in range(len(orig_gcn_sizes)-1)
+                        ) + sum(
+                            orig_feed_sizes[i] * orig_feed_sizes[i+1] + orig_feed_sizes[i+1]
+                            for i in range(len(orig_feed_sizes)-1)
+                        )
+                        expansion_ratio = new_param_count / max(orig_param_count, 1)
+                        # Use 1/sqrt(expansion) as the LR factor (inspired by Xavier scaling)
+                        import math
+                        v_lr_factor = 1.0 / math.sqrt(expansion_ratio)
+                        v_lr_factor = max(v_lr_factor, 0.01)  # Minimum 1% of original LR
+                        print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
+                        print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
+                    else:
+                        v_lr_factor = 1.0
+                        print("  [V-TRAIN] Auto LR factor disabled for non-graph models; using 1.0")
                 else:
                     print(f"  [V-TRAIN] Using config LR factor: {v_lr_factor}")
 
