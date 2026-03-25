@@ -962,13 +962,30 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
     try:
         model = eqx.tree_deserialise_leaves(model_path, model_template)
     except RuntimeError as exc:
-        # AWB search checkpoints may be saved without A/B matrices
-        if metadata.get('phase') == 'awb_search':
+        phase = metadata.get('phase')
+        alt_arches = []
+        if phase in ('awb_search', 'ab'):
+            alt_arches = [metadata.get('awb_best_arch'), metadata.get('awb_original_arch')]
+
+        for alt_arch in alt_arches:
+            if not alt_arch or alt_arch == arch_info:
+                continue
+            try:
+                model_template = build_model_from_arch(alt_arch, config)
+                model = eqx.tree_deserialise_leaves(model_path, model_template)
+                print(f"[WARN] Loaded checkpoint using alternate arch from metadata ({phase}).")
+                break
+            except RuntimeError:
+                model = None
+
+        if model is None and phase == 'awb_search':
+            # AWB search checkpoints may be saved without A/B matrices
             config_no_awb = {**config, 'awb_enabled': False}
             model_template = build_model_from_arch(arch_info, config_no_awb)
             model = eqx.tree_deserialise_leaves(model_path, model_template)
             print("[WARN] Loaded awb_search checkpoint without A/B matrices; A/B will be reinitialized in Step 3b.")
-        else:
+
+        if model is None:
             raise exc
 
     params, static = partition_model_for_standard_training(model)
