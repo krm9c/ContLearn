@@ -959,6 +959,7 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
         raise ValueError("Checkpoint metadata missing arch_info; cannot resume")
 
     model_template = build_model_from_arch(arch_info, config)
+    model = None
     try:
         model = eqx.tree_deserialise_leaves(model_path, model_template)
     except RuntimeError as exc:
