@@ -23,6 +23,7 @@ Recording control ensures clean separation of training phases:
 """
 
 from typing import Dict, Any, Tuple, Optional
+import subprocess
 import equinox as eqx
 import optax
 import torch
@@ -33,7 +34,7 @@ from torch_geometric.data import Batch
 import time
 
 # Added by Claude: Profiling support
-from .profiling import profile, profile_section
+from .profiling import profile, profile_section, get_gpu_memory_usage
 from .async_checkpoint import AsyncCheckpointManager
 
 from .awb_operations import AWBOperations
@@ -217,7 +218,64 @@ def run_awb_task(
         'searched_architectures': [],
         'loss_ratio': None,
         'search_time': 0.0,
+        'compute': {},
     }
+
+    def _mem_snapshot():
+        mem = get_gpu_memory_usage()
+        if mem is None:
+            return None
+        used_gb, peak_gb = mem
+        return {'used_gb': float(used_gb), 'peak_gb': float(peak_gb)}
+
+    def _gpu_util_snapshot():
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if result.returncode != 0:
+                return None
+            lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            if not lines:
+                return None
+            values = []
+            for line in lines:
+                try:
+                    values.append(float(line))
+                except ValueError:
+                    continue
+            if not values:
+                return None
+            return {'avg_pct': float(sum(values) / len(values)), 'max_pct': float(max(values))}
+        except Exception:
+            return None
+
+    def _record_step_time(
+        step_key: str,
+        start_time: float,
+        mem_start: Optional[Dict[str, float]] = None,
+        util_start: Optional[Dict[str, float]] = None,
+    ):
+        elapsed = time.time() - start_time
+        entry = {'time_s': float(elapsed)}
+        if mem_start is not None:
+            entry['mem_start'] = mem_start
+        mem_end = _mem_snapshot()
+        if mem_end is not None:
+            entry['mem_end'] = mem_end
+        if util_start is not None:
+            entry['gpu_util_start'] = util_start
+        util_end = _gpu_util_snapshot()
+        if util_end is not None:
+            entry['gpu_util_end'] = util_end
+        task_metadata['compute'][step_key] = entry
+        return elapsed
+
+    task_start_time = time.time()
 
     resume_phase = resume_state.get('phase') if resume_state is not None else None
     resume_after_search = resume_phase == 'awb_search'
@@ -231,6 +289,9 @@ def run_awb_task(
     # STEP 1: Preliminary Training
     if not resume_after_search and not resume_after_ab:
         print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
+        prelim_mem_start = _mem_snapshot()
+        prelim_util_start = _gpu_util_snapshot()
+        prelim_start = time.time()
         params, static = awb_ops.partition_for_standard_training(model)
 
         params, static, opt_state, record_dict = trainer.train__CL(
@@ -243,6 +304,7 @@ def run_awb_task(
         )
 
         model = eqx.combine(params, static)
+        _record_step_time('preliminary', prelim_start, prelim_mem_start, prelim_util_start)
 
     if not resume_after_search and not resume_after_ab:
         # Added by Claude: Get preliminary loss from last recorded iteration
@@ -332,11 +394,15 @@ def run_awb_task(
 
             # Added by Claude: Profile architecture search
             # Use validation sets for architecture search instead of full training data
+            arch_mem_start = _mem_snapshot()
+            arch_util_start = _gpu_util_snapshot()
+            arch_start = time.time()
             with profile_section("Architecture Search"):
                 new_arch = awb_ops.search_architecture(
                     model, task_id, trainWLoss, val_trainloader, val_exploader,
                     test_curr, test_exp, config, trainer
                 )
+            task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
             print(f"  Original: {original_arch}")
             print(f"  Optimal: {new_arch}")
 
@@ -427,6 +493,8 @@ def run_awb_task(
 
                 if not resume_after_ab:
                     # Added by Claude: Profile A/B training
+                    ab_mem_start = _mem_snapshot()
+                    ab_util_start = _gpu_util_snapshot()
                     ab_training_start = time.time()
 
                     model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
@@ -468,6 +536,8 @@ def run_awb_task(
 
                     model = eqx.combine(diff_model, static_model)
 
+                    _record_step_time('ab_training', ab_training_start, ab_mem_start, ab_util_start)
+
                     # Added by Claude: Report A/B training time
                     if config.get('profiling_enabled'):
                         from .profiling import format_memory_stats
@@ -476,6 +546,9 @@ def run_awb_task(
 
                 # STEP 4: Compute V
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")
+                compute_v_mem_start = _mem_snapshot()
+                compute_v_util_start = _gpu_util_snapshot()
+                compute_v_start = time.time()
 
                 # DEBUG: Verify loss BEFORE and AFTER compute_V
                 import jax.numpy as jnp
@@ -497,6 +570,8 @@ def run_awb_task(
 
                 model = awb_ops.compute_V(model)
                 params, static = awb_ops.partition_for_standard_training(model)
+
+                _record_step_time('compute_v', compute_v_start, compute_v_mem_start, compute_v_util_start)
 
                 if problem_type == 'graph':
                     model_debug = eqx.combine(params, static)
@@ -580,17 +655,24 @@ def run_awb_task(
             # Added by Claude: Create V training config with reduced LR for diagnostics
             v_train_config = {**config, 'lr': v_training_lr}
 
-            if ab_warmup_epochs > 0:
-                params, static, opt_state, record_dict = trainer.train__CL(
-                    train__=(trainloader, exploader, valloader, testloader),
-                    params=params, static=static, opt_state=opt_state, optim=optim,
-                    n_iter=ab_warmup_epochs, save_iter=save_iter,
-                    task_id=task_id, config=v_train_config, record_dict=record_dict,
-                    problem_type=problem_type, loss_type=loss_type,
-                    phase='warmup', record_training=False,
-                    global_iteration_offset=task_id * epochs_per_task
-                )
+                if ab_warmup_epochs > 0:
+                    warmup_mem_start = _mem_snapshot()
+                    warmup_util_start = _gpu_util_snapshot()
+                    warmup_start = time.time()
+                    params, static, opt_state, record_dict = trainer.train__CL(
+                        train__=(trainloader, exploader, valloader, testloader),
+                        params=params, static=static, opt_state=opt_state, optim=optim,
+                        n_iter=ab_warmup_epochs, save_iter=save_iter,
+                        task_id=task_id, config=v_train_config, record_dict=record_dict,
+                        problem_type=problem_type, loss_type=loss_type,
+                        phase='warmup', record_training=False,
+                        global_iteration_offset=task_id * epochs_per_task
+                    )
+                    _record_step_time('warmup', warmup_start, warmup_mem_start, warmup_util_start)
 
+            main_mem_start = _mem_snapshot()
+            main_util_start = _gpu_util_snapshot()
+            main_start = time.time()
             params, static, opt_state, record_dict = trainer.train__CL(
                 train__=(trainloader, exploader, valloader, testloader),
                 params=params, static=static, opt_state=opt_state, optim=optim,
@@ -601,6 +683,7 @@ def run_awb_task(
                 global_iteration_offset=task_id * epochs_per_task
             )
             model = eqx.combine(params, static)
+            _record_step_time('main', main_start, main_mem_start, main_util_start)
 
         else:
             # Added by Claude: Same architecture found by search
@@ -615,6 +698,9 @@ def run_awb_task(
             opt_state = optim.init(params)
 
             total_epochs = ab_warmup_epochs + epochs_per_task
+            standard_mem_start = _mem_snapshot()
+            standard_util_start = _gpu_util_snapshot()
+            standard_start = time.time()
             params, static, opt_state, record_dict = trainer.train__CL(
                 train__=(trainloader, exploader, valloader, testloader),
                 params=params, static=static, opt_state=opt_state, optim=optim,
@@ -625,6 +711,7 @@ def run_awb_task(
                 global_iteration_offset=task_id * epochs_per_task
             )
             model = eqx.combine(params, static)
+            _record_step_time('standard_training', standard_start, standard_mem_start, standard_util_start)
     else:
         # Added by Claude: No architecture change needed
         task_metadata['architecture_changed'] = False
@@ -638,6 +725,9 @@ def run_awb_task(
         opt_state = optim.init(params)
 
         total_epochs = ab_warmup_epochs + epochs_per_task
+        standard_mem_start = _mem_snapshot()
+        standard_util_start = _gpu_util_snapshot()
+        standard_start = time.time()
         params, static, opt_state, record_dict = trainer.train__CL(
             train__=(trainloader, exploader, valloader, testloader),
             params=params, static=static, opt_state=opt_state, optim=optim,
@@ -648,11 +738,14 @@ def run_awb_task(
             global_iteration_offset=task_id * epochs_per_task
         )
         model = eqx.combine(params, static)
+        _record_step_time('standard_training', standard_start, standard_mem_start, standard_util_start)
 
     final_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=task_id,
                                    epochs=epochs_per_task, window=averaging_window)
     print(f"\n[AWB COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
     print(f"{'='*70}\n")
+
+    task_metadata['compute']['total'] = {'time_s': float(time.time() - task_start_time)}
 
     # Added by Claude: Store task metadata for architecture history tracking
     if 'tasks' not in record_dict:
