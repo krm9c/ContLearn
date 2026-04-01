@@ -655,20 +655,20 @@ def run_awb_task(
             # Added by Claude: Create V training config with reduced LR for diagnostics
             v_train_config = {**config, 'lr': v_training_lr}
 
-                if ab_warmup_epochs > 0:
-                    warmup_mem_start = _mem_snapshot()
-                    warmup_util_start = _gpu_util_snapshot()
-                    warmup_start = time.time()
-                    params, static, opt_state, record_dict = trainer.train__CL(
-                        train__=(trainloader, exploader, valloader, testloader),
-                        params=params, static=static, opt_state=opt_state, optim=optim,
-                        n_iter=ab_warmup_epochs, save_iter=save_iter,
-                        task_id=task_id, config=v_train_config, record_dict=record_dict,
-                        problem_type=problem_type, loss_type=loss_type,
-                        phase='warmup', record_training=False,
-                        global_iteration_offset=task_id * epochs_per_task
-                    )
-                    _record_step_time('warmup', warmup_start, warmup_mem_start, warmup_util_start)
+            if ab_warmup_epochs > 0:
+                warmup_mem_start = _mem_snapshot()
+                warmup_util_start = _gpu_util_snapshot()
+                warmup_start = time.time()
+                params, static, opt_state, record_dict = trainer.train__CL(
+                    train__=(trainloader, exploader, valloader, testloader),
+                    params=params, static=static, opt_state=opt_state, optim=optim,
+                    n_iter=ab_warmup_epochs, save_iter=save_iter,
+                    task_id=task_id, config=v_train_config, record_dict=record_dict,
+                    problem_type=problem_type, loss_type=loss_type,
+                    phase='warmup', record_training=False,
+                    global_iteration_offset=task_id * epochs_per_task
+                )
+                _record_step_time('warmup', warmup_start, warmup_mem_start, warmup_util_start)
 
             main_mem_start = _mem_snapshot()
             main_util_start = _gpu_util_snapshot()
