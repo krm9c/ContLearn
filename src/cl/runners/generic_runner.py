@@ -1006,12 +1006,22 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
             new_arch = metadata.get('awb_best_arch') or arch_info
             # Fallback: if metadata didn't carry the arches (older checkpoints),
             # try to recover them from record_dict['architecture_history'].
+            # Important: during mid-Step-5 saves, record_dict['architecture_history']
+            # has NOT yet been populated for the CURRENT task (the post-task write
+            # happens at the end of train_model's task loop). So look at task_id-1's
+            # final_arch as the original_arch for task_id.
             if orig_arch is None:
                 hist = record_dict.get('architecture_history', {}) if isinstance(record_dict, dict) else {}
                 t = metadata.get('task_id', 0)
-                if t in hist:
-                    orig_arch = hist[t].get('original_arch')
-                    new_arch = hist[t].get('final_arch') or new_arch
+                if isinstance(hist, dict):
+                    if t in hist:
+                        orig_arch = hist[t].get('original_arch')
+                        new_arch = hist[t].get('final_arch') or new_arch
+                    elif (t - 1) in hist:
+                        # Current-task entry not written yet -> use previous task's
+                        # final_arch as this task's original_arch.
+                        orig_arch = hist[t - 1].get('final_arch')
+                        print(f"[RESUME] Recovered orig_arch from hist[{t-1}]['final_arch'].")
 
             if orig_arch is not None and new_arch is not None:
                 try:
@@ -1024,6 +1034,9 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
                 except Exception as inner:
                     print(f"[WARN] main-phase transition reconstruction failed: {inner}")
                     model = None
+            else:
+                print(f"[WARN] Cannot reconstruct A/B transition shape: "
+                      f"orig_arch={orig_arch}, new_arch={new_arch}")
 
         if model is None and phase == 'awb_search':
             # AWB search checkpoints may be saved without A/B matrices
