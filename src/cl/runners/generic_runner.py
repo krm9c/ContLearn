@@ -958,6 +958,23 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
     if not arch_info:
         raise ValueError("Checkpoint metadata missing arch_info; cannot resume")
 
+    # Fixed by Claude: debug output for resume diagnostics
+    print(f"[RESUME-DBG] record_path = {record_path}")
+    print(f"[RESUME-DBG] model_path  = {model_path}")
+    print(f"[RESUME-DBG] metadata keys: {list(metadata.keys())}")
+    print(f"[RESUME-DBG]   phase             = {metadata.get('phase')}")
+    print(f"[RESUME-DBG]   task_id           = {metadata.get('task_id')}")
+    print(f"[RESUME-DBG]   epoch             = {metadata.get('epoch')}")
+    print(f"[RESUME-DBG]   arch_info         = {metadata.get('arch_info')}")
+    print(f"[RESUME-DBG]   awb_original_arch = {metadata.get('awb_original_arch')}")
+    print(f"[RESUME-DBG]   awb_best_arch     = {metadata.get('awb_best_arch')}")
+    if isinstance(record_dict, dict):
+        hist = record_dict.get('architecture_history', {})
+        print(f"[RESUME-DBG] architecture_history keys: {list(hist.keys()) if isinstance(hist, dict) else 'N/A'}")
+        t = metadata.get('task_id', 0)
+        if isinstance(hist, dict) and t in hist:
+            print(f"[RESUME-DBG]   hist[{t}] = {hist[t]}")
+
     model_template = build_model_from_arch(arch_info, config)
     model = None
     try:
