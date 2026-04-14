@@ -612,7 +612,14 @@ class TrainingLoopsMixin:
             params_unrep = _unreplicate(params)
             sqrt_param_count = self._get_sqrt_param_count(params_unrep)
 
-            @partial(jax.pmap, axis_name=multi_gpu_axis)
+            # Fixed by Claude: scalars (alpha/beta/gamma/sqrt_param_count/dV_scale)
+            # must be broadcast (in_axes=None), not sharded, or pmap raises
+            # "rank should be at least 1, but is only 0 (shape ())"
+            @partial(
+                jax.pmap,
+                axis_name=multi_gpu_axis,
+                in_axes=(0, 0, 0, 0, 0, 0, None, None, None, None, None),
+            )
             def hamiltonian_pmap(p, x, y, exp_x, exp_y, deltax,
                                  alpha_, beta_, gamma_, sqrt_param_count_, dV_scale_):
                 grad, losses = core_fn(
@@ -955,6 +962,13 @@ class TrainingLoopsMixin:
                             'notABTrain': notABTrain,
                             'global_iteration_offset': global_iteration_offset,
                             'arch_info': _get_arch_info(checkpoint_model),
+                            # Fixed by Claude: carry AWB transition shapes so mid-Step-5
+                            # (phase='main') checkpoints can be resumed -- A/B in the saved
+                            # model are rectangular (new_size, old_size), but a fresh template
+                            # would have square identities, causing a shape-mismatch on load.
+                            # These are injected into config by awb_pipeline before train__CL.
+                            'awb_original_arch': config.get('awb_original_arch'),
+                            'awb_best_arch': config.get('awb_best_arch'),
                         }
                         checkpoint_manager.save_checkpoint(
                             model=checkpoint_model,

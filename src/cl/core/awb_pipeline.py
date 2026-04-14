@@ -280,11 +280,63 @@ def run_awb_task(
     resume_phase = resume_state.get('phase') if resume_state is not None else None
     resume_after_search = resume_phase == 'awb_search'
     resume_after_ab = resume_phase == 'ab'
+    # Fixed by Claude: support resuming mid-Step-5 (phase='main'). Steps 1-4 and the
+    # warmup sub-phase of Step 5 already ran in the previous job; we just need to
+    # finish the remaining main epochs.
+    resume_after_main = resume_phase == 'main'
+    resume_epoch = resume_state.get('epoch', 0) + 1 if resume_state is not None else 0
     current_iterations = len(record_dict.get('iterations', {}))
     if resume_after_search:
         print("\n[RESUME] Skipping preliminary + search (using saved architecture)")
     if resume_after_ab:
         print("\n[RESUME] Skipping preliminary + search + AB training (using saved A/B)")
+    if resume_after_main:
+        print(f"\n[RESUME] Skipping Steps 1-4 + warmup. Continuing Step 5 main at epoch {resume_epoch}")
+
+    # Fast path: mid-Step-5 resume. Model + opt_state already have the post-Step-4
+    # state (new arch, V weights); just run the remaining main epochs.
+    if resume_after_main:
+        remaining = max(0, epochs_per_task - resume_epoch)
+        if remaining == 0:
+            print("[RESUME] No remaining main epochs; task already complete.")
+            return model, optim, opt_state, record_dict
+
+        params, static = awb_ops.partition_for_standard_training(model)
+        arch_now = awb_ops.get_model_architecture(model)
+        orig_arch = resume_state.get('awb_original_arch') or arch_now
+        # Reinject the AWB transition shapes so future checkpoints carry them.
+        v_train_config = {
+            **config,
+            'awb_original_arch': list(orig_arch) if hasattr(orig_arch, '__iter__') else orig_arch,
+            'awb_best_arch': list(arch_now) if hasattr(arch_now, '__iter__') else arch_now,
+        }
+
+        main_start = time.time()
+        params, static, opt_state, record_dict = trainer.train__CL(
+            train__=(trainloader, exploader, valloader, testloader),
+            params=params, static=static, opt_state=opt_state, optim=optim,
+            n_iter=remaining, save_iter=save_iter,
+            task_id=task_id, config=v_train_config, record_dict=record_dict,
+            problem_type=problem_type, loss_type=loss_type,
+            phase='main', record_training=True,
+            global_iteration_offset=task_id * epochs_per_task + resume_epoch,
+        )
+        model = eqx.combine(params, static)
+        _record_step_time('main', main_start)
+
+        task_metadata['architecture_changed'] = True  # true for any resumed main
+        task_metadata['change_reason'] = 'resumed_main'
+        task_metadata['compute']['total'] = {'time_s': float(time.time() - task_start_time)}
+        if 'tasks' not in record_dict:
+            record_dict['tasks'] = {}
+        if task_id not in record_dict['tasks']:
+            record_dict['tasks'][task_id] = {}
+        record_dict['tasks'][task_id].update(task_metadata)
+
+        final_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=task_id,
+                                       epochs=epochs_per_task, window=averaging_window)
+        print(f"[AWB RESUME COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
+        return model, optim, opt_state, record_dict
 
     # STEP 1: Preliminary Training
     if not resume_after_search and not resume_after_ab:
@@ -653,7 +705,20 @@ def run_awb_task(
                 opt_state = optim.init(params)
 
             # Added by Claude: Create V training config with reduced LR for diagnostics
-            v_train_config = {**config, 'lr': v_training_lr}
+            # Fixed by Claude: also carry the AWB transition shapes (original_arch, new_arch)
+            # so that mid-Step-5 checkpoints record the info needed to rebuild A/B on resume.
+            # Convert to plain lists if possible (JSON/pickle friendly, safe for MLP/GCN).
+            def _arch_to_spec(a):
+                try:
+                    return list(a)
+                except TypeError:
+                    return a
+            v_train_config = {
+                **config,
+                'lr': v_training_lr,
+                'awb_original_arch': _arch_to_spec(original_arch),
+                'awb_best_arch': _arch_to_spec(new_arch),
+            }
 
             if ab_warmup_epochs > 0:
                 warmup_mem_start = _mem_snapshot()

@@ -979,6 +979,35 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
             except RuntimeError:
                 model = None
 
+        # Fixed by Claude: phase='main' checkpoints were saved AFTER an arch change,
+        # so A/B matrices in the file have the transition shape (new_size, old_size)
+        # rather than the fresh square-identity shape a template gets from __init__.
+        # Rebuild the template with A/B explicitly set to the transition shape, then
+        # deserialize into it.
+        if model is None and phase == 'main':
+            orig_arch = metadata.get('awb_original_arch')
+            new_arch = metadata.get('awb_best_arch') or arch_info
+            # Fallback: if metadata didn't carry the arches (older checkpoints),
+            # try to recover them from record_dict['architecture_history'].
+            if orig_arch is None:
+                hist = record_dict.get('architecture_history', {}) if isinstance(record_dict, dict) else {}
+                t = metadata.get('task_id', 0)
+                if t in hist:
+                    orig_arch = hist[t].get('original_arch')
+                    new_arch = hist[t].get('final_arch') or new_arch
+
+            if orig_arch is not None and new_arch is not None:
+                try:
+                    template = build_model_from_arch(arch_info, config)
+                    awb_ops = create_awb_operations(template)
+                    template = awb_ops.set_AB_matrices(template, orig_arch, new_arch)
+                    model = eqx.tree_deserialise_leaves(model_path, template)
+                    print(f"[WARN] Loaded main checkpoint with transition-shape A/B "
+                          f"({orig_arch} -> {new_arch}).")
+                except Exception as inner:
+                    print(f"[WARN] main-phase transition reconstruction failed: {inner}")
+                    model = None
+
         if model is None and phase == 'awb_search':
             # AWB search checkpoints may be saved without A/B matrices
             config_no_awb = {**config, 'awb_enabled': False}
@@ -1126,8 +1155,10 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             start_task += 1
             resume_epoch = 0
 
-        if awb_enabled and resume_phase == 'main' and resume_epoch > 0:
-            raise ValueError("Resume mid-task is not supported when AWB is enabled. Resume at task boundary.")
+        # Fixed by Claude: removed hard-fail for mid-Step-5 resume of AWB tasks.
+        # AWB's Steps 1-4 already happened before the checkpoint; resuming means
+        # skipping straight into Step 5 main training at resume_epoch. Dispatched
+        # via resume_state -> run_awb_task (which handles resume_phase='main').
 
     for task_id in range(start_task, n_tasks):
         print(f"\n{'='*60}")
@@ -1439,7 +1470,9 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 problem_type=problem_type,
                 loss_type=loss_type,
                 previous_task_loss=previous_task_loss,
-                resume_state=resume_state if (resume_state is not None and resume_phase in ('awb_search', 'ab') and task_id == start_task) else None
+                # Fixed by Claude: also forward resume_state when phase='main' so
+                # run_awb_task can jump straight into Step 5 main at resume_epoch.
+                resume_state=resume_state if (resume_state is not None and resume_phase in ('awb_search', 'ab', 'main') and task_id == start_task) else None
             )
 
             # Extract final params and static
