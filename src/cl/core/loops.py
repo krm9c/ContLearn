@@ -714,15 +714,16 @@ class TrainingLoopsMixin:
 
                 # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
                 if multi_gpu_active and problem_type == 'vectors':
+                    # Fixed by Claude: was `deltax` (undefined); the variable is `delta_x`
                     x_full, y_full = x, y
                     exp_x_full, exp_y_full = exp_x, exp_y
-                    deltax_full = deltax
+                    delta_x_full = delta_x
 
                     x = _shard_batch(x_full, device_count)
                     y = _shard_batch(y_full, device_count)
                     exp_x = _shard_batch(exp_x_full, device_count)
                     exp_y = _shard_batch(exp_y_full, device_count)
-                    deltax = _shard_batch(deltax_full, device_count)
+                    delta_x = _shard_batch(delta_x_full, device_count)
 
                     grad, losses = hamiltonian_pmap(
                         params,
@@ -730,7 +731,7 @@ class TrainingLoopsMixin:
                         y,
                         exp_x,
                         exp_y,
-                        deltax,
+                        delta_x,
                         jnp.array(alpha),
                         jnp.array(beta),
                         jnp.array(gamma),
