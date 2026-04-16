@@ -1004,6 +1004,27 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
         if model is None and phase == 'main':
             orig_arch = metadata.get('awb_original_arch')
             new_arch = metadata.get('awb_best_arch') or arch_info
+
+            # Fixed by Claude: older checkpoints had a bug where dict-shaped arches
+            # (e.g., Transformer) were saved as list(dict) = keys only, dropping all
+            # the integer values. Detect that corruption and discard -- we'll fall
+            # through to the architecture_history fallback below.
+            def _arch_corrupt(a):
+                if a is None:
+                    return True
+                if isinstance(arch_info, dict) and not isinstance(a, dict):
+                    return True
+                return False
+
+            if _arch_corrupt(orig_arch):
+                print(f"[RESUME] Discarding corrupt metadata['awb_original_arch']={orig_arch}; "
+                      f"will recover from architecture_history.")
+                orig_arch = None
+            if _arch_corrupt(new_arch):
+                print(f"[RESUME] Discarding corrupt metadata['awb_best_arch']={new_arch}; "
+                      f"will use arch_info.")
+                new_arch = arch_info
+
             # Fallback: if metadata didn't carry the arches (older checkpoints),
             # try to recover them from record_dict['architecture_history'].
             # Important: during mid-Step-5 saves, record_dict['architecture_history']

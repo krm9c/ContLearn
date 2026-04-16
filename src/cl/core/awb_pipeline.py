@@ -305,10 +305,18 @@ def run_awb_task(
         arch_now = awb_ops.get_model_architecture(model)
         orig_arch = resume_state.get('awb_original_arch') or arch_now
         # Reinject the AWB transition shapes so future checkpoints carry them.
+        # Preserve dicts (Transformer arch) as dicts -- list(dict) drops the values.
+        def _spec(a):
+            if isinstance(a, dict):
+                return dict(a)
+            try:
+                return list(a)
+            except TypeError:
+                return a
         v_train_config = {
             **config,
-            'awb_original_arch': list(orig_arch) if hasattr(orig_arch, '__iter__') else orig_arch,
-            'awb_best_arch': list(arch_now) if hasattr(arch_now, '__iter__') else arch_now,
+            'awb_original_arch': _spec(orig_arch),
+            'awb_best_arch': _spec(arch_now),
         }
 
         main_start = time.time()
@@ -707,8 +715,10 @@ def run_awb_task(
             # Added by Claude: Create V training config with reduced LR for diagnostics
             # Fixed by Claude: also carry the AWB transition shapes (original_arch, new_arch)
             # so that mid-Step-5 checkpoints record the info needed to rebuild A/B on resume.
-            # Convert to plain lists if possible (JSON/pickle friendly, safe for MLP/GCN).
+            # Preserve dicts (Transformer arch) as dicts -- list(dict) drops the values.
             def _arch_to_spec(a):
+                if isinstance(a, dict):
+                    return dict(a)
                 try:
                     return list(a)
                 except TypeError:
