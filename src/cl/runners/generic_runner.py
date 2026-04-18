@@ -1270,6 +1270,29 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # Added by Claude: Update optimizer state with task-specific learning rate
         opt_state = update_learning_rate(opt_state, task_lr)
 
+        # Pre-training evaluation for Forward Transfer (FWT) metric.
+        # FWT needs A[task_id-1][task_id]: accuracy on task_id BEFORE training it,
+        # using the model trained through task_id-1.
+        per_task_eval_enabled = config.get('per_task_eval_enabled', False)
+        if per_task_eval_enabled and task_id >= 1:
+            print(f"\n  FWT pre-eval: evaluating on task {task_id} before training...")
+            test_loader_fwt = data.generate_test_loader(task_id, config.get('batch_size', 64))
+            fwt_metric = evaluate_on_loader(
+                trainer=trainer,
+                params=params,
+                static=static,
+                loader=test_loader_fwt,
+                problem_type=problem_type
+            )
+            print(f"    Task {task_id} (before training): {fwt_metric:.4f}")
+            # Store as A[task_id-1][task_id] in the performance matrix
+            if 'task_performance_matrix' not in record_dict:
+                record_dict['task_performance_matrix'] = {}
+            prev_key = task_id - 1
+            if prev_key not in record_dict['task_performance_matrix']:
+                record_dict['task_performance_matrix'][prev_key] = {}
+            record_dict['task_performance_matrix'][prev_key][str(task_id)] = float(fwt_metric)
+
         # Task 0 or AWB disabled: Standard CL training
         if task_id == 0 or not awb_enabled:
             if resume_state is not None and task_id == start_task and resume_epoch > 0:
