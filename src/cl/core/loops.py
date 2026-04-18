@@ -955,6 +955,15 @@ class TrainingLoopsMixin:
                     # Added by Claude: Periodic checkpointing (async, non-blocking)
                     if checkpoint_manager is not None and (epoch % checkpoint_interval == 0 and epoch > 0):
                         checkpoint_model = eqx.combine(params, static)
+
+                        # Snapshot the in-progress step's elapsed time so it survives a crash.
+                        cumulative = config.get('cumulative_compute')
+                        step = config.get('_timing_step')
+                        start = config.get('_timing_start')
+                        prior = config.get('_timing_prior', 0.0)
+                        if isinstance(cumulative, dict) and step and start:
+                            cumulative.setdefault(step, {})['time_s'] = float(prior + (time.time() - start))
+
                         checkpoint_metadata = {
                             'task_id': task_id,
                             'epoch': epoch,
@@ -969,6 +978,7 @@ class TrainingLoopsMixin:
                             # These are injected into config by awb_pipeline before train__CL.
                             'awb_original_arch': config.get('awb_original_arch'),
                             'awb_best_arch': config.get('awb_best_arch'),
+                            'cumulative_compute': cumulative,
                         }
                         checkpoint_manager.save_checkpoint(
                             model=checkpoint_model,

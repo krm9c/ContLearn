@@ -211,6 +211,13 @@ def run_awb_task(
     trainloader, exploader, valloader, testloader = train_data
 
     # Added by Claude: Initialize task metadata for architecture history
+    # Seed compute from prior checkpoint so cumulative timing survives restarts.
+    prior_compute = {}
+    if resume_state is not None and isinstance(resume_state.get('cumulative_compute'), dict):
+        prior_compute = dict(resume_state['cumulative_compute'])
+        prior_total = prior_compute.get('total', {}).get('time_s', 0.0)
+        print(f"[TIMING] Restored cumulative compute from checkpoint "
+              f"({prior_total:.1f}s across {len(prior_compute)-1} steps)")
     task_metadata = {
         'preliminary_loss': None,
         'architecture_changed': False,
@@ -218,8 +225,11 @@ def run_awb_task(
         'searched_architectures': [],
         'loss_ratio': None,
         'search_time': 0.0,
-        'compute': {},
+        'compute': prior_compute,
     }
+
+    # Thread cumulative compute through to train__CL so checkpoints carry it.
+    config = {**config, 'cumulative_compute': task_metadata['compute']}
 
     def _mem_snapshot():
         mem = get_gpu_memory_usage()
@@ -254,6 +264,12 @@ def run_awb_task(
         except Exception:
             return None
 
+    def _begin_step(step_key: str):
+        """Set timing context so periodic checkpoints can snapshot in-progress time."""
+        config['_timing_step'] = step_key
+        config['_timing_start'] = time.time()
+        config['_timing_prior'] = task_metadata['compute'].get(step_key, {}).get('time_s', 0.0)
+
     def _record_step_time(
         step_key: str,
         start_time: float,
@@ -261,7 +277,8 @@ def run_awb_task(
         util_start: Optional[Dict[str, float]] = None,
     ):
         elapsed = time.time() - start_time
-        entry = {'time_s': float(elapsed)}
+        prior = config.get('_timing_prior', 0.0) if config.get('_timing_step') == step_key else 0.0
+        entry = {'time_s': float(prior + elapsed)}
         if mem_start is not None:
             entry['mem_start'] = mem_start
         mem_end = _mem_snapshot()
@@ -273,6 +290,7 @@ def run_awb_task(
         if util_end is not None:
             entry['gpu_util_end'] = util_end
         task_metadata['compute'][step_key] = entry
+        config.pop('_timing_step', None)
         return elapsed
 
     task_start_time = time.time()
@@ -319,6 +337,7 @@ def run_awb_task(
             'awb_best_arch': _spec(arch_now),
         }
 
+        _begin_step('main')
         main_start = time.time()
         params, static, opt_state, record_dict = trainer.train__CL(
             train__=(trainloader, exploader, valloader, testloader),
@@ -334,7 +353,8 @@ def run_awb_task(
 
         task_metadata['architecture_changed'] = True  # true for any resumed main
         task_metadata['change_reason'] = 'resumed_main'
-        task_metadata['compute']['total'] = {'time_s': float(time.time() - task_start_time)}
+        prior_total = task_metadata['compute'].get('total', {}).get('time_s', 0.0)
+        task_metadata['compute']['total'] = {'time_s': float(prior_total + (time.time() - task_start_time))}
         if 'tasks' not in record_dict:
             record_dict['tasks'] = {}
         if task_id not in record_dict['tasks']:
@@ -349,6 +369,7 @@ def run_awb_task(
     # STEP 1: Preliminary Training
     if not resume_after_search and not resume_after_ab:
         print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
+        _begin_step('preliminary')
         prelim_mem_start = _mem_snapshot()
         prelim_util_start = _gpu_util_snapshot()
         prelim_start = time.time()
@@ -454,6 +475,7 @@ def run_awb_task(
 
             # Added by Claude: Profile architecture search
             # Use validation sets for architecture search instead of full training data
+            _begin_step('arch_search')
             arch_mem_start = _mem_snapshot()
             arch_util_start = _gpu_util_snapshot()
             arch_start = time.time()
@@ -505,6 +527,7 @@ def run_awb_task(
                 'awb_original_arch': original_arch,
                 'preliminary_loss': trainWLoss,
                 'previous_task_loss': previous_task_loss,
+                'cumulative_compute': task_metadata['compute'],
             }
             checkpoint_manager.save_checkpoint(
                 model=model,
@@ -553,6 +576,7 @@ def run_awb_task(
 
                 if not resume_after_ab:
                     # Added by Claude: Profile A/B training
+                    _begin_step('ab_training')
                     ab_mem_start = _mem_snapshot()
                     ab_util_start = _gpu_util_snapshot()
                     ab_training_start = time.time()
@@ -606,6 +630,7 @@ def run_awb_task(
 
                 # STEP 4: Compute V
                 print(f"\n[STEP 4] Compute V = A @ W @ B^T")
+                _begin_step('compute_v')
                 compute_v_mem_start = _mem_snapshot()
                 compute_v_util_start = _gpu_util_snapshot()
                 compute_v_start = time.time()
@@ -731,6 +756,7 @@ def run_awb_task(
             }
 
             if ab_warmup_epochs > 0:
+                _begin_step('warmup')
                 warmup_mem_start = _mem_snapshot()
                 warmup_util_start = _gpu_util_snapshot()
                 warmup_start = time.time()
@@ -745,6 +771,7 @@ def run_awb_task(
                 )
                 _record_step_time('warmup', warmup_start, warmup_mem_start, warmup_util_start)
 
+            _begin_step('main')
             main_mem_start = _mem_snapshot()
             main_util_start = _gpu_util_snapshot()
             main_start = time.time()
@@ -773,6 +800,7 @@ def run_awb_task(
             opt_state = optim.init(params)
 
             total_epochs = ab_warmup_epochs + epochs_per_task
+            _begin_step('standard_training')
             standard_mem_start = _mem_snapshot()
             standard_util_start = _gpu_util_snapshot()
             standard_start = time.time()
@@ -800,6 +828,7 @@ def run_awb_task(
         opt_state = optim.init(params)
 
         total_epochs = ab_warmup_epochs + epochs_per_task
+        _begin_step('standard_training')
         standard_mem_start = _mem_snapshot()
         standard_util_start = _gpu_util_snapshot()
         standard_start = time.time()
@@ -820,7 +849,15 @@ def run_awb_task(
     print(f"\n[AWB COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
     print(f"{'='*70}\n")
 
-    task_metadata['compute']['total'] = {'time_s': float(time.time() - task_start_time)}
+    prior_total = task_metadata['compute'].get('total', {}).get('time_s', 0.0)
+    task_metadata['compute']['total'] = {'time_s': float(prior_total + (time.time() - task_start_time))}
+
+    # Print cumulative timing summary
+    compute = task_metadata['compute']
+    print(f"\n[TIMING] Task {task_id} cumulative compute:")
+    for k, v in compute.items():
+        if isinstance(v, dict) and 'time_s' in v:
+            print(f"  {k:20s}: {v['time_s']:8.1f}s")
 
     # Added by Claude: Store task metadata for architecture history tracking
     if 'tasks' not in record_dict:

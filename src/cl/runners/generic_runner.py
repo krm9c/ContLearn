@@ -1085,6 +1085,7 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
         'awb_original_arch': metadata.get('awb_original_arch'),
         'preliminary_loss': metadata.get('preliminary_loss'),
         'previous_task_loss': metadata.get('previous_task_loss'),
+        'cumulative_compute': metadata.get('cumulative_compute'),
     }
 
     return model, opt_state, record_dict, resume_state
