@@ -1145,9 +1145,12 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
     Returns:
         Dictionary of training records
     """
+    # Multi-node: only rank 0 does IO (checkpoints, logging, evaluation)
+    is_main_rank = config.get('mpi_rank', 0) == 0
+
     # Added by Claude: Enable profiling if requested
     enable_profiling(config.get('profiling_enabled', False))
-    if config.get('profiling_enabled'):
+    if config.get('profiling_enabled') and is_main_rank:
         print(f"\n{'='*60}")
         print(f"PROFILING ENABLED - Detailed timing information will be shown")
         print(f"{'='*60}\n")
@@ -1274,7 +1277,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # FWT needs A[task_id-1][task_id]: accuracy on task_id BEFORE training it,
         # using the model trained through task_id-1.
         per_task_eval_enabled = config.get('per_task_eval_enabled', False)
-        if per_task_eval_enabled and task_id >= 1:
+        if per_task_eval_enabled and task_id >= 1 and is_main_rank:
             print(f"\n  FWT pre-eval: evaluating on task {task_id} before training...")
             test_loader_fwt = data.generate_test_loader(task_id, config.get('batch_size', 64))
             fwt_metric = evaluate_on_loader(
@@ -1488,7 +1491,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             # After training task_id, test on ALL tasks from 0 to task_id
             # This builds the performance matrix A[j][i] = performance on task i after training task j
             per_task_eval_enabled = config.get('per_task_eval_enabled', False)
-            if per_task_eval_enabled:
+            if per_task_eval_enabled and is_main_rank:
                 print(f"\n  Evaluating on all tasks 0..{task_id} for CL metrics...")
                 task_performances = {}
                 model_eval = eqx.combine(params, static)
@@ -1590,7 +1593,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
             # Added by Claude: Optional per-task evaluation for CL metrics
             # After training task_id, test on ALL tasks from 0 to task_id
             per_task_eval_enabled = config.get('per_task_eval_enabled', False)
-            if per_task_eval_enabled:
+            if per_task_eval_enabled and is_main_rank:
                 print(f"\n  Evaluating on all tasks 0..{task_id} for CL metrics...")
                 task_performances = {}
                 model_eval = eqx.combine(params, static)
@@ -1615,7 +1618,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 trainer.record_task_performance(record_dict, task_id, task_performances)
 
     # Added by Claude: Print comprehensive architecture evolution summary
-    if awb_enabled and 'architecture_history' in record_dict:
+    if awb_enabled and 'architecture_history' in record_dict and is_main_rank:
         print("\n" + "="*70)
         print("ARCHITECTURE EVOLUTION SUMMARY")
         print("="*70)

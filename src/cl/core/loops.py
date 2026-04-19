@@ -11,6 +11,7 @@ The training loop handles:
 - Experience replay
 - Metric recording at save intervals
 - Both standard and AWB training modes
+- Multi-node data parallelism via mpi4jax (optional)
 """
 
 import jax
@@ -21,6 +22,25 @@ import optax
 from functools import partial
 from tqdm import tqdm
 import time
+
+try:
+    from mpi4py import MPI
+    import mpi4jax
+    _HAS_MPI = True
+except ImportError:
+    _HAS_MPI = False
+
+
+def _allreduce_mean_pytree(tree, comm):
+    """Average a JAX pytree across all MPI ranks."""
+    world_size = comm.Get_size()
+    leaves, treedef = jax.tree_util.tree_flatten(tree)
+    token = None
+    reduced = []
+    for leaf in leaves:
+        summed, token = mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm, token=token)
+        reduced.append(summed / world_size)
+    return treedef.unflatten(reduced)
 
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
@@ -398,7 +418,7 @@ class TrainingLoopsMixin:
         # Added by Claude: Initialize async checkpoint manager if periodic checkpointing enabled
         checkpoint_interval = config.get("checkpoint_interval", 0)
         checkpoint_manager = None
-        if checkpoint_interval > 0 and config.get("model_path"):
+        if checkpoint_interval > 0 and config.get("model_path") and is_main_rank:
             checkpoint_dir = f"{config['model_path']}_checkpoints"
             checkpoint_manager = AsyncCheckpointManager(
                 save_dir=checkpoint_dir,
@@ -407,7 +427,7 @@ class TrainingLoopsMixin:
                 enable_async=config.get("async_checkpointing", True)
             )
 
-        pbar = tqdm(range(n_iter), dynamic_ncols=True)
+        pbar = tqdm(range(n_iter), dynamic_ncols=True, disable=not is_main_rank)
 
         # Select Hamiltonian function based on problem/loss type
         if problem_type == 'graph':
@@ -482,6 +502,17 @@ class TrainingLoopsMixin:
                         y_jax = jnp.array(y.numpy(), dtype=jnp.int64)
                     exp_batches_jax.append((x_jax, y_jax))
 
+            # Multi-node: each rank takes a different slice of the data
+            if multi_node and mpi_world_size > 1:
+                n_train = len(train_batches_jax)
+                n_exp = len(exp_batches_jax)
+                train_batches_jax = train_batches_jax[mpi_rank::mpi_world_size]
+                exp_batches_jax = exp_batches_jax[mpi_rank::mpi_world_size]
+                if is_main_rank:
+                    print(f"[MPI] Data sharding: {n_train} train batches -> "
+                          f"{len(train_batches_jax)} per rank, "
+                          f"{n_exp} exp batches -> {len(exp_batches_jax)} per rank")
+
             if profiling_enabled:
                 preconv_elapsed = time.time() - preconv_start
                 print(f"[PROFILE] JAX pre-conversion complete: {preconv_elapsed:.2f}s | {format_memory_stats()}")
@@ -548,6 +579,18 @@ class TrainingLoopsMixin:
             compute_metric = compute_metric_mse if notABTrain else compute_metric_mse_awb
         else:
             compute_metric = compute_metric_class if notABTrain else compute_metric_class_awb
+
+        # Multi-node (MPI) data parallelism
+        multi_node = config.get("multi_node", False) and _HAS_MPI
+        mpi_comm = config.get("mpi_comm")
+        mpi_rank = config.get("mpi_rank", 0)
+        mpi_world_size = config.get("mpi_world_size", 1)
+        is_main_rank = (mpi_rank == 0) or not multi_node
+
+        if multi_node and mpi_comm is not None:
+            print(f"[MPI] rank {mpi_rank}/{mpi_world_size} | "
+                  f"phase={phase} task={task_id} | "
+                  f"device={jax.devices()[0]}")
 
         # Added by Claude: Multi-GPU (pmap) support for vector data
         use_multi_gpu = config.get("multi_gpu", False)
@@ -760,6 +803,10 @@ class TrainingLoopsMixin:
                 else:
                     (H, V, dV, dV_dtheta, dV_dx) = losses
 
+                # Multi-node: average gradients across all MPI ranks
+                if multi_node and mpi_comm is not None and mpi_world_size > 1:
+                    grad = _allreduce_mean_pytree(grad, mpi_comm)
+
                 # Added by Claude: Apply gradient clipping if enabled
                 grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
 
@@ -810,8 +857,8 @@ class TrainingLoopsMixin:
                 should_eval = (epoch % eval_interval == 0 and epoch > 0) or is_last_epoch
             should_record = (epoch % save_iter == 0 and epoch > 0) or is_last_epoch
 
-            # Always compute training metric averages for progress bar
-            if should_log:
+            # Logging, evaluation, recording, checkpointing: only on main rank
+            if should_log and is_main_rank:
                 H_avg = np_.mean(epoch_H)
                 V_avg = np_.mean(epoch_V)
                 dV_avg = np_.mean(epoch_dV)

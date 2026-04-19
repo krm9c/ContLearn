@@ -195,9 +195,16 @@ def run_awb_task(
     if task_id < 1:
         raise ValueError(f"AWB pipeline only for tasks >= 1, got task_id={task_id}")
 
-    print(f"\n{'='*70}")
-    print(f"AWB PIPELINE - Task {task_id}")
-    print(f"{'='*70}")
+    # Multi-node: only rank 0 does search, checkpointing, verbose logging
+    multi_node = config.get('multi_node', False)
+    mpi_comm = config.get('mpi_comm')
+    mpi_rank = config.get('mpi_rank', 0)
+    is_main_rank = (mpi_rank == 0) or not multi_node
+
+    if is_main_rank:
+        print(f"\n{'='*70}")
+        print(f"AWB PIPELINE - Task {task_id}")
+        print(f"{'='*70}")
 
     # Extract configuration
     preliminary_epochs = config.get('awb_preliminary_epochs', DEFAULT_AWB_PRELIMINARY_EPOCHS)
@@ -462,31 +469,43 @@ def run_awb_task(
             print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
         if not resume_after_search and not resume_after_ab:
-            # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
-            # This is more efficient than using full training data and prevents overfitting
-            validation_ratio = config.get('awb_validation_ratio', 0.2)
-            val_batch_size = config.get('batch_size', 64)
+            # Multi-node: only rank 0 runs arch search; others wait at barrier.
+            if multi_node and mpi_comm is not None and not is_main_rank:
+                print(f"[MPI] rank {mpi_rank} waiting for arch search on rank 0...")
+                mpi_comm.Barrier()
+                new_arch = mpi_comm.bcast(None, root=0)
+                print(f"[MPI] rank {mpi_rank} received new_arch={new_arch}")
+            else:
+                # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
+                # This is more efficient than using full training data and prevents overfitting
+                validation_ratio = config.get('awb_validation_ratio', 0.2)
+                val_batch_size = config.get('batch_size', 64)
 
-            val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
-            val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+                val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
+                val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
 
-            # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
-            test_curr, test_exp = testloader
+                # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
+                test_curr, test_exp = testloader
 
-            # Added by Claude: Profile architecture search
-            # Use validation sets for architecture search instead of full training data
-            _begin_step('arch_search')
-            arch_mem_start = _mem_snapshot()
-            arch_util_start = _gpu_util_snapshot()
-            arch_start = time.time()
-            with profile_section("Architecture Search"):
-                new_arch = awb_ops.search_architecture(
-                    model, task_id, trainWLoss, val_trainloader, val_exploader,
-                    test_curr, test_exp, config, trainer
-                )
-            task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
-            print(f"  Original: {original_arch}")
-            print(f"  Optimal: {new_arch}")
+                # Added by Claude: Profile architecture search
+                # Use validation sets for architecture search instead of full training data
+                _begin_step('arch_search')
+                arch_mem_start = _mem_snapshot()
+                arch_util_start = _gpu_util_snapshot()
+                arch_start = time.time()
+                with profile_section("Architecture Search"):
+                    new_arch = awb_ops.search_architecture(
+                        model, task_id, trainWLoss, val_trainloader, val_exploader,
+                        test_curr, test_exp, config, trainer
+                    )
+                task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
+                print(f"  Original: {original_arch}")
+                print(f"  Optimal: {new_arch}")
+
+                # Signal other ranks: search is done, broadcast result
+                if multi_node and mpi_comm is not None:
+                    mpi_comm.Barrier()
+                    mpi_comm.bcast(new_arch, root=0)
 
             model = awb_ops.restore_weights(model, saved_weights)
         else:
@@ -502,8 +521,8 @@ def run_awb_task(
             else:
                 print(f"  Optimal (resumed): {new_arch}")
 
-        # Optional: checkpoint after search to allow resume at Step 3b
-        if not resume_after_search and not resume_after_ab and config.get('awb_checkpoint_after_search', True):
+        # Optional: checkpoint after search to allow resume at Step 3b (rank 0 only)
+        if not resume_after_search and not resume_after_ab and config.get('awb_checkpoint_after_search', True) and is_main_rank:
             if 'tasks' not in record_dict:
                 record_dict['tasks'] = {}
             if task_id not in record_dict['tasks']:
