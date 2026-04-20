@@ -77,11 +77,15 @@ def show_performance_matrix(rd):
     for j in range(T):
         row = f"  Task {j:2d}   "
         for i in range(T):
-            if i <= j:
-                row += f"  {matrix[j, i]:6.3f}"
+            v = matrix[j, i]
+            if not np.isnan(v):
+                row += f"  {v:6.3f}"
             else:
                 row += "       -"
-        row += f"   avg={np.mean(matrix[j, :j+1]):.3f}"
+        valid = matrix[j, :j+1]
+        valid = valid[~np.isnan(valid)]
+        avg = np.mean(valid) if len(valid) > 0 else float('nan')
+        row += f"   avg={avg:.3f}" if not np.isnan(avg) else "   avg=  n/a"
         print(row)
 
     return matrix
@@ -91,10 +95,20 @@ def show_cl_metrics(matrix):
     if matrix is None:
         return
     print_section("CONTINUAL LEARNING METRICS")
-    acc = compute_acc(matrix)
-    bwt = compute_bwt(matrix)
-    fwt = compute_fwt(matrix)
-    fgt = compute_forgetting(matrix)
+
+    # Check if enough data for metrics (need at least the last row filled)
+    T = matrix.shape[0]
+    last_row = matrix[T-1, :]
+    if np.all(np.isnan(last_row)):
+        print("  Not enough data yet (run still in progress)")
+        return
+
+    # Replace NaN with 0 for metric computation on partial matrices
+    m = np.nan_to_num(matrix, nan=0.0)
+    acc = compute_acc(m)
+    bwt = compute_bwt(m)
+    fwt = compute_fwt(m)
+    fgt = compute_forgetting(m)
 
     print(f"  ACC (Avg Accuracy)     : {acc:.4f}")
     print(f"  BWT (Backward Transfer): {bwt:+.4f}  {'(forgetting)' if bwt < 0 else '(positive transfer)'}")

@@ -43,8 +43,15 @@ def extract_performance_matrix(record_dict: Dict) -> np.ndarray:
         print("Warning: No task_performance_matrix found. Using fallback extraction.")
         return None
 
-    n_tasks = len(task_perf)
-    matrix = np.zeros((n_tasks, n_tasks))
+    # Size matrix from max task index (not row count), since FWT pre-eval
+    # adds A[j][j+1] entries that extend beyond the number of completed tasks.
+    max_idx = 0
+    for j_str, perf_dict in task_perf.items():
+        max_idx = max(max_idx, int(j_str))
+        for i_str in perf_dict:
+            max_idx = max(max_idx, int(i_str))
+    n_tasks = max_idx + 1
+    matrix = np.full((n_tasks, n_tasks), np.nan)
 
     for j_str, perf_dict in task_perf.items():
         j = int(j_str)
