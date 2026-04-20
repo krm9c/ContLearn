@@ -48,7 +48,7 @@ class PrefetchDataLoader:
             gpu_devices = jax.devices('gpu')
             if not gpu_devices:
                 raise RuntimeError("No GPU found. JAX continual learning requires GPU.")
-            device = gpu_devices[0]  # Will be the GPU assigned by CUDA_VISIBLE_DEVICES
+            device = gpu_devices[0]
         self.device = device
         self.loss_type = loss_type  # Added by Claude: Store loss_type for dtype conversion
         # Added by Claude: Diagnostic logging for device detection

@@ -392,8 +392,10 @@ class TrainingLoopsMixin:
 
         if use_prefetch:
             # Added by Claude: Pass loss_type to ensure correct dtype conversion
-            trainloader = PrefetchDataLoader(trainloader, prefetch_size=prefetch_size, loss_type=loss_type)
-            exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size, loss_type=loss_type)
+            # Multi-node: each rank must put data on its own GPU
+            jax_device = config.get("jax_device", None)
+            trainloader = PrefetchDataLoader(trainloader, prefetch_size=prefetch_size, loss_type=loss_type, device=jax_device)
+            exploader = PrefetchDataLoader(exploader, prefetch_size=prefetch_size, loss_type=loss_type, device=jax_device)
             # Don't prefetch test loaders - they're only used at eval_interval
 
         # Added by Claude: Get gradient combination weights from config

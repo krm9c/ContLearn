@@ -16,7 +16,6 @@ import sys
 import os
 import warnings
 
-# Pin GPU BEFORE importing JAX (JAX reads CUDA_VISIBLE_DEVICES at import time)
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -24,6 +23,7 @@ rank = comm.Get_rank()
 world_size = comm.Get_size()
 local_rank = int(os.environ.get('PMI_LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
 
+# Try CUDA_VISIBLE_DEVICES first (before JAX import)
 os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -31,6 +31,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts
 
 import jax
 import jax.numpy as jnp
+
+# If CUDA_VISIBLE_DEVICES didn't work (conda module pre-inits CUDA),
+# use JAX's own device pinning: set the default device for this rank.
+all_gpus = jax.devices("gpu")
+if len(all_gpus) > 1 and local_rank < len(all_gpus):
+    my_device = all_gpus[local_rank]
+    jax.config.update("jax_default_device", my_device)
+    print(f"[MPI] rank {rank} pinned to {my_device} (of {len(all_gpus)} visible)")
+else:
+    my_device = all_gpus[0]
+    print(f"[MPI] rank {rank} using {my_device}")
 
 from cl.config import load_config
 from cl.runners import train_model
@@ -66,6 +77,7 @@ def main():
     config['multi_node'] = True
     config['mpi_comm'] = comm
     config['mpi_rank'] = rank
+    config['jax_device'] = my_device
     config['mpi_world_size'] = world_size
     config['multi_gpu'] = False
 
