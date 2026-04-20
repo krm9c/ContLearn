@@ -11,9 +11,16 @@ Launch on Polaris:
 This gives 4 ranks per node (one per GPU). Each rank computes gradients
 on its own data shard; allreduce averages them across all ranks.
 """
-import argparse
-import sys
 import os
+import sys
+
+# Pin GPU BEFORE any CUDA-touching import (mpi4py with CUDA-aware MPI
+# initializes CUDA on import, making later CUDA_VISIBLE_DEVICES changes useless).
+# PMI_LOCAL_RANK is set by the Polaris job launcher before the script starts.
+local_rank = int(os.environ.get('PMI_LOCAL_RANK', os.environ.get('SLURM_LOCALID', '0')))
+os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
+
+import argparse
 import warnings
 
 from mpi4py import MPI
@@ -21,10 +28,6 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 world_size = comm.Get_size()
-local_rank = int(os.environ.get('PMI_LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
-
-# Try CUDA_VISIBLE_DEVICES first (before JAX import)
-os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts'))
@@ -32,16 +35,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts
 import jax
 import jax.numpy as jnp
 
-# If CUDA_VISIBLE_DEVICES didn't work (conda module pre-inits CUDA),
-# use JAX's own device pinning: set the default device for this rank.
-all_gpus = jax.devices("gpu")
-if len(all_gpus) > 1 and local_rank < len(all_gpus):
-    my_device = all_gpus[local_rank]
-    jax.config.update("jax_default_device", my_device)
-    print(f"[MPI] rank {rank} pinned to {my_device} (of {len(all_gpus)} visible)")
-else:
-    my_device = all_gpus[0]
-    print(f"[MPI] rank {rank} using {my_device}")
+my_device = jax.devices()[0]
+print(f"[MPI] rank {rank} | local_rank {local_rank} | device {my_device} | "
+      f"visible GPUs: {len(jax.devices())}")
 
 from cl.config import load_config
 from cl.runners import train_model
