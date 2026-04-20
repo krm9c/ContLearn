@@ -415,6 +415,13 @@ class TrainingLoopsMixin:
         debug_epoch_arch_interval = config.get("debug_epoch_arch_interval", 1)
         debug_epoch_arch_prefix = config.get("debug_epoch_arch_prefix", "ARCH")
 
+        # Multi-node (MPI) data parallelism
+        multi_node = config.get("multi_node", False) and _HAS_MPI
+        mpi_comm = config.get("mpi_comm")
+        mpi_rank = config.get("mpi_rank", 0)
+        mpi_world_size = config.get("mpi_world_size", 1)
+        is_main_rank = (mpi_rank == 0) or not multi_node
+
         # Added by Claude: Initialize async checkpoint manager if periodic checkpointing enabled
         checkpoint_interval = config.get("checkpoint_interval", 0)
         checkpoint_manager = None
@@ -579,13 +586,6 @@ class TrainingLoopsMixin:
             compute_metric = compute_metric_mse if notABTrain else compute_metric_mse_awb
         else:
             compute_metric = compute_metric_class if notABTrain else compute_metric_class_awb
-
-        # Multi-node (MPI) data parallelism
-        multi_node = config.get("multi_node", False) and _HAS_MPI
-        mpi_comm = config.get("mpi_comm")
-        mpi_rank = config.get("mpi_rank", 0)
-        mpi_world_size = config.get("mpi_world_size", 1)
-        is_main_rank = (mpi_rank == 0) or not multi_node
 
         if multi_node and mpi_comm is not None:
             print(f"[MPI] rank {mpi_rank}/{mpi_world_size} | "
