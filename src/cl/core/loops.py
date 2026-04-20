@@ -35,10 +35,9 @@ def _allreduce_mean_pytree(tree, comm):
     """Average a JAX pytree across all MPI ranks."""
     world_size = comm.Get_size()
     leaves, treedef = jax.tree_util.tree_flatten(tree)
-    token = None
     reduced = []
     for leaf in leaves:
-        summed, token = mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm, token=token)
+        summed = mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm)
         reduced.append(summed / world_size)
     return treedef.unflatten(reduced)
 
