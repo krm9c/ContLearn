@@ -16,11 +16,8 @@ import sys
 import os
 import warnings
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts'))
-
+# Pin GPU BEFORE importing JAX (JAX reads CUDA_VISIBLE_DEVICES at import time)
 from mpi4py import MPI
-import jax
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -29,6 +26,10 @@ local_rank = int(os.environ.get('PMI_LOCAL_RANK', os.environ.get('SLURM_LOCALID'
 
 os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'run_files', 'scripts'))
+
+import jax
 import jax.numpy as jnp
 
 from cl.config import load_config
@@ -50,9 +51,9 @@ def main():
 
     if is_main:
         print(f"JAX Backend:   {jax.default_backend()}")
-        print(f"MPI world:     {world_size} ranks")
-        print(f"Devices/rank:  {jax.local_device_count()}")
-        print(f"Total GPUs:    {world_size * jax.local_device_count()}")
+        print(f"MPI world:     {world_size} ranks (1 GPU each)")
+        print(f"Device:        {jax.devices()[0]}")
+        print(f"Total GPUs:    {world_size}")
         print()
 
     if not os.path.exists(args.config):
