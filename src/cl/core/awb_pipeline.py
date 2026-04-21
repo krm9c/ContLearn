@@ -396,48 +396,56 @@ def run_awb_task(
 
     if not resume_after_search and not resume_after_ab:
         # Added by Claude: Get preliminary loss from last recorded iteration
-        iterations_dict = record_dict.get('iterations', {})
-        last_prelim_iter = current_iterations + preliminary_epochs - 1
-        if last_prelim_iter in iterations_dict:
-            last_record = iterations_dict[last_prelim_iter]
-            trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
-        else:
-            # Fallback: try to find the most recent iteration
-            available_iters = sorted([k for k in iterations_dict.keys() if k >= current_iterations])
-            if available_iters:
-                last_record = iterations_dict[available_iters[-1]]
+        # Only rank 0 has recorded iterations; broadcast loss + decision to all ranks.
+        if is_main_rank:
+            iterations_dict = record_dict.get('iterations', {})
+            last_prelim_iter = current_iterations + preliminary_epochs - 1
+            if last_prelim_iter in iterations_dict:
+                last_record = iterations_dict[last_prelim_iter]
                 trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
             else:
-                trainWLoss = 0.0
+                available_iters = sorted([k for k in iterations_dict.keys() if k >= current_iterations])
+                if available_iters:
+                    last_record = iterations_dict[available_iters[-1]]
+                    trainWLoss = last_record['losses']['V'] if isinstance(last_record, dict) and 'losses' in last_record else last_record[0]
+                else:
+                    trainWLoss = 0.0
 
-        print(f"  Preliminary loss: {trainWLoss:.6f}")
+            print(f"  Preliminary loss: {trainWLoss:.6f}")
+            task_metadata['preliminary_loss'] = trainWLoss
 
-        # Added by Claude: Store preliminary loss in metadata
-        task_metadata['preliminary_loss'] = trainWLoss
+            # STEP 2: Decision
+            print(f"\n[STEP 2] Architecture change decision")
+            if previous_task_loss is None:
+                previous_task_loss = trainWLoss
+                print(f"  WARNING: No previous task loss, using preliminary loss")
 
-        # STEP 2: Decision
-        print(f"\n[STEP 2] Architecture change decision")
-        if previous_task_loss is None:
-            previous_task_loss = trainWLoss
-            print(f"  WARNING: No previous task loss, using preliminary loss")
+            task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
+            print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
 
-        # Added by Claude: Store loss ratio in metadata
-        task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
+            threshold_high = config.get('awb_loss_ratio_threshold')
+            change_arch = should_change_arch(trainWLoss, previous_task_loss,
+                                             threshold_high=threshold_high)
 
-        print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
+            if config.get('force_arch_change', False):
+                print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
+                change_arch = True
 
-        # Added by Claude: Read threshold from config
-        threshold_high = config.get('awb_loss_ratio_threshold')
+            print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
 
-        change_arch = should_change_arch(trainWLoss, previous_task_loss,
-                                         threshold_high=threshold_high)
-
-        # Added by Claude: DEBUG HACK - Force architecture change for profiling
-        if config.get('force_arch_change', False):
-            print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
-            change_arch = True
-
-        print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
+        # Multi-node: broadcast decision from rank 0
+        if multi_node and mpi_comm is not None:
+            decision = mpi_comm.bcast(
+                {'trainWLoss': trainWLoss, 'change_arch': change_arch,
+                 'previous_task_loss': previous_task_loss} if is_main_rank else None,
+                root=0
+            )
+            trainWLoss = decision['trainWLoss']
+            change_arch = decision['change_arch']
+            previous_task_loss = decision['previous_task_loss']
+        elif not is_main_rank:
+            trainWLoss = 0.0
+            change_arch = False
 
         original_arch = awb_ops.get_model_architecture(model)
         saved_weights = awb_ops.save_weights(model)
