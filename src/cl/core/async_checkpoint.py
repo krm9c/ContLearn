@@ -239,10 +239,21 @@ class AsyncCheckpointManager:
         self._checkpoint_history.append((model_path, record_path, opt_state_path))
         self._cleanup_old_checkpoints()
 
+        # Strip unpicklable objects (MPI comm, JAX devices) from config snapshot
+        clean_config = {}
+        if config_snapshot:
+            for k, v in config_snapshot.items():
+                try:
+                    import pickle
+                    pickle.dumps(v)
+                    clean_config[k] = v
+                except Exception:
+                    pass
+
         payload = {
             'record_dict': record_dict,
             'metadata': metadata or {},
-            'config_snapshot': config_snapshot or {},
+            'config_snapshot': clean_config,
             'model_path': model_path,
             'opt_state_path': opt_state_path,
         }
