@@ -833,14 +833,18 @@ def search_architecture_grid(
             )
 
             # GENERIC: Extract loss
-            # Added by Claude: Use task_id=0 for search since each candidate trains with fresh record_dict
-            # and global_iteration_offset=0, so iterations are 0, save_iter, 2*save_iter, ...
+            # Only rank 0 has recorded iterations; broadcast loss to all ranks
+            # so they agree on best_arch for the next iteration's candidate generation.
             candidate_loss = compute_search_loss(
                 record_dict,
-                task_id=0,  # Search context uses 0-based iterations
+                task_id=0,
                 epochs=search_epochs,
                 window=averaging_window
             )
+
+            mpi_comm = train_config.get('mpi_comm')
+            if mpi_comm is not None and train_config.get('multi_node', False):
+                candidate_loss = mpi_comm.bcast(candidate_loss if train_config.get('mpi_rank', 0) == 0 else None, root=0)
 
             if arch_search_verbose:
                 print(f"      Candidate loss: {candidate_loss:.6f}")
