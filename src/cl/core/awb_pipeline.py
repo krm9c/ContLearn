@@ -53,7 +53,7 @@ from ..config.constants import (
 )
 
 
-def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
+def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64, seed=42):
     """Create a balanced validation set from a data loader.
 
     Samples validation_ratio% of data from each class to ensure balanced representation.
@@ -89,13 +89,13 @@ def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
                 class_to_graphs[label] = []
             class_to_graphs[label].append(graph)
 
-        # Sample validation graphs from each class
+        # Sample validation graphs from each class (fixed seed for multi-node consistency)
+        rng = torch.Generator().manual_seed(seed)
         val_graphs = []
         for cls, graphs in class_to_graphs.items():
             n_samples = len(graphs)
             n_val = max(1, int(n_samples * validation_ratio))
-            # Randomly sample graphs for this class
-            perm = torch.randperm(n_samples)
+            perm = torch.randperm(n_samples, generator=rng)
             val_graphs.extend([graphs[i] for i in perm[:n_val]])
 
         # Create validation loader
@@ -125,13 +125,14 @@ def create_balanced_validation_set(loader, validation_ratio=0.2, batch_size=64):
         unique_classes = torch.unique(all_y)
         val_indices = []
 
+        # Fixed seed for multi-node consistency (all ranks must get same validation set)
+        rng = torch.Generator().manual_seed(seed)
         for cls in unique_classes:
             cls_indices = torch.where(all_y == cls)[0]
             n_samples = len(cls_indices)
             n_val = max(1, int(n_samples * validation_ratio))  # At least 1 sample per class
 
-            # Randomly sample indices for this class
-            perm = torch.randperm(n_samples)
+            perm = torch.randperm(n_samples, generator=rng)
             val_idx = cls_indices[perm[:n_val]]
             val_indices.append(val_idx)
 
@@ -477,43 +478,29 @@ def run_awb_task(
             print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
         if not resume_after_search and not resume_after_ab:
-            # Multi-node: only rank 0 runs arch search; others wait at barrier.
-            if multi_node and mpi_comm is not None and not is_main_rank:
-                print(f"[MPI] rank {mpi_rank} waiting for arch search on rank 0...")
-                mpi_comm.Barrier()
-                new_arch = mpi_comm.bcast(None, root=0)
-                print(f"[MPI] rank {mpi_rank} received new_arch={new_arch}")
-            else:
-                # Added by Claude: Create balanced validation sets (20% of experience replay) for arch search
-                # This is more efficient than using full training data and prevents overfitting
-                validation_ratio = config.get('awb_validation_ratio', 0.2)
-                val_batch_size = config.get('batch_size', 64)
+            # All ranks run arch search together — each candidate's train__CL
+            # uses allreduce, so the 2-epoch training is distributed across all GPUs.
+            validation_ratio = config.get('awb_validation_ratio', 0.2)
+            val_batch_size = config.get('batch_size', 64)
 
-                val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
-                val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+            val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
+            val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
 
-                # Fixed by Claude: Unpack testloader tuple (test_curr_loader, test_exp_loader)
-                test_curr, test_exp = testloader
+            test_curr, test_exp = testloader
 
-                # Added by Claude: Profile architecture search
-                # Use validation sets for architecture search instead of full training data
-                _begin_step('arch_search')
-                arch_mem_start = _mem_snapshot()
-                arch_util_start = _gpu_util_snapshot()
-                arch_start = time.time()
-                with profile_section("Architecture Search"):
-                    new_arch = awb_ops.search_architecture(
-                        model, task_id, trainWLoss, val_trainloader, val_exploader,
-                        test_curr, test_exp, config, trainer
-                    )
-                task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
+            _begin_step('arch_search')
+            arch_mem_start = _mem_snapshot()
+            arch_util_start = _gpu_util_snapshot()
+            arch_start = time.time()
+            with profile_section("Architecture Search"):
+                new_arch = awb_ops.search_architecture(
+                    model, task_id, trainWLoss, val_trainloader, val_exploader,
+                    test_curr, test_exp, config, trainer
+                )
+            task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
+            if is_main_rank:
                 print(f"  Original: {original_arch}")
                 print(f"  Optimal: {new_arch}")
-
-                # Signal other ranks: search is done, broadcast result
-                if multi_node and mpi_comm is not None:
-                    mpi_comm.Barrier()
-                    mpi_comm.bcast(new_arch, root=0)
 
             model = awb_ops.restore_weights(model, saved_weights)
         else:

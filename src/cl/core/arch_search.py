@@ -232,7 +232,7 @@ def build_train_config(config: Dict[str, Any], search_cfg: Dict[str, Any]) -> Di
         default_batch = config.get('batch_size', DEFAULT_BATCH_SIZE_VECTOR)
         default_replay = config.get('len_exp_replay', DEFAULT_REPLAY_BUFFER_VECTOR)
 
-    return {
+    train_config = {
         'batch_size': search_cfg.get('search_batch_size', default_batch),
         'problem': problem,
         'data_id': config.get('data', 'sine'),
@@ -243,6 +243,11 @@ def build_train_config(config: Dict[str, Any], search_cfg: Dict[str, Any]) -> Di
         'use_jax_prefetch': config.get('use_jax_prefetch', True),
         'prefetch_size': config.get('prefetch_size', 3),
     }
+    # Propagate multi-node keys so train__CL uses allreduce during arch search
+    for key in ('multi_node', 'mpi_comm', 'mpi_rank', 'mpi_world_size', 'jax_device'):
+        if key in config:
+            train_config[key] = config[key]
+    return train_config
 
 
 def check_early_stopping(
