@@ -34,27 +34,14 @@ except ImportError:
 def _allreduce_mean_pytree(tree, comm):
     """Average a JAX pytree across all MPI ranks.
 
-    Flattens all leaves into one contiguous buffer for a single allreduce
-    (avoids per-leaf JIT compilation and synchronization overhead).
+    Does per-leaf allreduce to avoid allocating a full copy of the
+    gradient as a contiguous buffer (which caused OOM on large models).
     """
     world_size = comm.Get_size()
-    leaves, treedef = jax.tree_util.tree_flatten(tree)
-    # Record shapes and flatten into one 1-D array
-    shapes = [leaf.shape for leaf in leaves]
-    flat = jnp.concatenate([leaf.ravel() for leaf in leaves])
-    # Single allreduce over the whole gradient vector
-    flat_sum = mpi4jax.allreduce(flat, op=MPI.SUM, comm=comm)
-    flat_mean = flat_sum / world_size
-    # Split back into original shapes
-    reduced = []
-    offset = 0
-    for shape in shapes:
-        size = 1
-        for s in shape:
-            size *= s
-        reduced.append(flat_mean[offset:offset + size].reshape(shape))
-        offset += size
-    return treedef.unflatten(reduced)
+    return jax.tree_util.tree_map(
+        lambda leaf: mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm) / world_size,
+        tree
+    )
 
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
