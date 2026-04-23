@@ -1216,10 +1216,15 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # skipping straight into Step 5 main training at resume_epoch. Dispatched
         # via resume_state -> run_awb_task (which handles resume_phase='main').
 
+    # Helper: only rank 0 prints in multi-node
+    def _print(*args, **kwargs):
+        if is_main_rank:
+            print(*args, **kwargs)
+
     for task_id in range(start_task, n_tasks):
-        print(f"\n{'='*60}")
-        print(f"Task {task_id}")
-        print(f"{'='*60}")
+        _print(f"\n{'='*60}")
+        _print(f"Task {task_id}")
+        _print(f"{'='*60}")
 
         # Generate dataset for current task
         trainloader, exploader = data.generate_dataset(task_id,
@@ -1266,7 +1271,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                     break
             initial_loss = initial_loss / max(n_batches, 1)
             loss_ratio = initial_loss / previous_task_loss
-            print(f"Initial loss on new task: {initial_loss:.4f}, previous: {previous_task_loss:.4f}, ratio: {loss_ratio:.2f}")
+            _print(f"Initial loss on new task: {initial_loss:.4f}, previous: {previous_task_loss:.4f}, ratio: {loss_ratio:.2f}")
 
         # Compute learning rate for this task with loss-based adaptive lr_min
         task_lr = compute_task_lr(config, task_id, loss_ratio)
@@ -1300,7 +1305,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
         # Task 0 or AWB disabled: Standard CL training
         if task_id == 0 or not awb_enabled:
             if resume_state is not None and task_id == start_task and resume_epoch > 0:
-                print(f"Resuming task {task_id} at epoch {resume_epoch}")
+                _print(f"Resuming task {task_id} at epoch {resume_epoch}")
                 model = eqx.combine(params, static)
 
                 save_iter = config.get('save_iter', DEFAULT_SAVE_ITER)
@@ -1322,7 +1327,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
                 continue
             # Added by Claude: Show adaptive lr_min and loss ratio for this task
             adaptive_lr_min = compute_adaptive_lr_min(config, loss_ratio)
-            print(f"Standard CL training (lr={task_lr:.6f}, adaptive_lr_min={adaptive_lr_min:.2e}, loss_ratio={loss_ratio:.2f})")
+            _print(f"Standard CL training (lr={task_lr:.6f}, adaptive_lr_min={adaptive_lr_min:.2e}, loss_ratio={loss_ratio:.2f})")
 
             # Recombine model
             model = eqx.combine(params, static)
@@ -1518,7 +1523,7 @@ def train_model(config: Dict[str, Any], run_id: int = 0) -> Dict[str, Any]:
 
         else:
             # AWB 5-step pipeline for tasks 1+ (refactored to use awb_pipeline module)
-            print(f"AWB pipeline (lr={task_lr:.6f})")
+            _print(f"AWB pipeline (lr={task_lr:.6f})")
 
             # Initialize task recording
             model = eqx.combine(params, static)

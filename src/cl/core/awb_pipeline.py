@@ -202,10 +202,14 @@ def run_awb_task(
     mpi_rank = config.get('mpi_rank', 0)
     is_main_rank = (mpi_rank == 0) or not multi_node
 
-    if is_main_rank:
-        print(f"\n{'='*70}")
-        print(f"AWB PIPELINE - Task {task_id}")
-        print(f"{'='*70}")
+    # Helper: only rank 0 prints in multi-node
+    def _print(*args, **kwargs):
+        if is_main_rank:
+            print(*args, **kwargs)
+
+    _print(f"\n{'='*70}")
+    _print(f"AWB PIPELINE - Task {task_id}")
+    _print(f"{'='*70}")
 
     # Extract configuration
     preliminary_epochs = config.get('awb_preliminary_epochs', DEFAULT_AWB_PRELIMINARY_EPOCHS)
@@ -224,7 +228,7 @@ def run_awb_task(
     if resume_state is not None and isinstance(resume_state.get('cumulative_compute'), dict):
         prior_compute = dict(resume_state['cumulative_compute'])
         prior_total = prior_compute.get('total', {}).get('time_s', 0.0)
-        print(f"[TIMING] Restored cumulative compute from checkpoint "
+        _print(f"[TIMING] Restored cumulative compute from checkpoint "
               f"({prior_total:.1f}s across {len(prior_compute)-1} steps)")
     task_metadata = {
         'preliminary_loss': None,
@@ -313,18 +317,18 @@ def run_awb_task(
     resume_epoch = resume_state.get('epoch', 0) + 1 if resume_state is not None else 0
     current_iterations = len(record_dict.get('iterations', {}))
     if resume_after_search:
-        print("\n[RESUME] Skipping preliminary + search (using saved architecture)")
+        _print("\n[RESUME] Skipping preliminary + search (using saved architecture)")
     if resume_after_ab:
-        print("\n[RESUME] Skipping preliminary + search + AB training (using saved A/B)")
+        _print("\n[RESUME] Skipping preliminary + search + AB training (using saved A/B)")
     if resume_after_main:
-        print(f"\n[RESUME] Skipping Steps 1-4 + warmup. Continuing Step 5 main at epoch {resume_epoch}")
+        _print(f"\n[RESUME] Skipping Steps 1-4 + warmup. Continuing Step 5 main at epoch {resume_epoch}")
 
     # Fast path: mid-Step-5 resume. Model + opt_state already have the post-Step-4
     # state (new arch, V weights); just run the remaining main epochs.
     if resume_after_main:
         remaining = max(0, epochs_per_task - resume_epoch)
         if remaining == 0:
-            print("[RESUME] No remaining main epochs; task already complete.")
+            _print("[RESUME] No remaining main epochs; task already complete.")
             return model, optim, opt_state, record_dict
 
         params, static = awb_ops.partition_for_standard_training(model)
@@ -371,12 +375,12 @@ def run_awb_task(
 
         final_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=task_id,
                                        epochs=epochs_per_task, window=averaging_window)
-        print(f"[AWB RESUME COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
+        _print(f"[AWB RESUME COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
         return model, optim, opt_state, record_dict
 
     # STEP 1: Preliminary Training
     if not resume_after_search and not resume_after_ab:
-        print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
+        _print(f"\n[STEP 1] Preliminary training ({preliminary_epochs} epochs) - Recorded temporarily")
         _begin_step('preliminary')
         prelim_mem_start = _mem_snapshot()
         prelim_util_start = _gpu_util_snapshot()
@@ -412,27 +416,27 @@ def run_awb_task(
                 else:
                     trainWLoss = 0.0
 
-            print(f"  Preliminary loss: {trainWLoss:.6f}")
+            _print(f"  Preliminary loss: {trainWLoss:.6f}")
             task_metadata['preliminary_loss'] = trainWLoss
 
             # STEP 2: Decision
-            print(f"\n[STEP 2] Architecture change decision")
+            _print(f"\n[STEP 2] Architecture change decision")
             if previous_task_loss is None:
                 previous_task_loss = trainWLoss
-                print(f"  WARNING: No previous task loss, using preliminary loss")
+                _print(f"  WARNING: No previous task loss, using preliminary loss")
 
             task_metadata['loss_ratio'] = trainWLoss / previous_task_loss if previous_task_loss > 0 else 1.0
-            print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
+            _print(f"  Current: {trainWLoss:.6f}, Previous: {previous_task_loss:.6f}")
 
             threshold_high = config.get('awb_loss_ratio_threshold')
             change_arch = should_change_arch(trainWLoss, previous_task_loss,
                                              threshold_high=threshold_high)
 
             if config.get('force_arch_change', False):
-                print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
+                _print(f"  [DEBUG] Forcing architecture change (force_arch_change=True)")
                 change_arch = True
 
-            print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
+            _print(f"  Decision: {'CHANGE' if change_arch else 'KEEP'}")
 
         # Multi-node: broadcast decision from rank 0
         if multi_node and mpi_comm is not None:
@@ -454,7 +458,7 @@ def run_awb_task(
         trainWLoss = resume_state.get('preliminary_loss', None)
         if trainWLoss is None:
             trainWLoss = 0.0
-            print("  [RESUME] Missing preliminary loss; defaulting to 0.0")
+            _print("  [RESUME] Missing preliminary loss; defaulting to 0.0")
 
         previous_task_loss = resume_state.get('previous_task_loss', previous_task_loss)
         if previous_task_loss is None:
@@ -475,7 +479,7 @@ def run_awb_task(
     if change_arch:
         # STEP 3a: Architecture Search
         if not resume_after_search and not resume_after_ab:
-            print(f"\n[STEP 3a] Architecture search - NOT recorded")
+            _print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
         if not resume_after_search and not resume_after_ab:
             # All ranks run arch search together — each candidate's train__CL
@@ -499,8 +503,8 @@ def run_awb_task(
                 )
             task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
             if is_main_rank:
-                print(f"  Original: {original_arch}")
-                print(f"  Optimal: {new_arch}")
+                _print(f"  Original: {original_arch}")
+                _print(f"  Optimal: {new_arch}")
 
             model = awb_ops.restore_weights(model, saved_weights)
         else:
@@ -510,11 +514,11 @@ def run_awb_task(
                     new_arch = original_arch
                 else:
                     raise ValueError("Resume requested after search but awb_best_arch is missing")
-            print(f"  Original: {original_arch}")
+            _print(f"  Original: {original_arch}")
             if resume_after_ab:
-                print(f"  Optimal (resumed): {new_arch}")
+                _print(f"  Optimal (resumed): {new_arch}")
             else:
-                print(f"  Optimal (resumed): {new_arch}")
+                _print(f"  Optimal (resumed): {new_arch}")
 
         # Optional: checkpoint after search to allow resume at Step 3b (rank 0 only)
         if not resume_after_search and not resume_after_ab and config.get('awb_checkpoint_after_search', True) and is_main_rank:
@@ -566,19 +570,19 @@ def run_awb_task(
 
             if skip_transfer:
                 # CONDITION 3: Skip A/B training, use random init
-                print(f"\n[STEP 3b] Skipping A/B training (awb_skip_transfer=True)")
-                print(f"  Using random initialization for new architecture")
+                _print(f"\n[STEP 3b] Skipping A/B training (awb_skip_transfer=True)")
+                _print(f"  Using random initialization for new architecture")
 
                 # Set AB matrices (random init) and compute V = A @ W @ B.T
                 model = awb_ops.set_AB_matrices(model, original_arch, new_arch)
 
                 # STEP 4: Compute V
-                print(f"\n[STEP 4] Compute V = A @ W @ B^T (random A/B)")
+                _print(f"\n[STEP 4] Compute V = A @ W @ B^T (random A/B)")
                 model = awb_ops.compute_V(model)
                 params, static = awb_ops.partition_for_standard_training(model)
 
                 # STEP 5: Train V with random initialization
-                print(f"\n[STEP 5] Train V (random init): warmup {ab_warmup_epochs} + main {epochs_per_task}")
+                _print(f"\n[STEP 5] Train V (random init): warmup {ab_warmup_epochs} + main {epochs_per_task}")
                 from ..runners.generic_runner import create_optimizer
                 optim = create_optimizer(config)
                 opt_state = optim.init(params)
@@ -586,7 +590,7 @@ def run_awb_task(
             else:
                 # STEP 3b: Train A/B
                 if not resume_after_ab:
-                    print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
+                    _print(f"\n[STEP 3b] Train A/B matrices ({ab_training_epochs} epochs) - Recorded separately")
 
                 if not resume_after_ab:
                     # Added by Claude: Profile A/B training
@@ -614,12 +618,12 @@ def run_awb_task(
 
                     ab_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=0, epochs=ab_training_epochs, window=averaging_window)
                     
-                    print(f"  AB loss: {ab_loss:.6f}")
+                    _print(f"  AB loss: {ab_loss:.6f}")
                     # Optional: Continue AB training
                     ab_threshold = compute_ab_threshold(trainWLoss, previous_task_loss)
                     ab_iter = 1
                     while (trainWLoss * ab_threshold < ab_loss) and (ab_iter < ab_max_iterations):
-                        print(f"  Continuing AB training (iter {ab_iter + 1})")
+                        _print(f"  Continuing AB training (iter {ab_iter + 1})")
                         diff_model, static_model, ab_opt_state, record_dict = trainer.train__CL(
                             train__=(trainloader, exploader, valloader, testloader),
                             params=diff_model, static=static_model, opt_state=ab_opt_state, optim=ab_optim,
@@ -640,10 +644,10 @@ def run_awb_task(
                     if config.get('profiling_enabled'):
                         from .profiling import format_memory_stats
                         ab_elapsed = time.time() - ab_training_start
-                        print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
+                        _print(f"[PROFILE] A/B training total: {ab_elapsed:.2f}s | {format_memory_stats()}")
 
                 # STEP 4: Compute V
-                print(f"\n[STEP 4] Compute V = A @ W @ B^T")
+                _print(f"\n[STEP 4] Compute V = A @ W @ B^T")
                 _begin_step('compute_v')
                 compute_v_mem_start = _mem_snapshot()
                 compute_v_util_start = _gpu_util_snapshot()
@@ -665,7 +669,7 @@ def run_awb_task(
                     # BEFORE compute_V: loss with get_AWBT
                     pred_before = model.get_AWBT(x_d, adj_d, b_d, n_d)
                     loss_before = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_before, y_d)))
-                    print(f"  [DEBUG] Loss BEFORE compute_V (get_AWBT): {loss_before:.6f}")
+                    _print(f"  [DEBUG] Loss BEFORE compute_V (get_AWBT): {loss_before:.6f}")
 
                 model = awb_ops.compute_V(model)
                 params, static = awb_ops.partition_for_standard_training(model)
@@ -677,9 +681,9 @@ def run_awb_task(
                     # AFTER compute_V: loss with standard __call__
                     pred_after = model_debug(x_d, adj_d, b_d, n_d)
                     loss_after = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_after, y_d)))
-                    print(f"  [DEBUG] Current task - BEFORE (get_AWBT): {loss_before:.6f}")
-                    print(f"  [DEBUG] Current task - AFTER (__call__): {loss_after:.6f}")
-                    print(f"  [DEBUG] Current task - Difference: {abs(loss_before - loss_after):.10f}")
+                    _print(f"  [DEBUG] Current task - BEFORE (get_AWBT): {loss_before:.6f}")
+                    _print(f"  [DEBUG] Current task - AFTER (__call__): {loss_after:.6f}")
+                    _print(f"  [DEBUG] Current task - Difference: {abs(loss_before - loss_after):.10f}")
 
                     # Also check EXPERIENCE data
                     exp_batch = next(iter(exploader))
@@ -693,17 +697,17 @@ def run_awb_task(
                     # Experience loss AFTER compute_V
                     pred_exp = model_debug(x_e, adj_e, b_e, n_e)
                     loss_exp = float(jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_exp, y_e)))
-                    print(f"  [DEBUG] Experience - AFTER (__call__): {loss_exp:.6f}")
+                    _print(f"  [DEBUG] Experience - AFTER (__call__): {loss_exp:.6f}")
 
                 # STEP 5: Train V
-                print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
+                _print(f"\n[STEP 5] Train V: warmup {ab_warmup_epochs} + main {epochs_per_task}")
 
                 # DEBUG: Print weight shapes after compute_V (GCN only)
                 if problem_type == 'graph':
-                    print(f"  [DEBUG] Weight shapes after compute_V:")
-                    print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
-                    print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
-                    print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
+                    _print(f"  [DEBUG] Weight shapes after compute_V:")
+                    _print(f"    gcn_layers[0].weight: {model_debug.gcn_layers[0].weight.shape}")
+                    _print(f"    gcn_layers[1].weight: {model_debug.gcn_layers[1].weight.shape}")
+                    _print(f"    feed_layers[0].weight: {model_debug.feed_layers[0].weight.shape}")
 
                 # Added by Claude: Compute LR reduction for V training based on parameter expansion
                 # The issue: First gradient step causes loss explosion (0.93→53.14) because
@@ -734,19 +738,19 @@ def run_awb_task(
                         import math
                         v_lr_factor = 1.0 / math.sqrt(expansion_ratio)
                         v_lr_factor = max(v_lr_factor, 0.01)  # Minimum 1% of original LR
-                        print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
-                        print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
+                        _print(f"  [V-TRAIN] Parameter expansion: {orig_param_count:,} → {new_param_count:,} ({expansion_ratio:.1f}x)")
+                        _print(f"  [V-TRAIN] Auto LR factor: {v_lr_factor:.4f}")
                     else:
                         v_lr_factor = 1.0
-                        print("  [V-TRAIN] Auto LR factor disabled for non-graph models; using 1.0")
+                        _print("  [V-TRAIN] Auto LR factor disabled for non-graph models; using 1.0")
                 else:
-                    print(f"  [V-TRAIN] Using config LR factor: {v_lr_factor}")
+                    _print(f"  [V-TRAIN] Using config LR factor: {v_lr_factor}")
 
                 # Create optimizer with reduced LR for V training
                 from ..runners.generic_runner import create_optimizer, create_optimizer_with_lr
                 base_lr = config.get('lr', 0.001)
                 v_training_lr = base_lr * v_lr_factor
-                print(f"  [V-TRAIN] Base LR: {base_lr}, V training LR: {v_training_lr:.6f}")
+                _print(f"  [V-TRAIN] Base LR: {base_lr}, V training LR: {v_training_lr:.6f}")
 
                 optim = create_optimizer_with_lr(config, v_training_lr)
                 opt_state = optim.init(params)
@@ -807,7 +811,7 @@ def run_awb_task(
             task_metadata['change_reason'] = 'search_found_same'
 
             # Same architecture, standard training
-            print(f"  Same architecture - standard training")
+            _print(f"  Same architecture - standard training")
             params, static = awb_ops.partition_for_standard_training(model)
             from ..runners.generic_runner import create_optimizer
             optim = create_optimizer(config)
@@ -835,7 +839,7 @@ def run_awb_task(
         task_metadata['change_reason'] = 'loss_ratio_below_threshold'
 
         # No change, standard training
-        print(f"  No change - standard training")
+        _print(f"  No change - standard training")
         params, static = awb_ops.partition_for_standard_training(model)
         from ..runners.generic_runner import create_optimizer
         optim = create_optimizer(config)
@@ -860,18 +864,18 @@ def run_awb_task(
 
     final_loss = compute_avg_loss(record_dict.get('iterations', {}), task_id=task_id,
                                    epochs=epochs_per_task, window=averaging_window)
-    print(f"\n[AWB COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
-    print(f"{'='*70}\n")
+    _print(f"\n[AWB COMPLETE] Task {task_id} final loss: {final_loss:.6f}")
+    _print(f"{'='*70}\n")
 
     prior_total = task_metadata['compute'].get('total', {}).get('time_s', 0.0)
     task_metadata['compute']['total'] = {'time_s': float(prior_total + (time.time() - task_start_time))}
 
     # Print cumulative timing summary
     compute = task_metadata['compute']
-    print(f"\n[TIMING] Task {task_id} cumulative compute:")
+    _print(f"\n[TIMING] Task {task_id} cumulative compute:")
     for k, v in compute.items():
         if isinstance(v, dict) and 'time_s' in v:
-            print(f"  {k:20s}: {v['time_s']:8.1f}s")
+            _print(f"  {k:20s}: {v['time_s']:8.1f}s")
 
     # Added by Claude: Store task metadata for architecture history tracking
     if 'tasks' not in record_dict:
