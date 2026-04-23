@@ -243,6 +243,13 @@ def build_train_config(config: Dict[str, Any], search_cfg: Dict[str, Any]) -> Di
         'use_jax_prefetch': config.get('use_jax_prefetch', True),
         'prefetch_size': config.get('prefetch_size', 3),
     }
+    # Arch search only needs current-task loss to rank candidates.
+    # Disable dV regularization (gamma=0) to avoid expensive second-order
+    # derivatives that OOM on larger candidate architectures.
+    train_config['grad_weights'] = config.get(
+        'arch_search_grad_weights', [1.0, 0.0, 0.0]
+    )
+
     # Propagate multi-node keys so train__CL uses allreduce during arch search
     for key in ('multi_node', 'mpi_comm', 'mpi_rank', 'mpi_world_size', 'jax_device'):
         if key in config:
