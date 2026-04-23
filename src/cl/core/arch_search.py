@@ -244,11 +244,9 @@ def build_train_config(config: Dict[str, Any], search_cfg: Dict[str, Any]) -> Di
         'prefetch_size': config.get('prefetch_size', 3),
     }
     # Arch search only needs current-task loss to rank candidates.
-    # Disable dV regularization (gamma=0) to avoid expensive second-order
-    # derivatives that OOM on larger candidate architectures.
-    train_config['grad_weights'] = config.get(
-        'arch_search_grad_weights', [1.0, 0.0, 0.0]
-    )
+    # Skip the full Hamiltonian (which includes second-order dV computation)
+    # and use simple cross-entropy/MSE gradient instead.
+    train_config['arch_search_simple_grad'] = True
 
     # Propagate multi-node keys so train__CL uses allreduce during arch search
     for key in ('multi_node', 'mpi_comm', 'mpi_rank', 'mpi_world_size', 'jax_device'):

@@ -453,6 +453,10 @@ class TrainingLoopsMixin:
         pbar = tqdm(range(n_iter), dynamic_ncols=True, disable=not is_main_rank)
 
         # Select Hamiltonian function based on problem/loss type
+        # arch_search_simple_grad: skip Hamiltonian entirely during arch search
+        # to avoid second-order dV computation that OOMs on large candidates.
+        use_simple_grad = config.get('arch_search_simple_grad', False)
+
         if problem_type == 'graph':
             hamiltonian_fn = self.return_Hamiltonian_graph
             transforms = get_graph_transforms()
@@ -778,8 +782,32 @@ class TrainingLoopsMixin:
                     delta_x = jax.random.normal(subkey, exp_x.shape) * var_x
                     data = (static, (x, y, exp_x, exp_y, delta_x, flag))
 
-                # Compute Hamiltonian gradient (with configurable gradient weights and dV normalization)
-                if multi_gpu_active and problem_type == 'vectors':
+                # Compute gradient
+                if use_simple_grad and problem_type == 'vectors':
+                    # Simple cross-entropy/MSE gradient — no Hamiltonian, no dV.
+                    # Used during arch search to avoid OOM from second-order derivatives.
+                    @eqx.filter_jit
+                    def _simple_grad_fn(p, static_, x_, y_):
+                        def _loss(p_):
+                            model_ = eqx.combine(p_, static_)
+                            pred_ = jax.vmap(model_)(x_)
+                            if loss_type == 'classification':
+                                return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_, y_))
+                            else:
+                                if pred_.ndim == 3 and pred_.shape[1] == 1:
+                                    pred_ = jnp.squeeze(pred_, axis=1)
+                                return jnp.mean(optax.l2_loss(y_, pred_))
+                        loss_val, g = jax.value_and_grad(_loss)(p_)
+                        return g, loss_val
+
+                    grad, V = _simple_grad_fn(params, static, x, y)
+                    H = V
+                    dV = jnp.array(0.0)
+                    dV_dtheta = jnp.array(0.0)
+                    dV_dx = jnp.array(0.0)
+                    losses = (H, V, dV, dV_dtheta, dV_dx)
+
+                elif multi_gpu_active and problem_type == 'vectors':
                     # Fixed by Claude: was `deltax` (undefined); the variable is `delta_x`
                     x_full, y_full = x, y
                     exp_x_full, exp_y_full = exp_x, exp_y
