@@ -639,11 +639,18 @@ class TrainingLoopsMixin:
                 new_params = optax.apply_updates(params_, updates)
                 return new_params, new_opt_state
 
+            def _pmap_forward(p, x):
+                """Select forward pass: standard or AWB depending on notABTrain."""
+                model = eqx.combine(p, static)
+                if notABTrain:
+                    return jax.vmap(model)(x)
+                else:
+                    return jax.vmap(lambda sample: _awb_forward(model, sample))(x)
+
             if loss_type == 'regression':
                 @partial(jax.pmap, axis_name=multi_gpu_axis)
                 def compute_metric_pmap(p, x, y):
-                    model = eqx.combine(p, static)
-                    preds = jax.vmap(model)(x)
+                    preds = _pmap_forward(p, x)
                     if preds.ndim == 3 and preds.shape[1] == 1:
                         preds = jnp.squeeze(preds, axis=1)
                     metric = jnp.mean(optax.l2_loss(y, preds))
@@ -651,8 +658,7 @@ class TrainingLoopsMixin:
             else:
                 @partial(jax.pmap, axis_name=multi_gpu_axis)
                 def compute_metric_pmap(p, x, y):
-                    model = eqx.combine(p, static)
-                    preds = jax.vmap(model)(x)
+                    preds = _pmap_forward(p, x)
                     if preds.ndim == 3 and preds.shape[1] == 1:
                         preds = jnp.squeeze(preds, axis=1)
                     pred_y = jnp.argmax(jax.nn.log_softmax(preds), 1)
