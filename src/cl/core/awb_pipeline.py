@@ -482,27 +482,70 @@ def run_awb_task(
             _print(f"\n[STEP 3a] Architecture search - NOT recorded")
 
         if not resume_after_search and not resume_after_ab:
-            # All ranks run arch search together — each candidate's train__CL
-            # uses allreduce, so the 2-epoch training is distributed across all GPUs.
-            validation_ratio = config.get('awb_validation_ratio', 0.2)
-            val_batch_size = config.get('batch_size', 64)
+            # Check for predefined or linear-growth architecture schedule (skip search)
+            arch_schedule = config.get('awb_arch_schedule', {})
+            scheduled_arch = arch_schedule.get(str(task_id)) or arch_schedule.get(task_id)
 
-            val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
-            val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+            # Linear growth mode: compute architecture from base + step per task
+            if scheduled_arch is None and config.get('awb_arch_linear_growth', False):
+                base = awb_ops.get_model_architecture(model)
+                embed_step = config.get('awb_arch_embed_step', 32)
+                mlp_step = config.get('awb_arch_mlp_step', 32)
+                n_layers_step = config.get('awb_arch_n_layers_step', 0)
 
-            test_curr, test_exp = testloader
+                # n_heads per task: list [2,2,4,4,6,6,...] or single int
+                n_heads_schedule = config.get('awb_arch_n_heads_schedule', None)
+                if n_heads_schedule is not None and isinstance(n_heads_schedule, list):
+                    idx = min(task_id - 1, len(n_heads_schedule) - 1)
+                    n_heads = n_heads_schedule[idx]
+                else:
+                    n_heads = n_heads_schedule or base.get('n_heads', 4)
 
-            _begin_step('arch_search')
-            arch_mem_start = _mem_snapshot()
-            arch_util_start = _gpu_util_snapshot()
-            arch_start = time.time()
-            with profile_section("Architecture Search"):
-                new_arch = awb_ops.search_architecture(
-                    model, task_id, trainWLoss, val_trainloader, val_exploader,
-                    test_curr, test_exp, config, trainer
-                )
-            task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
-            if is_main_rank:
+                # n_layers per task: list [2,2,2,3,3,3,4,...] or use n_layers_step
+                n_layers_schedule = config.get('awb_arch_n_layers_schedule', None)
+                if n_layers_schedule is not None and isinstance(n_layers_schedule, list):
+                    idx = min(task_id - 1, len(n_layers_schedule) - 1)
+                    n_layers = n_layers_schedule[idx]
+                else:
+                    n_layers = base.get('n_layers', 2) + n_layers_step
+
+                scheduled_arch = dict(base)
+                scheduled_arch['embed_dim'] = base['embed_dim'] + embed_step
+                scheduled_arch['mlp_dim'] = base['mlp_dim'] + mlp_step
+                scheduled_arch['n_heads'] = n_heads
+                scheduled_arch['n_layers'] = n_layers
+                # Ensure embed_dim is divisible by n_heads
+                while scheduled_arch['embed_dim'] % scheduled_arch['n_heads'] != 0:
+                    scheduled_arch['embed_dim'] += embed_step
+
+            if scheduled_arch is not None:
+                # Use predefined architecture — skip search entirely
+                new_arch = scheduled_arch
+                task_metadata['search_time'] = 0.0
+                _print(f"  [SCHEDULE] Using predefined architecture for task {task_id}")
+                _print(f"  Original: {original_arch}")
+                _print(f"  Scheduled: {new_arch}")
+            else:
+                # All ranks run arch search together — each candidate's train__CL
+                # uses allreduce, so the 2-epoch training is distributed across all GPUs.
+                validation_ratio = config.get('awb_validation_ratio', 0.2)
+                val_batch_size = config.get('batch_size', 64)
+
+                val_trainloader = create_balanced_validation_set(trainloader, validation_ratio, val_batch_size)
+                val_exploader = create_balanced_validation_set(exploader, validation_ratio, val_batch_size)
+
+                test_curr, test_exp = testloader
+
+                _begin_step('arch_search')
+                arch_mem_start = _mem_snapshot()
+                arch_util_start = _gpu_util_snapshot()
+                arch_start = time.time()
+                with profile_section("Architecture Search"):
+                    new_arch = awb_ops.search_architecture(
+                        model, task_id, trainWLoss, val_trainloader, val_exploader,
+                        test_curr, test_exp, config, trainer
+                    )
+                task_metadata['search_time'] = _record_step_time('arch_search', arch_start, arch_mem_start, arch_util_start)
                 _print(f"  Original: {original_arch}")
                 _print(f"  Optimal: {new_arch}")
 
