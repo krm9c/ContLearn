@@ -776,8 +776,8 @@ class TrainingLoopsMixin:
                     # Used during arch search to avoid OOM from second-order derivatives.
                     @eqx.filter_jit
                     def _simple_grad_fn(p, static_, x_, y_):
-                        def _loss(p_):
-                            model_ = eqx.combine(p_, static_)
+                        def _loss(p_inner):
+                            model_ = eqx.combine(p_inner, static_)
                             pred_ = jax.vmap(model_)(x_)
                             if loss_type == 'classification':
                                 return jnp.mean(optax.losses.softmax_cross_entropy_with_integer_labels(pred_, y_))
@@ -785,7 +785,7 @@ class TrainingLoopsMixin:
                                 if pred_.ndim == 3 and pred_.shape[1] == 1:
                                     pred_ = jnp.squeeze(pred_, axis=1)
                                 return jnp.mean(optax.l2_loss(y_, pred_))
-                        loss_val, g = jax.value_and_grad(_loss)(p_)
+                        loss_val, g = jax.value_and_grad(_loss)(p)
                         return g, loss_val
 
                     grad, V = _simple_grad_fn(params, static, x, y)
