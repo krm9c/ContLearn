@@ -38,10 +38,11 @@ def _allreduce_mean_pytree(tree, comm):
     gradient as a contiguous buffer (which caused OOM on large models).
     """
     world_size = comm.Get_size()
-    return jax.tree_util.tree_map(
-        lambda leaf: mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm) / world_size,
-        tree
-    )
+    def _reduce_leaf(leaf):
+        # mpi4jax.allreduce returns (result, token) — unpack to get just the result
+        result, _ = mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm)
+        return result / world_size
+    return jax.tree_util.tree_map(_reduce_leaf, tree)
 
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
