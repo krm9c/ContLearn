@@ -39,10 +39,7 @@ def _allreduce_mean_pytree(tree, comm):
     """
     world_size = comm.Get_size()
     def _reduce_leaf(leaf):
-        out = mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm)
-        # mpi4jax may return result, (result, token), or (result, token, ...)
-        result = out[0] if isinstance(out, tuple) else out
-        return result / world_size
+        return mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm) / world_size
     return jax.tree_util.tree_map(_reduce_leaf, tree)
 
 # Added by Claude: Profiling support
