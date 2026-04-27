@@ -958,44 +958,41 @@ class TrainingLoopsMixin:
                             model=model
                         )
 
-                    # Added by Claude: Periodic checkpointing (async, non-blocking)
-                    if checkpoint_manager is not None and (epoch % checkpoint_interval == 0 and epoch > 0):
-                        checkpoint_model = eqx.combine(params, static)
+                # Periodic checkpointing (outside eval gate so AB training also checkpoints)
+                if checkpoint_manager is not None and (epoch % checkpoint_interval == 0 and epoch > 0):
+                    checkpoint_model = eqx.combine(
+                        _unreplicate(params) if multi_gpu_active else params, static
+                    )
 
-                        # Snapshot the in-progress step's elapsed time so it survives a crash.
-                        cumulative = config.get('cumulative_compute')
-                        step = config.get('_timing_step')
-                        start = config.get('_timing_start')
-                        prior = config.get('_timing_prior', 0.0)
-                        if isinstance(cumulative, dict) and step and start:
-                            cumulative.setdefault(step, {})['time_s'] = float(prior + (time.time() - start))
+                    # Snapshot the in-progress step's elapsed time so it survives a crash.
+                    cumulative = config.get('cumulative_compute')
+                    step = config.get('_timing_step')
+                    start = config.get('_timing_start')
+                    prior = config.get('_timing_prior', 0.0)
+                    if isinstance(cumulative, dict) and step and start:
+                        cumulative.setdefault(step, {})['time_s'] = float(prior + (time.time() - start))
 
-                        checkpoint_metadata = {
-                            'task_id': task_id,
-                            'epoch': epoch,
-                            'phase': phase,
-                            'notABTrain': notABTrain,
-                            'global_iteration_offset': global_iteration_offset,
-                            'arch_info': _get_arch_info(checkpoint_model),
-                            # Fixed by Claude: carry AWB transition shapes so mid-Step-5
-                            # (phase='main') checkpoints can be resumed -- A/B in the saved
-                            # model are rectangular (new_size, old_size), but a fresh template
-                            # would have square identities, causing a shape-mismatch on load.
-                            # These are injected into config by awb_pipeline before train__CL.
-                            'awb_original_arch': config.get('awb_original_arch'),
-                            'awb_best_arch': config.get('awb_best_arch'),
-                            'cumulative_compute': cumulative,
-                        }
-                        checkpoint_manager.save_checkpoint(
-                            model=checkpoint_model,
-                            record_dict=record_dict,
-                            task_id=task_id,
-                            epoch=epoch,
-                            prefix=f"{phase}_checkpoint",
-                            opt_state=opt_state,
-                            config_snapshot=config,
-                            metadata=checkpoint_metadata
-                        )
+                    checkpoint_metadata = {
+                        'task_id': task_id,
+                        'epoch': epoch,
+                        'phase': phase,
+                        'notABTrain': notABTrain,
+                        'global_iteration_offset': global_iteration_offset,
+                        'arch_info': _get_arch_info(checkpoint_model),
+                        'awb_original_arch': config.get('awb_original_arch'),
+                        'awb_best_arch': config.get('awb_best_arch'),
+                        'cumulative_compute': cumulative,
+                    }
+                    checkpoint_manager.save_checkpoint(
+                        model=checkpoint_model,
+                        record_dict=record_dict,
+                        task_id=task_id,
+                        epoch=epoch,
+                        prefix=f"{phase}_checkpoint",
+                        opt_state=opt_state,
+                        config_snapshot=config,
+                        metadata=checkpoint_metadata
+                    )
 
         # Added by Claude: Wait for any pending checkpoint saves before returning
         if checkpoint_manager is not None:
