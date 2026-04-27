@@ -983,13 +983,14 @@ class TrainingLoopsMixin:
                         'awb_best_arch': config.get('awb_best_arch'),
                         'cumulative_compute': cumulative,
                     }
+                    checkpoint_opt_state = _unreplicate(opt_state) if multi_gpu_active else opt_state
                     checkpoint_manager.save_checkpoint(
                         model=checkpoint_model,
                         record_dict=record_dict,
                         task_id=task_id,
                         epoch=epoch,
                         prefix=f"{phase}_checkpoint",
-                        opt_state=opt_state,
+                        opt_state=checkpoint_opt_state,
                         config_snapshot=config,
                         metadata=checkpoint_metadata
                     )
