@@ -835,7 +835,20 @@ class TrainingLoopsMixin:
 
                 # Multi-node: average gradients across all MPI ranks
                 if multi_node and mpi_comm is not None and mpi_world_size > 1:
+                    # DEBUG: check for NaN before/after allreduce
+                    if epoch == 0 and batch_idx == 0 and mpi_rank == 0:
+                        leaves_before = jax.tree_util.tree_leaves(grad)
+                        has_nan_before = any(bool(jnp.any(jnp.isnan(l))) for l in leaves_before)
+                        grad_norm_before = sum(float(jnp.sum(l**2)) for l in leaves_before)**0.5
+                        print(f"[DEBUG-ALLREDUCE] BEFORE: nan={has_nan_before}, norm={grad_norm_before:.4f}")
+
                     grad = _allreduce_mean_pytree(grad, mpi_comm)
+
+                    if epoch == 0 and batch_idx == 0 and mpi_rank == 0:
+                        leaves_after = jax.tree_util.tree_leaves(grad)
+                        has_nan_after = any(bool(jnp.any(jnp.isnan(l))) for l in leaves_after)
+                        grad_norm_after = sum(float(jnp.sum(l**2)) for l in leaves_after)**0.5
+                        print(f"[DEBUG-ALLREDUCE] AFTER:  nan={has_nan_after}, norm={grad_norm_after:.4f}")
 
                 # Added by Claude: Apply gradient clipping if enabled
                 grad, grad_norm, was_clipped = self._clip_gradients(grad, max_norm=gradient_clip_norm)
