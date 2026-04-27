@@ -34,13 +34,28 @@ except ImportError:
 def _allreduce_mean_pytree(tree, comm):
     """Average a JAX pytree across all MPI ranks.
 
-    Does per-leaf allreduce to avoid allocating a full copy of the
-    gradient as a contiguous buffer (which caused OOM on large models).
+    Concatenates gradient leaves into chunks to balance between:
+    - Single giant buffer (OOM on large models)
+    - Per-leaf allreduce (deadlocks from async JIT compilation)
     """
     world_size = comm.Get_size()
-    def _reduce_leaf(leaf):
-        return mpi4jax.allreduce(leaf, op=MPI.SUM, comm=comm) / world_size
-    return jax.tree_util.tree_map(_reduce_leaf, tree)
+    leaves, treedef = jax.tree_util.tree_flatten(tree)
+
+    # Concatenate all leaves into one buffer, allreduce once, split back.
+    # Use in-place division to minimize extra allocations.
+    shapes = [l.shape for l in leaves]
+    sizes = [l.size for l in leaves]
+    flat = jnp.concatenate([l.ravel() for l in leaves])
+    flat_sum = mpi4jax.allreduce(flat, op=MPI.SUM, comm=comm)
+    flat_mean = flat_sum / world_size
+
+    # Split back
+    reduced = []
+    offset = 0
+    for shape, size in zip(shapes, sizes):
+        reduced.append(flat_mean[offset:offset + size].reshape(shape))
+        offset += size
+    return treedef.unflatten(reduced)
 
 # Added by Claude: Profiling support
 from .profiling import profile, profile_section
@@ -838,7 +853,8 @@ class TrainingLoopsMixin:
                     leaves = jax.tree_util.tree_leaves(grad)
                     has_nan = any(bool(jnp.any(jnp.isnan(l))) for l in leaves)
                     print(f"[DEBUG] rank={mpi_rank} batch=0 V={float(V):.6f} H={float(H):.6f} "
-                          f"grad_nan={has_nan} multi_node={multi_node}")
+                          f"grad_nan={has_nan} multi_node={multi_node} "
+                          f"n_leaves={len(leaves)}", flush=True)
 
                 # Multi-node: average gradients across all MPI ranks
                 if multi_node and mpi_comm is not None and mpi_world_size > 1:
