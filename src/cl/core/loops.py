@@ -833,6 +833,13 @@ class TrainingLoopsMixin:
                 else:
                     (H, V, dV, dV_dtheta, dV_dx) = losses
 
+                # DEBUG: check for NaN right after Hamiltonian (before any allreduce)
+                if epoch == 0 and batch_idx == 0:
+                    leaves = jax.tree_util.tree_leaves(grad)
+                    has_nan = any(bool(jnp.any(jnp.isnan(l))) for l in leaves)
+                    print(f"[DEBUG] rank={mpi_rank} batch=0 V={float(V):.6f} H={float(H):.6f} "
+                          f"grad_nan={has_nan} multi_node={multi_node}")
+
                 # Multi-node: average gradients across all MPI ranks
                 if multi_node and mpi_comm is not None and mpi_world_size > 1:
                     # DEBUG: check for NaN before/after allreduce
