@@ -997,6 +997,63 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
             except RuntimeError:
                 model = None
 
+        # AB phase: model has old-arch weights + A/B matrices for the transition.
+        # Build template with set_AB_matrices(original_arch, new_arch) to match.
+        if model is None and phase == 'ab':
+            orig_arch = metadata.get('awb_original_arch')
+            new_arch = metadata.get('awb_best_arch') or arch_info
+
+            # Recover original_arch from linear growth schedule if not in metadata
+            if orig_arch is None and config.get('awb_arch_linear_growth', False):
+                t = metadata.get('task_id', 1)
+                embed_step = config.get('awb_arch_embed_step', 32)
+                mlp_step = config.get('awb_arch_mlp_step', 32)
+                base_embed = config.get('transformer_embed_dim', 128)
+                base_mlp = config.get('transformer_mlp_dim', 256)
+                base_n_layers = config.get('transformer_n_layers', 2)
+                base_n_heads = config.get('transformer_n_heads', 4)
+
+                # Previous task's arch = base + (task_id-1) * step
+                prev_embed = base_embed + (t - 1) * embed_step
+                prev_mlp = base_mlp + (t - 1) * mlp_step
+
+                n_heads_schedule = config.get('awb_arch_n_heads_schedule')
+                if n_heads_schedule and isinstance(n_heads_schedule, list) and t >= 2:
+                    prev_heads = n_heads_schedule[min(t - 2, len(n_heads_schedule) - 1)]
+                else:
+                    prev_heads = base_n_heads
+
+                n_layers_schedule = config.get('awb_arch_n_layers_schedule')
+                if n_layers_schedule and isinstance(n_layers_schedule, list) and t >= 2:
+                    prev_layers = n_layers_schedule[min(t - 2, len(n_layers_schedule) - 1)]
+                else:
+                    prev_layers = base_n_layers
+
+                while prev_embed % prev_heads != 0:
+                    prev_embed += embed_step
+
+                orig_arch = {
+                    'seq_len': config.get('transformer_seq_len', 784),
+                    'token_dim': config.get('transformer_token_dim', 1),
+                    'embed_dim': prev_embed,
+                    'n_heads': prev_heads,
+                    'mlp_dim': prev_mlp,
+                    'n_layers': prev_layers,
+                    'output_dim': config.get('output_dim', 10),
+                }
+                print(f"[RESUME] Recovered orig_arch from linear growth schedule: {orig_arch}")
+
+            if orig_arch is not None and new_arch is not None:
+                try:
+                    template = build_model_from_arch(new_arch, config)
+                    awb_ops = create_awb_operations(template)
+                    template = awb_ops.set_AB_matrices(template, orig_arch, new_arch)
+                    model = eqx.tree_deserialise_leaves(model_path, template)
+                    print(f"[WARN] Loaded AB checkpoint with transition A/B ({orig_arch} -> {new_arch}).")
+                except Exception as inner:
+                    print(f"[WARN] AB transition reconstruction failed: {inner}")
+                    model = None
+
         # Fixed by Claude: phase='main' checkpoints were saved AFTER an arch change,
         # so A/B matrices in the file have the transition shape (new_size, old_size)
         # rather than the fresh square-identity shape a template gets from __init__.
