@@ -486,37 +486,56 @@ def run_awb_task(
             arch_schedule = config.get('awb_arch_schedule', {})
             scheduled_arch = arch_schedule.get(str(task_id)) or arch_schedule.get(task_id)
 
-            # Linear growth mode: compute architecture from base + step per task
+            # Linear growth mode: compute architecture deterministically from
+            # initial config + task_id. Does NOT read from model state (which can
+            # diverge across MPI ranks).
             if scheduled_arch is None and config.get('awb_arch_linear_growth', False):
-                base = awb_ops.get_model_architecture(model)
                 embed_step = config.get('awb_arch_embed_step', 32)
                 mlp_step = config.get('awb_arch_mlp_step', 32)
-                n_layers_step = config.get('awb_arch_n_layers_step', 0)
 
-                # n_heads per task: list [2,2,4,4,6,6,...] or single int
+                # Base architecture from config (task 0 starting point)
+                base_embed = config.get('transformer_embed_dim', 128)
+                base_mlp = config.get('transformer_mlp_dim', 256)
+                base_n_layers = config.get('transformer_n_layers', 2)
+                base_n_heads = config.get('transformer_n_heads', 4)
+                base_seq_len = config.get('transformer_seq_len', 784)
+                base_token_dim = config.get('transformer_token_dim', 1)
+                output_dim = config.get('output_dim', 10)
+
+                # Grow from base by task_id steps (task 1 = +1 step, task 2 = +2, etc.)
+                new_embed = base_embed + task_id * embed_step
+                new_mlp = base_mlp + task_id * mlp_step
+
+                # n_heads per task: list or single int
                 n_heads_schedule = config.get('awb_arch_n_heads_schedule', None)
                 if n_heads_schedule is not None and isinstance(n_heads_schedule, list):
                     idx = min(task_id - 1, len(n_heads_schedule) - 1)
                     n_heads = n_heads_schedule[idx]
                 else:
-                    n_heads = n_heads_schedule or base.get('n_heads', 4)
+                    n_heads = n_heads_schedule or base_n_heads
 
-                # n_layers per task: list [2,2,2,3,3,3,4,...] or use n_layers_step
+                # n_layers per task: list or fixed step
                 n_layers_schedule = config.get('awb_arch_n_layers_schedule', None)
                 if n_layers_schedule is not None and isinstance(n_layers_schedule, list):
                     idx = min(task_id - 1, len(n_layers_schedule) - 1)
                     n_layers = n_layers_schedule[idx]
                 else:
-                    n_layers = base.get('n_layers', 2) + n_layers_step
+                    n_layers_step = config.get('awb_arch_n_layers_step', 0)
+                    n_layers = base_n_layers + task_id * n_layers_step
 
-                scheduled_arch = dict(base)
-                scheduled_arch['embed_dim'] = base['embed_dim'] + embed_step
-                scheduled_arch['mlp_dim'] = base['mlp_dim'] + mlp_step
-                scheduled_arch['n_heads'] = n_heads
-                scheduled_arch['n_layers'] = n_layers
                 # Ensure embed_dim is divisible by n_heads
-                while scheduled_arch['embed_dim'] % scheduled_arch['n_heads'] != 0:
-                    scheduled_arch['embed_dim'] += embed_step
+                while new_embed % n_heads != 0:
+                    new_embed += embed_step
+
+                scheduled_arch = {
+                    'seq_len': base_seq_len,
+                    'token_dim': base_token_dim,
+                    'embed_dim': new_embed,
+                    'n_heads': n_heads,
+                    'mlp_dim': new_mlp,
+                    'n_layers': n_layers,
+                    'output_dim': output_dim,
+                }
 
             if scheduled_arch is not None:
                 # Use predefined architecture — skip search entirely
