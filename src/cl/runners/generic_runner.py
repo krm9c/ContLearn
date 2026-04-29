@@ -1045,7 +1045,9 @@ def load_resume_checkpoint(config: Dict[str, Any], optim):
 
             if orig_arch is not None and new_arch is not None:
                 try:
-                    template = build_model_from_arch(new_arch, config)
+                    # Build model from ORIGINAL arch (matches the old-sized W on disk),
+                    # then set_AB_matrices creates the transition (old W + new-sized A/B).
+                    template = build_model_from_arch(orig_arch, config)
                     awb_ops = create_awb_operations(template)
                     template = awb_ops.set_AB_matrices(template, orig_arch, new_arch)
                     model = eqx.tree_deserialise_leaves(model_path, template)
