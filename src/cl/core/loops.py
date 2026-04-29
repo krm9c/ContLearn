@@ -132,7 +132,7 @@ class TrainingLoopsMixin:
         clip_coef = jnp.minimum(clip_coef, 1.0)
 
         # Apply clipping
-        clipped_grads = jax.tree_map(lambda g: g * clip_coef, grads)
+        clipped_grads = jax.tree_util.tree_map(lambda g: g * clip_coef, grads)
         was_clipped = global_norm > max_norm
 
         return clipped_grads, global_norm, was_clipped
